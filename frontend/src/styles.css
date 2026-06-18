@@ -383,6 +383,127 @@ h1 {
   text-align: center;
 }
 
+.base-profile-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c7d2cf;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.base-profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.base-profile-heading p {
+  margin: 0;
+  color: #36484c;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.base-profile-heading strong {
+  display: block;
+  margin-top: 2px;
+  color: #151a1e;
+  font-size: 1.18rem;
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+.base-profile-heading span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #e7eeec;
+  color: #405256;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.upload-message,
+.upload-error {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.upload-message {
+  color: #223c63;
+}
+
+.upload-message.ready {
+  color: #1f7a68;
+}
+
+.upload-message.error,
+.upload-error {
+  color: #9c2d2d;
+}
+
+.profile-preview-image {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #c7d2cf;
+  border-radius: 8px;
+  background: #eef2f1;
+}
+
+.profile-preview-image img {
+  display: block;
+  width: 100%;
+}
+
+.profile-preview-image svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.profile-preview-image circle {
+  fill: rgba(34, 60, 99, 0.42);
+}
+
+.profile-preview-image polyline {
+  fill: none;
+  stroke: #1f7a68;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.profile-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-metrics span {
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f4f7f6;
+}
+
+.profile-metrics small {
+  color: #526164;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.profile-metrics strong {
+  color: #151a1e;
+  font-size: 1.05rem;
+}
+
 @media (max-width: 360px) {
   .app-shell {
     padding: 14px;

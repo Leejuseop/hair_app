@@ -10,6 +10,8 @@ import {
   measureFrameQuality,
 } from "./scanAnalyzer.js";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+
 function createInitialScanState(step) {
   return {
     error: "",
@@ -36,6 +38,16 @@ function createEmptyStepMap(valueFactory) {
   return Object.fromEntries(SCAN_STEPS.map((step) => [step, valueFactory()]));
 }
 
+function createInitialUploadState() {
+  return {
+    baseProfile: null,
+    error: "",
+    message: "스캔이 완료되면 서버에 업로드합니다.",
+    scanId: "",
+    status: "idle",
+  };
+}
+
 function createScanSessionId() {
   return crypto.randomUUID?.() ?? `scan_${Date.now()}`;
 }
@@ -52,6 +64,7 @@ function App() {
   const scanBundleRef = useRef(null);
   const scanSamplesRef = useRef(createEmptyStepMap(() => []));
   const scanSessionIdRef = useRef(createScanSessionId());
+  const uploadedSessionRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [activeStep, setActiveStep] = useState("front");
@@ -62,6 +75,7 @@ function App() {
   const [scanRunId, setScanRunId] = useState(0);
   const [scanStarted, setScanStarted] = useState(false);
   const [scanStates, setScanStates] = useState(createInitialScanStates);
+  const [uploadState, setUploadState] = useState(createInitialUploadState);
 
   const activeScan = scanStates[activeStep];
   const activeStepIndex = useMemo(
@@ -104,6 +118,8 @@ function App() {
     scanBundleRef.current = null;
     scanSamplesRef.current = createEmptyStepMap(() => []);
     scanSessionIdRef.current = createScanSessionId();
+    uploadedSessionRef.current = null;
+    setUploadState(createInitialUploadState());
     setScanStates({
       ...createInitialScanStates(),
       front: {
@@ -142,6 +158,8 @@ function App() {
         ]),
       ),
     };
+
+    return scanBundleRef.current;
   }
 
   async function handleStartScan() {
@@ -352,6 +370,79 @@ function App() {
     };
   }, [activeStep, cameraStatus, scanRunId, scanStarted]);
 
+  useEffect(() => {
+    if (!allStepsComplete || !scanBundleRef.current) {
+      return undefined;
+    }
+
+    const sessionId = scanSessionIdRef.current;
+
+    if (uploadedSessionRef.current === sessionId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    uploadedSessionRef.current = sessionId;
+
+    async function uploadScanBundle() {
+      setUploadState({
+        baseProfile: null,
+        error: "",
+        message: "스캔 데이터를 서버에 저장하고 베이스 프로필을 생성하는 중입니다.",
+        scanId: "",
+        status: "uploading",
+      });
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/scan`, {
+          body: JSON.stringify(scanBundleRef.current),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || "scan upload failed");
+        }
+
+        const data = await response.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        setUploadState({
+          baseProfile: data.base_profile,
+          error: "",
+          message: "베이스 프로필이 준비됐습니다.",
+          scanId: data.scan_id,
+          status: "ready",
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        uploadedSessionRef.current = null;
+        setUploadState({
+          baseProfile: null,
+          error: error?.message ?? "scan upload failed",
+          message: "스캔 데이터를 서버에 저장하지 못했습니다.",
+          scanId: "",
+          status: "error",
+        });
+      }
+    }
+
+    uploadScanBundle();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allStepsComplete]);
+
   function canOpenStep(step) {
     if (!scanStarted) {
       return false;
@@ -490,7 +581,7 @@ function App() {
 
         <button
           className="generate-button"
-          disabled={!allStepsComplete}
+          disabled={uploadState.status !== "ready"}
           type="button"
           onClick={handleGenerate}
         >
@@ -504,9 +595,101 @@ function App() {
               : "waiting for generate"}
           </div>
         </section>
+
+        {allStepsComplete ? (
+          <BaseProfilePreview uploadState={uploadState} />
+        ) : null}
       </section>
     </main>
   );
+}
+
+function BaseProfilePreview({ uploadState }) {
+  const profile = uploadState.baseProfile;
+  const preview = profile?.preview;
+  const imageUrl = resolveApiAssetUrl(preview?.front_image_url);
+  const landmarks = preview?.landmarks ?? [];
+  const hairlinePoints = Object.values(preview?.hairline_points ?? {});
+  const faceMetrics = profile?.derived_metrics?.face ?? {};
+  const hairlineMetrics = profile?.derived_metrics?.hairline ?? {};
+  const sideMetrics = profile?.derived_metrics?.side_profile ?? {};
+
+  return (
+    <section className="base-profile-panel" aria-label="Base profile preview">
+      <div className="base-profile-heading">
+        <div>
+          <p>Base Profile Preview</p>
+          <strong>{uploadState.status}</strong>
+        </div>
+        {uploadState.scanId ? <span>{uploadState.scanId.slice(0, 8)}</span> : null}
+      </div>
+      <p className={`upload-message ${uploadState.status}`}>
+        {uploadState.message}
+      </p>
+      {uploadState.error ? (
+        <p className="upload-error">{uploadState.error}</p>
+      ) : null}
+
+      {profile && imageUrl ? (
+        <>
+          <div className="profile-preview-image">
+            <img alt="Base profile front preview" src={imageUrl} />
+            <svg aria-hidden="true" viewBox="0 0 100 100">
+              {landmarks.map((point, index) => (
+                <circle
+                  cx={point.x * 100}
+                  cy={point.y * 100}
+                  key={`${point.x}-${point.y}-${index}`}
+                  r="0.28"
+                />
+              ))}
+              {hairlinePoints.length > 1 ? (
+                <polyline
+                  points={hairlinePoints
+                    .map((point) => `${point.x * 100},${point.y * 100}`)
+                    .join(" ")}
+                />
+              ) : null}
+            </svg>
+          </div>
+
+          <div className="profile-metrics">
+            <Metric label="Face ratio" value={faceMetrics.face_ratio} />
+            <Metric label="Jaw proxy" value={faceMetrics.jaw_width_proxy} />
+            <Metric
+              label="Forehead"
+              value={hairlineMetrics.forehead_height_proxy}
+            />
+            <Metric
+              label="Side symmetry"
+              value={sideMetrics.symmetry_proxy?.yaw_delta}
+            />
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <span>
+      <small>{label}</small>
+      <strong>{value ?? "-"}</strong>
+    </span>
+  );
+}
+
+function resolveApiAssetUrl(url) {
+  if (!url) {
+    return "";
+  }
+
+  if (url.startsWith("http")) {
+    return url;
+  }
+
+  return `${API_BASE_URL}${url}`;
 }
 
 export default App;
