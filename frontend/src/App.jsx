@@ -1,22 +1,366 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  SCAN_STEPS,
+  SCAN_STEP_CONFIG,
+  SCAN_TARGET_SAMPLES,
+  analyzeScanFrame,
+  captureVideoFrame,
+  createScanSample,
+  getFaceLandmarker,
+  measureFrameQuality,
+} from "./scanAnalyzer.js";
 
-const SCAN_STEPS = ["front", "left", "right", "hairline"];
+function createInitialScanState(step) {
+  return {
+    error: "",
+    instruction:
+      step === "front"
+        ? "Start Scan을 누르면 정면 스캔을 시작합니다."
+        : "앞 단계가 완료되면 자동으로 시작됩니다.",
+    metrics: null,
+    progress: 0,
+    qualityScore: 0,
+    samplesCount: 0,
+    status: "idle",
+    targetSamples: SCAN_TARGET_SAMPLES,
+  };
+}
+
+function createInitialScanStates() {
+  return Object.fromEntries(
+    SCAN_STEPS.map((step) => [step, createInitialScanState(step)]),
+  );
+}
+
+function createEmptyStepMap(valueFactory) {
+  return Object.fromEntries(SCAN_STEPS.map((step) => [step, valueFactory()]));
+}
+
+function createScanSessionId() {
+  return crypto.randomUUID?.() ?? `scan_${Date.now()}`;
+}
+
+function getNextStep(step) {
+  const index = SCAN_STEPS.indexOf(step);
+  return SCAN_STEPS[index + 1] ?? null;
+}
 
 function App() {
-  const [scanStarted, setScanStarted] = useState(false);
+  const analysisCanvasRef = useRef(document.createElement("canvas"));
+  const lastSampleAtRef = useRef(createEmptyStepMap(() => 0));
+  const previousLandmarksRef = useRef(createEmptyStepMap(() => null));
+  const scanBundleRef = useRef(null);
+  const scanSamplesRef = useRef(createEmptyStepMap(() => []));
+  const scanSessionIdRef = useRef(createScanSessionId());
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const [activeStep, setActiveStep] = useState("front");
-  const [referenceName, setReferenceName] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const [cameraStatus, setCameraStatus] = useState("idle");
   const [generationStarted, setGenerationStarted] = useState(false);
+  const [referenceName, setReferenceName] = useState("");
+  const [scanRunId, setScanRunId] = useState(0);
+  const [scanStarted, setScanStarted] = useState(false);
+  const [scanStates, setScanStates] = useState(createInitialScanStates);
 
+  const activeScan = scanStates[activeStep];
   const activeStepIndex = useMemo(
     () => SCAN_STEPS.indexOf(activeStep),
     [activeStep],
   );
+  const allStepsComplete = useMemo(
+    () => SCAN_STEPS.every((step) => scanStates[step].status === "complete"),
+    [scanStates],
+  );
 
-  function handleStartScan() {
-    setScanStarted(true);
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, []);
+
+  function stopCameraStream() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  function updateScanState(step, patch) {
+    setScanStates((current) => ({
+      ...current,
+      [step]: {
+        ...current[step],
+        ...patch,
+      },
+    }));
+  }
+
+  function resetScanSession() {
+    lastSampleAtRef.current = createEmptyStepMap(() => 0);
+    previousLandmarksRef.current = createEmptyStepMap(() => null);
+    scanBundleRef.current = null;
+    scanSamplesRef.current = createEmptyStepMap(() => []);
+    scanSessionIdRef.current = createScanSessionId();
+    setScanStates({
+      ...createInitialScanStates(),
+      front: {
+        ...createInitialScanState("front"),
+        instruction: "카메라를 준비하는 중입니다.",
+        status: "loading",
+      },
+    });
+  }
+
+  function buildScanBundle() {
+    const completed = SCAN_STEPS.every(
+      (step) => scanSamplesRef.current[step].length >= SCAN_TARGET_SAMPLES,
+    );
+
+    scanBundleRef.current = {
+      completedAt: completed ? new Date().toISOString() : null,
+      scanSessionId: scanSessionIdRef.current,
+      steps: Object.fromEntries(
+        SCAN_STEPS.map((step) => [
+          step,
+          {
+            progress: Math.min(
+              100,
+              Math.round(
+                (scanSamplesRef.current[step].length / SCAN_TARGET_SAMPLES) *
+                  100,
+              ),
+            ),
+            samples: scanSamplesRef.current[step],
+            status:
+              scanSamplesRef.current[step].length >= SCAN_TARGET_SAMPLES
+                ? "complete"
+                : "pending",
+          },
+        ]),
+      ),
+    };
+  }
+
+  async function handleStartScan() {
     setActiveStep("front");
+    setCameraError("");
+    setCameraStatus("loading");
     setGenerationStarted(false);
+    setScanStarted(true);
+    resetScanSession();
+    setScanRunId((current) => current + 1);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("error");
+      setCameraError("This browser does not support camera access.");
+      updateScanState("front", {
+        error: "camera_not_supported",
+        instruction: "이 브라우저에서는 카메라 접근을 지원하지 않습니다.",
+        status: "error",
+      });
+      return;
+    }
+
+    try {
+      stopCameraStream();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: "user",
+          height: { ideal: 720 },
+          width: { ideal: 1280 },
+        },
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setCameraStatus("active");
+    } catch (error) {
+      stopCameraStream();
+      setCameraStatus("error");
+      setCameraError(
+        error?.name === "NotAllowedError"
+          ? "Camera permission was blocked."
+          : "Camera could not be started.",
+      );
+      updateScanState("front", {
+        error: error?.name ?? "camera_error",
+        instruction: "카메라를 시작하지 못했습니다.",
+        status: "error",
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (!scanStarted || cameraStatus !== "active") {
+      return undefined;
+    }
+
+    if (scanSamplesRef.current[activeStep].length >= SCAN_TARGET_SAMPLES) {
+      return undefined;
+    }
+
+    let animationFrameId = 0;
+    let cancelled = false;
+    let lastAnalysisAt = 0;
+    let lastVideoTime = -1;
+    let nextStepTimeoutId = 0;
+    const currentStep = activeStep;
+
+    async function runScanStep() {
+      updateScanState(currentStep, {
+        instruction: "얼굴 분석 모델을 준비하는 중입니다.",
+        status: "loading",
+      });
+
+      try {
+        const faceLandmarker = await getFaceLandmarker();
+
+        if (cancelled) {
+          return;
+        }
+
+        updateScanState(currentStep, {
+          instruction: SCAN_STEP_CONFIG[currentStep].readyInstruction,
+          status: "scanning",
+        });
+
+        function analyzeNextFrame() {
+          if (cancelled) {
+            return;
+          }
+
+          const video = videoRef.current;
+          const now = performance.now();
+
+          if (
+            video &&
+            video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+            video.currentTime !== lastVideoTime &&
+            now - lastAnalysisAt > 90
+          ) {
+            lastAnalysisAt = now;
+            lastVideoTime = video.currentTime;
+
+            const result = faceLandmarker.detectForVideo(video, now);
+            const frameQuality = measureFrameQuality(
+              video,
+              analysisCanvasRef.current,
+            );
+            const analysis = analyzeScanFrame({
+              frameQuality,
+              previousLandmarks: previousLandmarksRef.current[currentStep],
+              result,
+              step: currentStep,
+            });
+
+            previousLandmarksRef.current[currentStep] =
+              result.faceLandmarks?.[0] ??
+              previousLandmarksRef.current[currentStep];
+
+            let samplesCount = scanSamplesRef.current[currentStep].length;
+
+            if (
+              analysis.isGood &&
+              samplesCount < SCAN_TARGET_SAMPLES &&
+              now - lastSampleAtRef.current[currentStep] > 350
+            ) {
+              const sample = createScanSample({
+                analysis,
+                imageDataUrl: captureVideoFrame(video),
+                sampleIndex: samplesCount,
+                step: currentStep,
+              });
+
+              scanSamplesRef.current[currentStep] = [
+                ...scanSamplesRef.current[currentStep],
+                sample,
+              ];
+              lastSampleAtRef.current[currentStep] = now;
+              samplesCount = scanSamplesRef.current[currentStep].length;
+            }
+
+            const progress = Math.min(
+              100,
+              Math.round((samplesCount / SCAN_TARGET_SAMPLES) * 100),
+            );
+            const isComplete = progress >= 100;
+
+            if (isComplete) {
+              buildScanBundle();
+            }
+
+            updateScanState(currentStep, {
+              error: "",
+              instruction: isComplete
+                ? `${SCAN_STEP_CONFIG[currentStep].label} 완료. 좋은 프레임이 저장됐습니다.`
+                : analysis.instruction,
+              metrics: analysis.metrics,
+              progress,
+              qualityScore: analysis.qualityScore,
+              samplesCount,
+              status: isComplete ? "complete" : "scanning",
+              targetSamples: SCAN_TARGET_SAMPLES,
+            });
+
+            if (isComplete) {
+              const nextStep = getNextStep(currentStep);
+
+              if (nextStep) {
+                nextStepTimeoutId = window.setTimeout(() => {
+                  if (!cancelled) {
+                    setActiveStep(nextStep);
+                  }
+                }, 900);
+              }
+
+              return;
+            }
+          }
+
+          animationFrameId = requestAnimationFrame(analyzeNextFrame);
+        }
+
+        animationFrameId = requestAnimationFrame(analyzeNextFrame);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        updateScanState(currentStep, {
+          error: error?.message ?? "face_model_error",
+          instruction: "얼굴 분석 모델을 불러오지 못했습니다.",
+          status: "error",
+        });
+      }
+    }
+
+    runScanStep();
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animationFrameId);
+      window.clearTimeout(nextStepTimeoutId);
+    };
+  }, [activeStep, cameraStatus, scanRunId, scanStarted]);
+
+  function canOpenStep(step) {
+    if (!scanStarted) {
+      return false;
+    }
+
+    const index = SCAN_STEPS.indexOf(step);
+    return SCAN_STEPS.slice(0, index).every(
+      (previousStep) => scanStates[previousStep].status === "complete",
+    );
   }
 
   function handleGenerate() {
@@ -35,29 +379,101 @@ function App() {
           </p>
         </header>
 
-        <button className="primary-button" type="button" onClick={handleStartScan}>
-          Start Scan
+        <button
+          className="primary-button"
+          disabled={cameraStatus === "loading"}
+          type="button"
+          onClick={handleStartScan}
+        >
+          {cameraStatus === "loading" ? "Starting Camera..." : "Start Scan"}
         </button>
 
-        <section className="preview-panel" aria-label="Camera preview placeholder">
-          <div className="camera-frame">
+        <section className="preview-panel" aria-label="Camera preview">
+          <div className={`camera-frame ${activeStep}`}>
+            <video
+              autoPlay
+              className={
+                cameraStatus === "active"
+                  ? "camera-video visible"
+                  : "camera-video"
+              }
+              muted
+              playsInline
+              ref={videoRef}
+            />
             <div className="face-guide" />
-            <span>{scanStarted ? activeStep : "camera preview"}</span>
+            <span>
+              {allStepsComplete
+                ? "scan complete"
+                : cameraStatus === "active"
+                  ? activeStep
+                  : cameraStatus === "loading"
+                    ? "starting camera"
+                    : "camera preview"}
+            </span>
           </div>
+          {cameraError ? <p className="camera-error">{cameraError}</p> : null}
         </section>
 
+        {scanStarted ? (
+          <section className="scan-panel" aria-label="Scan progress">
+            <div className="scan-panel-heading">
+              <div>
+                <p>{SCAN_STEP_CONFIG[activeStep].label}</p>
+                <strong>{activeScan.progress}%</strong>
+              </div>
+              <span className={`scan-status ${activeScan.status}`}>
+                {activeScan.status}
+              </span>
+            </div>
+            <div className="progress-track">
+              <div style={{ width: `${activeScan.progress}%` }} />
+            </div>
+            <p className="scan-instruction">
+              {allStepsComplete
+                ? "전체 스캔 완료. 베이스모델 생성에 쓸 프레임과 랜드마크가 준비됐습니다."
+                : activeScan.instruction}
+            </p>
+            <div className="scan-metrics">
+              <span>
+                Frames {activeScan.samplesCount}/{activeScan.targetSamples}
+              </span>
+              <span>Quality {Math.round(activeScan.qualityScore * 100)}%</span>
+              <span>
+                Yaw{" "}
+                {activeScan.metrics?.yawProxy !== undefined
+                  ? activeScan.metrics.yawProxy
+                  : "-"}
+              </span>
+            </div>
+          </section>
+        ) : null}
+
         <section className="scan-steps" aria-label="Scan steps">
-          {SCAN_STEPS.map((step, index) => (
-            <button
-              className={index === activeStepIndex ? "step active" : "step"}
-              key={step}
-              type="button"
-              onClick={() => setActiveStep(step)}
-            >
-              <span>{index + 1}</span>
-              {step}
-            </button>
-          ))}
+          {SCAN_STEPS.map((step, index) => {
+            const stepState = scanStates[step];
+            const isActive = index === activeStepIndex;
+            const isComplete = stepState.status === "complete";
+
+            return (
+              <button
+                className={[
+                  "step",
+                  isActive ? "active" : "",
+                  isComplete ? "complete" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={!canOpenStep(step)}
+                key={step}
+                type="button"
+                onClick={() => setActiveStep(step)}
+              >
+                <span>{isComplete ? "✓" : index + 1}</span>
+                {step}
+              </button>
+            );
+          })}
         </section>
 
         <label className="upload-box">
@@ -74,7 +490,7 @@ function App() {
 
         <button
           className="generate-button"
-          disabled={!scanStarted}
+          disabled={!allStepsComplete}
           type="button"
           onClick={handleGenerate}
         >
@@ -83,7 +499,9 @@ function App() {
 
         <section className="result-panel" aria-label="Result image placeholder">
           <div className="result-placeholder">
-            {generationStarted ? "result image placeholder" : "waiting for generate"}
+            {generationStarted
+              ? "result image placeholder"
+              : "waiting for generate"}
           </div>
         </section>
       </section>
@@ -92,4 +510,3 @@ function App() {
 }
 
 export default App;
-
