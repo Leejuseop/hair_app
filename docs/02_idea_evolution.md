@@ -1,24 +1,50 @@
 # Idea Evolution
 
-Hair App starts from a simple observation: hairstyle references are visual, but hairstyle decisions are personal. The same cut can look very different depending on head shape, facial proportions, hairline, and viewing angle.
+Hair App started as a simple mobile web MVP: scan the user, upload a hairstyle reference, and show a generated preview.
 
-## Early Concept
+The direction evolved after discussing quality limits. A direct two-image hair transfer API might accept only:
 
-The first version is a guided mobile web experience:
+- One user photo.
+- One hairstyle reference photo.
+- One generated output.
 
-- Ask the user to scan front, left, right, and hairline views.
-- Ask the user to upload a hairstyle reference image.
-- Generate a personalized preview.
+That is useful for a demo, but it may not leave room for our personal base profile data unless we control the preprocessing, model workflow, or open-source inference code.
 
-## Evolving Direction
+## Current Direction
 
-The system can later evolve from a single-use generator into a reusable personal profile:
+The project is now moving toward this pipeline:
 
-- Build a base profile from scans.
-- Reuse the profile across many hairstyle references.
-- Improve results over time as scan quality and model quality improve.
+1. Guided scan creates a personal base profile.
+2. The base profile stores raw landmarks, best frames, derived metrics, and synthesis anchors.
+3. Open-source hairstyle synthesis models are tested in Colab.
+4. The chosen model is modified or wrapped so it can use our scan-derived data.
+
+The base profile is not the final 3D avatar. It is the first structured user representation that future synthesis experiments can consume.
+
+## Why Not Only a Generic API
+
+A closed third-party API may not let us inject:
+
+- Landmark constraints.
+- Hairline anchor points.
+- Face masks.
+- Side-profile information.
+- Scan quality data.
+- Custom preprocessing steps.
+
+Because of that, the preferred direction is to test open-source hair transfer models and tune or modify them directly.
+
+## Current Model Priority
+
+Performance-first research priority:
+
+1. `StableHairV2` / `HairPort`
+2. `Stable-Hair`
+3. `HairFusion`
+4. `HairFastGAN`
+
+`StableHairV2` and `HairPort` look closest to the long-term high-quality direction. `Stable-Hair` is likely a strong practical candidate for early Colab experiments. `HairFastGAN` remains useful as a fast baseline, but probably not the highest-quality final path.
 
 ## Current Decision
 
-The initial MVP should stay intentionally small. It should validate the product flow, not solve the full AI problem in the first iteration.
-
+Keep the web MVP simple, but make the scan/base-profile data real. Do not build the full synthesis engine yet. First, validate the scan data and then test which open-source model can be adapted to use that data.

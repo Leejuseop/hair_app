@@ -1,18 +1,42 @@
 # Problem Definition
 
-People often choose hairstyles from reference images, but it is difficult to know whether a style will fit their own face, head shape, hairline, and proportions.
+People choose hairstyles from reference images, but it is hard to know whether a hairstyle will fit their own face, head shape, side profile, and hairline.
 
-Most hairstyle preview tools are either too generic or rely on a single flat selfie. A single image is not enough to capture the structure needed for convincing, personalized synthesis.
+Most hairstyle preview tools rely on a single selfie. A single photo can work for a rough demo, but it gives weak information about:
 
-Hair App focuses on a guided scan flow that can collect consistent views and turn them into a personal base model for hairstyle preview.
+- Face proportions.
+- Jaw and cheek contour.
+- Hairline position.
+- Forehead visibility.
+- Left and right side profile.
+- Pose and scale consistency.
+
+Hair App is based on the assumption that a guided scan can provide stronger personal context than one flat image. The scan does not replace the final synthesis model, but it can provide useful conditioning data for alignment, masking, anchoring, and quality control.
 
 ## Target User Need
 
 - Preview a hairstyle before committing to a salon visit.
-- Compare reference styles against personal facial structure.
-- Reduce uncertainty around hairline, side profile, and face shape fit.
+- Compare reference hairstyles against personal facial structure.
+- Reduce uncertainty around hairline, face shape, and side-profile fit.
+- Get a result that feels more personal than a generic two-image hair transfer demo.
 
-## MVP Problem Statement
+## Product Hypothesis
 
-Create a lightweight mobile web flow that prepares the product experience and API boundaries for future personalized hairstyle synthesis.
+If the app collects a structured face scan first, the later hair synthesis engine can use more reliable user-specific information:
 
+- Where the user's face landmarks are.
+- Where the approximate hairline and forehead area are.
+- How the face looks from the front and sides.
+- Which frame is sharp, centered, and stable enough to use.
+
+This should improve synthesis preparation even if the first generation engine is an open-source model that needs extra preprocessing or tuning.
+
+## Current MVP Problem Statement
+
+Build a mobile web flow that can:
+
+1. Guide the user through a four-step face scan.
+2. Collect good frames and landmark data automatically.
+3. Store the scan bundle on the backend.
+4. Generate a reusable personal base profile.
+5. Prepare the project for later hair synthesis experiments.
