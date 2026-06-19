@@ -69,12 +69,14 @@ Still placeholder:
 
 ## Hair Synthesis Direction
 
-The next major technical step is testing open-source hairstyle transfer models in Colab. Current performance-first priority:
+The next major technical step is testing open-source hairstyle transfer models in Colab. StableHairV2 was tested first and is now deprioritized for the current MVP because normal portrait inputs produced poor identity preservation and heavy artifacts.
 
-1. `StableHairV2` / `HairPort`
-2. `Stable-Hair`
-3. `HairFusion`
-4. `HairFastGAN`
+Current near-term baseline priority:
+
+1. `Stable-Hair`
+2. `HairFusion`
+3. `HairFastGAN`
+4. `HairPort`
 
 The first experiments should focus on whether these models can accept or be modified to use masks, landmarks, hairline anchors, and personal base profile data.
 
@@ -90,6 +92,7 @@ hair_app/
     04_scan_pipeline.md
     05_base_model_design.md
     06_hair_synthesis_pipeline.md
+    07_hair_engine_experiment_plan.md
   frontend/
     index.html
     package.json

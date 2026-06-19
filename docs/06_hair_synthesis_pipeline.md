@@ -41,12 +41,14 @@ Not implemented:
 
 ## Model Research Priority
 
-Performance-first candidate order:
+StableHairV2 was tested first. The original baseline ran in Colab after dependency and script patches, but normal portrait inputs produced poor identity preservation and severe artifacts. It is no longer the immediate MVP candidate.
 
-1. `StableHairV2` / `HairPort`
-2. `Stable-Hair`
-3. `HairFusion`
-4. `HairFastGAN`
+Updated near-term candidate order:
+
+1. `Stable-Hair`
+2. `HairFusion`
+3. `HairFastGAN`
+4. `HairPort`
 
 The immediate next experiment should run these models in Colab, starting with the best practical candidate and comparing:
 
@@ -97,3 +99,5 @@ First practical pipeline:
 ## Next Work
 
 The next code-facing milestone is not to build a custom model from scratch. It is to create a controlled Colab experiment for the top candidate models, document input/output requirements, and identify where our scan bundle can be injected.
+
+The active experiment plan is tracked in `docs/07_hair_engine_experiment_plan.md`. StableHairV2 is recorded there as a completed baseline experiment, and the next planned baseline is Stable-Hair.

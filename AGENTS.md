@@ -25,12 +25,14 @@ The current foundation is:
 - Personal `base_profile.json` generation.
 - Base profile preview in the frontend.
 
-The next major direction is open-source hair synthesis model experimentation. Current performance-first priority:
+The next major direction is open-source hair synthesis model experimentation. StableHairV2 was tested first and is currently deprioritized for the MVP because normal portrait inputs produced poor identity preservation and heavy artifacts.
 
-1. `StableHairV2` / `HairPort`
-2. `Stable-Hair`
-3. `HairFusion`
-4. `HairFastGAN`
+Current near-term priority:
+
+1. `Stable-Hair`
+2. `HairFusion`
+3. `HairFastGAN`
+4. `HairPort`
 
 ## Implementation Rules
 
