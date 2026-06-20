@@ -71,6 +71,30 @@ This is the current technical direction. Real synthesis is not implemented in th
 - The Tencent Hunyuan Community License explicitly excludes South Korea from its licensed territory.
 - Keep it as a quality reference only; do not select it as the Hair App implementation or fine-tuning base under the current license and infrastructure constraints.
 
+## Desk-Research Scoring (Non-Benchmark, 2026-06)
+
+The following 1-10 scores compare the user-requested subset from public documentation only. They are desk research, not the Phase 1 controlled benchmark, and do not replace the Hair App-specific test below.
+
+Scale direction:
+
+- Performance: higher is better (10 = best quality/capability for the portrait + hairstyle-reference + instruction shape).
+- Tuning difficulty: higher is harder (lower is more favorable).
+- GPU requirement: higher is heavier (lower is more favorable).
+
+| Model | Performance (higher = better) | Tuning difficulty (higher = harder) | GPU requirement (higher = heavier) |
+| --- | :---: | :---: | :---: |
+| Qwen-Image-Edit-2511 (20B) | 9 | 5 | 8 |
+| FLUX.2 [klein] 4B | 6 | 3 | 2 |
+| HiDream-O1-Image (8B) | 8 | 6 | 5 |
+
+Notes:
+
+- Qwen-Image-Edit-2511: strongest native multi-image editing match and the most mature LoRA ecosystem (DiffSynth-Studio), but the heaviest model (~40 GB full precision; 12-24 GB only with quantization).
+- FLUX.2 [klein] 4B: smallest and cheapest to fine-tune (Apache 2.0 base built for LoRA), runs on 8 GB-class GPUs, but a lower raw quality ceiling. "FLUX.2" varies widely by variant: `dev` 32B would score higher on performance but needs 141 GB+ (H200/B200); `klein` 9B sits in between.
+- HiDream-O1-Image: pixel-native unified transformer with layout/skeleton controls useful for scan-derived conditioning; newer and less proven for the exact portrait + hairstyle-reference shape, mid-weight (~24 GB full, ~10 GB FP8).
+
+These are June 2026 figures from model cards and hardware guides; re-verify exact VRAM numbers before relying on them.
+
 ## Recommended Experiment Order
 
 ### Phase 1: Untuned Quality Benchmark
