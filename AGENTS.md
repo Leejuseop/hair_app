@@ -12,6 +12,15 @@ This project is expected to evolve over a long period. Keep documentation aligne
 - If a change does not require documentation updates, mention that explicitly in the final response.
 - Documentation should describe the current implementation clearly and separate it from future plans.
 
+## New-Chat Handoff Rule
+
+`newchat.md` is the compact handoff file for continuing this project in a fresh AI chat.
+
+- Read `AGENTS.md` and `newchat.md` before starting substantial work in a new chat.
+- Update `newchat.md` whenever implementation status, product direction, model experiments, major blockers, or the immediate next step changes.
+- Keep `newchat.md` concise and link to detailed docs instead of copying long experiment logs.
+- Record whether important changes are committed and pushed so a new chat does not overwrite intentional working-tree changes.
+
 ## Current Product Direction
 
 Hair App is a mobile web MVP for personalized hairstyle synthesis.
@@ -25,20 +34,23 @@ The current foundation is:
 - Personal `base_profile.json` generation.
 - Base profile preview in the frontend.
 
-The next major direction is open-source hair synthesis model experimentation. StableHairV2 was tested first and is currently deprioritized for the MVP because normal portrait inputs produced poor identity preservation and heavy artifacts.
+The next major direction is a high-performance general image-editing foundation model combined with Hair App-specific identity preservation, hair masks, landmarks, hairline anchors, and output validation. Hair-only research models are no longer the primary MVP path. StableHairV2 remains documented as a completed negative baseline.
 
 Current near-term priority:
 
-1. `Stable-Hair`
-2. `HairFusion`
-3. `HairFastGAN`
-4. `HairPort`
+1. Benchmark `Qwen-Image-Edit-2511` and `HiDream-O1-Image` with the same portrait and hairstyle-reference inputs.
+2. Benchmark `FLUX.2 [klein] Base 4B` and `LongCat-Image-Edit` as practical adaptation candidates.
+3. Select one model using Hair App-specific identity, hairstyle, hairline, and artifact scores.
+4. Start with LoRA or editing SFT before considering architecture changes.
+
+`HunyuanImage-3.0-Instruct` is not an active candidate: its official recommendation is eight 80 GB GPUs, and its community license excludes South Korea from the licensed territory.
 
 ## Implementation Rules
 
 - Keep the implementation simple and MVP-focused unless the user asks for a broader build.
 - Prefer existing project patterns over introducing new abstractions.
-- Do not implement real AI synthesis until the model experiment direction is explicitly chosen.
+- Do not wire a production synthesis route until a baseline model wins the controlled benchmark.
+- Treat masks, landmarks, and the base profile as Hair App controls around or inside the foundation model; do not assume every model accepts them natively.
 - Keep placeholder routes clearly labeled as placeholders.
 - Preserve raw scan/landmark data when possible; summaries should not replace detailed data.
 - Treat `backend/storage/` as local runtime data that should stay out of git.

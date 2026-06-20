@@ -29,7 +29,7 @@ If the app collects a structured face scan first, the later hair synthesis engin
 - How the face looks from the front and sides.
 - Which frame is sharp, centered, and stable enough to use.
 
-This should improve synthesis preparation even if the first generation engine is an open-source model that needs extra preprocessing or tuning.
+This should improve synthesis preparation even when the generation engine is a general open-weight image editor that does not natively understand Hair App's scan JSON.
 
 ## Current MVP Problem Statement
 
@@ -40,3 +40,5 @@ Build a mobile web flow that can:
 3. Store the scan bundle on the backend.
 4. Generate a reusable personal base profile.
 5. Prepare the project for later hair synthesis experiments.
+
+The current synthesis hypothesis is to combine a high-performance general image-editing foundation model with Hair App-specific preprocessing and validation. Hair-only research models are retained as references, not the primary MVP direction.

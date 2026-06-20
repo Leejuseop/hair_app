@@ -1,10 +1,10 @@
 # Hair Engine Experiment Plan
 
-This document tracks the plan for testing open-source hair synthesis engines before integrating any model into Hair App.
+This document preserves the hair-specific model experiment history, including the reproducible StableHairV2 Colab run. It is no longer the active model-selection plan.
 
-The immediate goal is to run original baseline models without tuning, compare output quality, then choose the best engine for project-specific adaptation.
+The active direction has moved to general image-editing foundation models with Hair App-specific identity, mask, landmark, and hairline controls. See `docs/08_general_image_editing_strategy.md`.
 
-## Current Priority
+## Historical Priority At The Time Of The Experiment
 
 Original performance-first candidate order:
 
@@ -13,9 +13,9 @@ Original performance-first candidate order:
 3. `HairFusion`
 4. `HairFastGAN`
 
-StableHairV2 was tested first and is now deprioritized for the current MVP input style. The next baseline candidate is `Stable-Hair`.
+StableHairV2 was tested first and is now deprioritized for the current MVP input style. The remaining list below records the planned order at that time and is not the active execution order.
 
-Updated near-term candidate order:
+Historical follow-up order:
 
 1. `Stable-Hair`
 2. `HairFusion`
@@ -232,7 +232,7 @@ Decision:
 
 - Do not continue StableHairV2 as the immediate MVP engine.
 - Keep the record because it may be useful later if we build a bald-conversion or 3D/multi-view pipeline.
-- Move next to `Stable-Hair`, then compare against `HairFusion` and `HairFastGAN`.
+- At the time of this experiment, the planned next step was `Stable-Hair`. That decision was later replaced by the general image-editing strategy in `docs/08_general_image_editing_strategy.md`.
 
 ## StableHairV2 One-Pass Colab Recipe
 
@@ -425,17 +425,4 @@ StableHairV2 can be revisited later if Hair App moves toward:
 
 ## Next Project Step
 
-Next baseline target: `Stable-Hair`.
-
-Reason:
-
-- It is the direct v1 model behind the StableHairV2 line.
-- It is designed as a two-stage image hair transfer pipeline.
-- The official repository includes stage inference, pretrained weights, and training code.
-- It may be easier to evaluate for still-image MVP quality than StableHairV2.
-
-After `Stable-Hair`, compare:
-
-1. `HairFusion`
-2. `HairFastGAN`
-3. `HairPort`
+Do not continue directly to `Stable-Hair`. Run the general image-editing benchmark defined in `docs/08_general_image_editing_strategy.md` first. Hair-specific models remain available as research references if a later experiment needs an explicit hair-transfer architecture.

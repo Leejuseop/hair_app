@@ -111,6 +111,18 @@ These anchors can help later with:
 - preserving forehead and hairline constraints.
 - checking whether output hair crosses important facial areas.
 
+## Planned Foundation-Model Integration
+
+The profile is not expected to be passed directly to a general image editor as raw JSON. The planned synthesis pipeline will translate it into:
+
+- best source-frame selection.
+- hair, face, and protected-region masks.
+- hairline or landmark control images.
+- layout and pose conditioning when supported.
+- identity and landmark validation scores after generation.
+
+Raw landmarks remain valuable because the exact control format will depend on the model selected by the upcoming benchmark.
+
 ## Preview
 
 `preview` supports the current frontend base profile panel:

@@ -21,9 +21,11 @@ The product combines three layers:
 
 - Guided scanning: collect consistent face views instead of relying on one random selfie.
 - Personal base profile: preserve raw landmarks, best frames, derived face metrics, hairline guide points, and synthesis anchors.
-- Hairstyle synthesis: use the base profile as extra conditioning data when testing open-source hair transfer models.
+- Hairstyle synthesis: adapt a high-performance general image-editing model with identity preservation, hair masks, landmarks, and hairline controls.
 
 This should help future synthesis models understand the user's face structure, hairline context, and side-profile cues better than a single input photo alone.
+
+The base profile is not sent to a foundation model as raw JSON by default. Its detailed data is converted into practical controls such as frame selection, masks, hairline guides, layout inputs, and post-generation identity checks.
 
 ## Current MVP Scope
 
@@ -69,16 +71,29 @@ Still placeholder:
 
 ## Hair Synthesis Direction
 
-The next major technical step is testing open-source hairstyle transfer models in Colab. StableHairV2 was tested first and is now deprioritized for the current MVP because normal portrait inputs produced poor identity preservation and heavy artifacts.
+The project now prioritizes high-performance general image editing over hair-only research models. StableHairV2 proved that a specialized paper model can run successfully while still being a poor product fit: normal portraits lost identity and produced severe artifacts.
 
-Current near-term baseline priority:
+The next controlled Colab benchmark will compare `Qwen-Image-Edit-2511`, `HiDream-O1-Image`, `FLUX.2 [klein] Base 4B`, and `LongCat-Image-Edit`. The first two are quality and multi-reference candidates; the latter two are especially interesting for practical fine-tuning and training-code access.
 
-1. `Stable-Hair`
-2. `HairFusion`
-3. `HairFastGAN`
-4. `HairPort`
+Hair App-specific value will come from the pipeline around the foundation model:
 
-The first experiments should focus on whether these models can accept or be modified to use masks, landmarks, hairline anchors, and personal base profile data.
+- select the best source frame from the scan bundle.
+- create face, hair, and protected-region masks.
+- provide the portrait and hairstyle reference as separate inputs when supported.
+- preserve identity with face similarity and landmark checks.
+- enforce hairline anchors and copy protected pixels back when appropriate.
+- fine-tune with LoRA or editing SFT after a baseline model wins.
+
+Current experiment state:
+
+- `StableHairV2`: executed successfully in Colab, but normal portraits produced severe artifacts and weak identity preservation.
+- `FLUX.1 Kontext [dev]`: informally tested through a Hugging Face Space; the observed result was not strong enough to select it.
+- `Qwen-Image-Edit-2511` and `HiDream-O1-Image`: selected for the next controlled baseline and not yet run in Colab.
+- `HunyuanImage-3.0-Instruct`: technically capable, but excluded because of its eight-H100 recommendation and South Korea license exclusion.
+
+## Continue In A New Chat
+
+Read `AGENTS.md` and `newchat.md` first. `newchat.md` contains the compact current state, decisions, known experiment results, Git status, and immediate next step.
 
 ## Project Structure
 
@@ -93,6 +108,8 @@ hair_app/
     05_base_model_design.md
     06_hair_synthesis_pipeline.md
     07_hair_engine_experiment_plan.md
+    08_general_image_editing_strategy.md
+  newchat.md
   frontend/
     index.html
     package.json
