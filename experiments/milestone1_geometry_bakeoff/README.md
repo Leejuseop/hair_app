@@ -4,6 +4,20 @@ Created: 2026-06-21
 Status: experiment starter; no result recorded yet
 Source of truth for the plan: `docs/10_3d_hair_app_master_plan.md` (Milestone 1), `newchat.md` (Immediate Next Step)
 
+## Progress / Resume (2026-06-21)
+
+`pixel3dmm_colab.ipynb`로 A100에서 실제 실행하며 잡은 fix가 노트북에 반영돼 있다. 다음에 이어서 시작할 지점:
+
+- ✅ **검증 완료(노트북에 반영됨):**
+  - 환경 빌드: CUDA 11.8 toolkit(`cuda-nvcc` + dev libs) 설치 후 `pytorch3d`/`nvdiffrast`를 `--no-build-isolation`으로 빌드, `TORCH_CUDA_ARCH_LIST=8.0+PTX`(A100).
+  - 전처리 설치: 공식 스크립트의 **SSH clone이 Colab에서 실패** → `facer`/`PIPNet`을 **HTTPS**로 설치, FaceBoxes 빌드에 **Cython** 필요, `uv.ckpt`/`normals.ckpt`를 올바른 위치(`/content/pixel3dmm/pretrained_weights`)로.
+  - 경로: 전처리 출력 폴더명 = 입력 폴더 basename이므로 `VID_NAME`을 `os.path.basename(INPUT_PATH)`로 자동 도출(=`inputs`).
+  - facer segmentation: `farl.py`의 인덱스를 `.long()`으로 캐스팅(torch 호환). → cropping + segmentation 통과 확인.
+- ⚠️ **다음에 검증할 지점(미완료):**
+  - `network_inference`(8번) → `track.py`(9번) end-to-end.
+  - **FLAME 다운로드(4-3)** — Colab에서 7997바이트 HTML만 받아진 정황. tracking 전에 FLAME이 제대로 설치됐는지 확인 필요(https://flame.is.tue.mpg.de 계정/동의).
+  - 성공 시 10번(3D 미리보기) → 11번(Drive 저장) → `scoring_sheet.csv` 기록.
+
 이 폴더는 Hair App의 **첫 3D 실험**인 민머리 head geometry bake-off를 Colab H100에서 재현하기 위한 starter다. 코드를 더 만들기 전에 *"Pixel3DMM 또는 KaoLRM이 사용자의 다중 사진에서 쓸만한 hairless head mesh를 만드는가"*라는 핵심 가설을 검증하는 것이 목적이다.
 
 이 starter의 명령들은 2026-06-21 기준 공식 저장소 README에서 가져왔지만, **Colab/PyTorch/CUDA dependency는 자주 바뀌므로 실제 실행에서 깨질 수 있다.** 깨지면 `docs/07_hair_engine_experiment_plan.md`가 StableHairV2로 했던 것처럼, 실제로 통과한 exact version과 fix를 run manifest에 기록한다.
