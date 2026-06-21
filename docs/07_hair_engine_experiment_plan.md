@@ -1,8 +1,20 @@
-# Hair Engine Experiment Plan
+# Historical Hair Engine Experiment: StableHairV2
 
-This document preserves the hair-specific model experiment history, including the reproducible StableHairV2 Colab run. It is no longer the active model-selection plan.
+Last synchronized: 2026-06-21
+Status: retained historical experiment and reproducible recipe; not the active 3D model-selection plan
 
-The active direction has moved to general image-editing foundation models with Hair App-specific identity, mask, landmark, and hairline controls. See `docs/08_general_image_editing_strategy.md`.
+이 문서는 StableHairV2를 실제 Colab에서 실행한 과정, 수정 사항, 실패 결과를 보존한다. 같은 시행착오를 반복하지 않기 위해 유지하지만 현재 Hair App의 core architecture를 설명하지 않는다.
+
+현재 방향은 editable head mesh + multi-photo face UV + independent strand hair + geometric fitting이다. 상세 기준은 `10_3d_hair_app_master_plan.md`, active 3D hair candidate는 `06_hair_synthesis_pipeline.md`를 본다. General image editing은 `08_general_image_editing_strategy.md`의 보조·fallback 경로로 재분류됐다.
+
+StableHairV2는 현재 core가 아니지만 다음 경우 reference 가치가 남는다.
+
+- hair-cleared 또는 textured hairless personal head render가 준비된 뒤의 multi-view comparison;
+- 3D pipeline 결과와 2D/multi-view visual quality 비교;
+- bald-conversion 또는 appearance refinement 연구;
+- 과거 dependency와 Colab 재현 문제 참고.
+
+아래 recipe와 판단은 실험 당시 기록이며 최신 3D 계획을 덮어쓰지 않는다.
 
 ## Historical Priority At The Time Of The Experiment
 
@@ -232,7 +244,7 @@ Decision:
 
 - Do not continue StableHairV2 as the immediate MVP engine.
 - Keep the record because it may be useful later if we build a bald-conversion or 3D/multi-view pipeline.
-- At the time of this experiment, the planned next step was `Stable-Hair`. That decision was later replaced by the general image-editing strategy in `docs/08_general_image_editing_strategy.md`.
+- At the time of this experiment, the planned next step was `Stable-Hair`. That decision was later replaced by the general image-editing strategy and then by the true 3D plan recorded in `10_3d_hair_app_master_plan.md`.
 
 ## StableHairV2 One-Pass Colab Recipe
 
@@ -423,6 +435,8 @@ StableHairV2 can be revisited later if Hair App moves toward:
 - 3D-aware face/hair synthesis.
 - scan-driven source preprocessing.
 
-## Next Project Step
+## Current Reuse Decision
 
-Do not continue directly to `Stable-Hair`. Run the general image-editing benchmark defined in `docs/08_general_image_editing_strategy.md` first. Hair-specific models remain available as research references if a later experiment needs an explicit hair-transfer architecture.
+StableHairV2를 다음 active step으로 이어가지 않는다. 현재 다음 실험은 Pixel3DMM/KaoLRM geometry bake-off와 direct UV prototype이며, 3D hair stage에서는 DiffLocks·Im2Haircut·UniHair를 비교한다.
+
+StableHairV2를 다시 실행하는 경우에도 이 문서의 recipe를 출발점으로 사용하되, Colab/PyTorch/Hugging Face dependency가 변경됐을 수 있으므로 exact version과 output을 새 run manifest에 기록한다. 모델 선택은 언제든 새 결과에 따라 재검토할 수 있다.

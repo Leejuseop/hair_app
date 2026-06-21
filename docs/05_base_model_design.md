@@ -1,40 +1,46 @@
-# Base Model Design
+# Personal Base Model Design
 
-The current "base model" is implemented as a personal base profile JSON. It is not a full 3D head model yet.
+Last synchronized: 2026-06-21
+Status: current `base_profile.json` plus future versioned 3D personal asset design
 
-The profile is designed to preserve user-specific scan data in a reusable structure that can later support hair synthesis, preprocessing, masking, alignment, and model conditioning.
+## Terminology
+
+이 문서에서 혼동을 피하기 위해:
+
+- **Current base profile:** 현재 구현된 `base_profile.json` version `0.1`.
+- **3D personal head:** 미래에 생성할 editable hairless mesh와 cameras/parameters.
+- **Face appearance:** user photos에서 만든 UV/material maps.
+- **Personal base asset:** 3D head + face appearance + hairline/confidence/manifest. Hairstyle은 포함하지 않는다.
+
+현재 base profile은 3D model이 아니다.
 
 ## Current Implementation
 
-Implemented in `ai_engine/base_profile.py`:
+`ai_engine/base_profile.py`:
 
 ```python
 build_base_profile(scan_record)
 ```
 
-The backend calls this after saving a scan bundle. The output is written to:
+Backend가 scan bundle 저장 후 호출하며 결과는 다음에 저장한다.
 
 ```text
 backend/storage/scans/{scan_id}/base_profile.json
 ```
 
-## Inputs
-
-The base profile is built from the stored scan record:
+### Current Inputs
 
 - `scan_id`
-- client scan session id
+- client scan session ID
 - upload timestamp
 - scan step data
-- stored frame image URLs
+- stored frame URLs
 - compact MediaPipe landmarks
 - selected key points
 - quality metrics
 - pose proxies
 
-## Output Sections
-
-The current `base_profile.json` contains:
+### Current Output
 
 - `scan_id`
 - `version`
@@ -45,105 +51,147 @@ The current `base_profile.json` contains:
 - `synthesis_anchors`
 - `preview`
 
-## Assets
-
-`assets` stores the best image from each scan step:
+### Current Assets
 
 - `best_front_image`
 - `best_left_image`
 - `best_right_image`
 - `best_hairline_image`
 
-Each asset includes:
+각 asset은 sample ID, path, URL, quality score를 가진다.
 
-- sample id
-- image path
-- image URL
-- quality score
+### Raw Landmark Samples
 
-## Raw Landmark Samples
+원본에 가까운 per-sample landmarks, key points, pose, quality를 보존한다. Summary metric이 raw evidence를 대체하면 안 된다.
 
-`raw_landmark_samples` intentionally keeps detailed per-sample data instead of only storing a small summary.
+### Derived Metrics and Anchors
 
-This matters because later synthesis experiments may need the original landmark points, not just averaged metrics.
+현재 metric은 face width/height/ratio, jaw proxy, forehead/hairline visibility, side profile, symmetry 등이다. Anchor는 centerline, approximate hairline, jaw, temples를 포함한다.
 
-Each raw sample keeps:
+이 값은 현재 2D preview와 future preprocessing에 유용하지만 고정밀 3D geometry truth로 취급하지 않는다.
 
-- sample id
-- image path and URL
-- selected key points
-- compact face landmarks
-- pose data
-- quality metrics
+## Future Personal Base Asset
 
-## Derived Metrics
+3D pipeline이 구현되면 `base_profile.json`을 무리하게 거대한 binary container로 만들지 않는다. JSON은 manifest와 metadata를 가리키고 mesh, texture, confidence map은 별도 versioned files로 둔다.
 
-`derived_metrics` is a convenience layer for quick preview and later model preparation.
+예상 구조:
 
-Current metrics include:
+```text
+backend/storage/users/{user_id}/personal_heads/{head_id}/
+  manifest.json
+  accepted_inputs.json
+  cameras.json
+  flame_params.npz
+  head_mesh.glb
+  head_mesh.obj                 # research export, optional
+  hairline.json
+  geometry_confidence.npy
+  base_color.png
+  observed_base_color.png
+  uv_coverage.png
+  uv_confidence.npy
+  normal.png                    # optional later
+  roughness.png                 # optional later
+  material.json
+  reconstruction_report.json
+  previews/
+```
 
-- average quality by scan step
-- face width
-- face height
-- face ratio
-- jaw width proxy
-- mouth symmetry proxy
-- forehead height proxy
-- hairline visibility proxy
-- left/right side profile metrics
-- side symmetry proxy
+실제 path와 schema는 구현 전까지 확정이 아니다.
 
-These metrics do not replace the raw landmarks. They are summaries built on top of them.
+## Planned Manifest
 
-## Synthesis Anchors
+`manifest.json`은 최소한 다음을 추적해야 한다.
 
-`synthesis_anchors` exposes important points for future hairstyle synthesis:
+- artifact and schema version;
+- source scan ID와 source photo IDs;
+- user star selections;
+- accepted/rejected images and reasons;
+- code commit and pipeline version;
+- model/weight versions and licenses;
+- Pixel3DMM/KaoLRM/VGGT config;
+- head topology and UV topology version;
+- output file hashes;
+- parent artifact IDs;
+- geometry/texture confidence summary;
+- observed/generated region ratio;
+- runtime, GPU, warnings, failures;
+- created/updated/deletion timestamps.
 
-- face centerline
-- hairline guide
-- jaw guide
-- temple points
+## Head Geometry Contract
 
-These anchors can help later with:
+첫 contract 가설:
 
-- aligning generated hair to the face.
-- building masks.
-- preserving forehead and hairline constraints.
-- checking whether output hair crosses important facial areas.
+- editable triangle mesh;
+- stable FLAME-compatible or explicitly mapped topology;
+- consistent world units and coordinate axes;
+- UV coordinates;
+- named regions: face, scalp, ears, neck, eyes boundaries;
+- camera transforms for every accepted input;
+- hairline curve in mesh/scalp coordinates;
+- per-vertex or per-surface confidence;
+- neutral expression version separated from source expressions.
 
-## Planned Foundation-Model Integration
+Pixel3DMM 결과가 이 contract를 완전히 만족하지 않으면 conversion layer를 만든다. 특정 모델의 internal tensor를 앱 전체에서 직접 참조하지 않는다.
 
-The profile is not expected to be passed directly to a general image editor as raw JSON. The planned synthesis pipeline will translate it into:
+## Face Texture Contract
 
-- best source-frame selection.
-- hair, face, and protected-region masks.
-- hairline or landmark control images.
-- layout and pose conditioning when supported.
-- identity and landmark validation scores after generation.
+- unmodified or minimally normalized observed texture layer;
+- render-ready base color;
+- observed coverage mask;
+- confidence map;
+- generated/completed region mask;
+- color-space and resolution metadata;
+- source-photo contribution metadata;
+- optional normal, roughness, specular maps.
 
-Raw landmarks remain valuable because the exact control format will depend on the model selected by the upcoming benchmark.
+AI completion이 observed pixels를 몰래 덮어쓰지 않도록 layer와 mask를 분리한다.
 
-## Preview
+## Hairline Contract
 
-`preview` supports the current frontend base profile panel:
+Hairline은 단순 2D landmark proxy보다 풍부해야 한다.
 
-- representative front image URL
-- front sample id
-- hairline points
-- front landmarks
-- quality score
+- 3D curve on scalp;
+- per-point confidence;
+- source image visibility;
+- temple anchors;
+- left/right asymmetry;
+- observed versus inferred segments;
+- optional user correction history.
 
-The frontend draws the image, landmark dots, and hairline polyline so the user can see that the scan created real structured output.
+Hair fitting은 이 curve를 hard constraint가 아니라 style-aware constraint로 사용한다. 앞머리가 hairline을 덮는 style도 있기 때문이다.
 
-## Future Base Model Direction
+## Confidence and Uncertainty
 
-Possible next versions:
+Personal base asset은 결과만 저장하지 말고 uncertainty를 저장해야 한다.
 
-- Better face and head measurements.
-- Hairline segmentation instead of landmark proxy only.
-- Multi-frame averaging and outlier rejection.
-- More reliable side-profile metrics.
-- Optional user-uploaded selfie/video data.
-- 3D head or avatar reconstruction experiments.
+- photographed and strongly constrained face region;
+- pulled-back scan에서 visible한 scalp/hairline;
+- multi-view but weakly constrained region;
+- model-prior-only crown/rear scalp;
+- direct observed UV;
+- blended UV;
+- generatively completed UV.
 
-The current profile should stay simple, but it should preserve enough raw data so later experiments are not blocked.
+이 정보는 recapture, model training, user warning, fitting weight에 재사용한다.
+
+## Reuse Principle
+
+Personal base asset은 hairstyle과 독립적이어야 한다.
+
+- user가 다른 style을 시도할 때 head/UV를 재생성하지 않는다.
+- geometry 또는 texture model이 개선되면 새로운 `head_id` version을 만든다.
+- old hairstyle fits가 어느 head version을 사용했는지 추적한다.
+- full reconstruction이 실패해도 raw scan과 current base profile을 보존한다.
+
+## Evolution Plan
+
+Possible versions:
+
+- `0.1`: current structured 2D base profile.
+- `0.2`: multi-selfie metadata, star flags, enhanced quality/segmentation.
+- `0.3`: first research head mesh and cameras.
+- `0.4`: direct observed UV and coverage/confidence.
+- `1.0`: validated reusable personal head contract used by the app.
+
+Version numbering is illustrative and can change. Schema changes must be documented and old artifacts must not be silently interpreted as new ones.

@@ -1,111 +1,280 @@
-# Hair Synthesis Pipeline
+# 3D Hair Synthesis and Fitting Pipeline
 
-The hair synthesis pipeline is not implemented yet.
+Last synchronized: 2026-06-21
+Status: planned research pipeline; not implemented and not frozen
 
-The current project has completed the first foundation: scan collection, backend storage, and personal base profile generation. The next step is to evaluate high-performance open-weight image-editing models and build Hair App-specific controls around the best foundation.
+## Purpose
 
-## Intended Product Flow
+이 문서는 hairstyle reference에서 independent 3D hair를 만들고 personal head에 맞추는 부분을 상세히 설명한다. 전체 product architecture와 head/UV 계획은 `10_3d_hair_app_master_plan.md`를 기준으로 한다.
 
-Long-term user flow:
+현재 repository에는 실제 hair reconstruction, strand export, fitting, collision, GLB build가 없다. `POST /api/generate`와 result route는 placeholder다.
 
-1. User completes a guided scan.
-2. The backend creates a personal base profile.
-3. User uploads a hairstyle reference image.
-4. The synthesis engine uses:
-   - user photo or best scan frame
-   - hairstyle reference image
-   - face landmarks
-   - hairline anchors
-   - masks or segmentation maps
-   - base profile metrics
-5. The engine generates a personalized hairstyle preview.
-6. The app post-processes and returns the final image.
+## Target Flow
 
-## Current Implementation Status
+```text
+hairstyle reference image(s)
+  -> input analysis and masks
+  -> 3D hairstyle reconstruction
+  -> canonical strand representation
+  -> source-to-user scalp correspondence
+  -> hairline-aware deformation
+  -> collision correction
+  -> validation renders
+  -> master strands + mobile hair cards
+```
 
-Implemented:
+## Stage 1: Hairstyle Input
 
-- Scan bundle collection.
-- Backend scan storage.
-- `base_profile.json` generation.
-- Placeholder API routes for style reference, generation, and result lookup.
+### Preferred Inputs
 
-Not implemented:
+- front style view;
+- left/right three-quarter or profile;
+- rear view;
+- clean background when possible;
+- enough resolution to see strand flow and silhouette;
+- optional metadata: length, part, bangs, curl, density, volume.
 
-- Style reference image persistence.
-- Hair segmentation.
-- Face/hair masks.
-- Model inference.
-- Generated output image.
-- Post-processing.
+### One-Image Limitation
 
-## Model Research Direction
+한 장만 입력하면 rear length, hidden layers, crown, occluded roots는 복원할 수 있는 관측 정보가 없다. Model은 learned prior로 plausible hypothesis를 만든다.
 
-StableHairV2 was tested first. The original baseline ran in Colab after dependency and script patches, but normal portrait inputs produced poor identity preservation and severe artifacts. It is no longer the immediate MVP candidate.
+UI와 result manifest는:
 
-Hair-only research models are now secondary references rather than the primary implementation path. The active shortlist is:
+- observed views;
+- inferred hidden regions;
+- confidence;
+- auxiliary generated view 사용 여부
 
-1. `Qwen-Image-Edit-2511`: multi-image editing and a mature LoRA ecosystem.
-2. `HiDream-O1-Image`: native 2K editing, multi-reference personalization, layout, and skeleton conditioning.
-3. `FLUX.2 [klein] Base 4B`: multi-reference editing and a compact base checkpoint intended for fine-tuning.
-4. `LongCat-Image-Edit`: strong editing results with official SFT, LoRA, DPO, and edit-training code.
-5. `Step1X-Edit-v1p2`: a reasoning-oriented instruction-editing fallback.
+를 구분해야 한다.
 
-The immediate next experiment should run these models in Colab, starting with the best practical candidate and comparing:
+FLUX.2 같은 image model로 side/rear hypotheses를 만들 수 있지만 이를 사실로 간주하지 않는다. 여러 plausible variants를 만들고 user가 선택하는 방식도 future option이다.
 
-- identity preservation.
-- hairstyle similarity.
-- hairline consistency.
-- face distortion.
-- multi-reference input support.
-- support for masks, annotated control images, layout, or landmarks.
-- code modifiability.
-- LoRA or editing SFT feasibility.
-- GPU cost and inference speed.
+## Stage 2: Preprocessing
 
-## Where the Base Profile Can Help
+가능한 처리:
 
-The base profile is not expected to be passed as raw JSON to a foundation model. Hair App should convert it into model-friendly controls and validation signals.
+- head/face/hair/background segmentation;
+- hair silhouette and alpha matte;
+- strand orientation map;
+- depth estimate;
+- source-camera and head-pose estimate;
+- scalp/head proxy;
+- accessories and occlusion mask;
+- style attribute extraction;
+- crop and color normalization.
 
-Potential integration points:
+Preprocessing output도 model-independent하게 저장해 candidate 비교에 재사용한다.
 
-- Pre-align the user image before inference.
-- Build a better face/hair mask.
-- Use hairline anchors to constrain the generated hair boundary.
-- Select the best scan frame as the identity source.
-- Reject bad input frames before generation.
-- Render landmarks, hairline guides, masks, or layout controls into supported conditioning inputs.
-- Compare generated output against expected face landmarks.
-- Reject outputs whose face embedding or protected-region similarity is too low.
+## Stage 3: Candidate 3D Hair Models
 
-## Candidate Pipeline
+### DiffLocks: First Baseline
 
-First practical pipeline:
+현재 첫 research baseline이다.
 
-1. Choose the best user source frame from `base_profile.assets.best_front_image`.
-2. Generate or estimate a hair/face mask from landmarks and later segmentation.
-3. Keep the user portrait and hairstyle reference as separate inputs when the model supports multi-reference editing.
-4. Run the selected general image-editing foundation model.
-5. Restore pixels outside the editable region when strict preservation is needed.
-6. Score identity, landmarks, hairstyle similarity, hairline fit, and artifacts.
-7. Retry or reject weak candidates, then post-process the best result.
-8. Save the generated result under backend storage.
-9. Return a result URL through `GET /api/result/{result_id}`.
+선택 이유:
 
-## Key Challenges
+- RGB image에서 strand-based 3D hair 목표;
+- StrandVAE와 scalp-space diffusion 구조;
+- full training code;
+- synthetic hairstyle data pipeline;
+- Alembic/Blender로 이어질 수 있는 strand output.
 
-- Preserving the user's identity.
-- Handling existing hair that covers the forehead or side areas.
-- Matching reference hairstyle scale and orientation.
-- Avoiding blurry or pasted-looking hair.
-- Respecting the user's hairline and temples.
-- Keeping face shape stable.
-- Supporting future real-time AR without rebuilding everything.
+검증할 점:
 
-## Next Work
+- official output을 stable하게 재현하는가;
+- real phone hairstyle image에서 strand 방향과 silhouette가 맞는가;
+- source scalp에서 strands를 분리할 수 있는가;
+- arbitrary user scalp로 retarget할 때 root order가 유지되는가;
+- curly/coily/braided/short hair coverage가 충분한가;
+- public license와 commercial option이 project 요구에 맞는가.
 
-The next code-facing milestone is a controlled Colab benchmark using the same source portrait, hairstyle reference, prompt, and evaluation sheet for every candidate. No fine-tuning should begin until the raw baselines are compared.
+### Im2Haircut: Mandatory Comparison
 
-`docs/07_hair_engine_experiment_plan.md` preserves the completed StableHairV2 experiment. The active strategy and new candidate order are tracked in `docs/08_general_image_editing_strategy.md`.
+- single-image strand reconstruction 후보;
+- real-reference fitting 품질 비교;
+- per-subject optimization 시간과 failure rate 측정;
+- non-commercial dependency와 complex setup audit;
+- DiffLocks보다 좋은 style fidelity가 나오면 stage별 hybrid 가능.
 
-Update (2026-06-20): the first tuning target is now `FLUX.2 [klein] base-9B` (see `docs/09_flux2_klein_tuning.md`). The controlled benchmark above stays as the reference plan, but adaptation will start on this base directly.
+### PERM: Long-Term Foundation Candidate
+
+- MIT code의 parametric strand-hair prior;
+- interpolation, generation, model training에 유용;
+- 공개된 single-image end-to-end reconstruction은 아직 완전한 product engine이 아님;
+- 장기적으로 Hair App-owned image encoder + PERM-like decoder를 만들 때 참고.
+
+### UniHair and Other Alternatives
+
+- UniHair: braid와 complex style에 대한 Gaussian-hair comparison.
+- GaussianHaircut/NeuralHaircut: future video/multi-view style input path.
+- HairPort: final 2D transfer benchmark와 3D-aware alignment 아이디어.
+- 새로운 2026+ strand model이 공개되면 같은 artifact contract로 비교.
+
+DiffLocks는 확정 winner가 아니다. 동일 hairstyle set으로 candidates를 비교한 뒤 temporary baseline을 선택한다.
+
+## Stage 4: Canonical Hair Contract
+
+Candidate model의 internal output을 그대로 app 전체에 퍼뜨리지 않는다. 중간 format을 정의한다.
+
+가설 contract:
+
+```text
+canonical_hair/
+  strands.abc
+  curves.npz
+  source_scalp.glb
+  source_hairline.json
+  style_attributes.json
+  reconstruction_confidence.npy
+  model_manifest.json
+  previews/
+```
+
+각 strand:
+
+- root position;
+- ordered 3D points/control points;
+- tangent or orientation;
+- width/radius profile;
+- group/clump ID if available;
+- confidence;
+- observed/inferred classification.
+
+Coordinate system, units, handedness를 명시한다.
+
+## Stage 5: Scalp Correspondence
+
+Source hairstyle scalp와 personal head scalp 사이 mapping이 필요하다.
+
+Potential methods:
+
+- common FLAME/scalp topology;
+- canonical scalp UV coordinates;
+- landmarks: centerline, front hairline, temples, ears, crown, nape;
+- non-rigid surface registration;
+- learned deformation field if geometry-only mapping fails.
+
+첫 버전은 deterministic geometry를 우선한다. Model output이 다른 head topology에 묶여 있으면 conversion layer를 둔다.
+
+## Stage 6: Hairline-Aware Retargeting
+
+1. source root를 canonical scalp에 parameterize.
+2. user scalp의 corresponding point로 root 이동.
+3. head width/depth/height에 맞춰 global deformation.
+4. local tangent, curl, clump, volume을 최대한 보존.
+5. front roots를 user hairline에 style-aware하게 정렬.
+6. ears, forehead, neck, shoulder relation을 조정.
+
+Hairline은 무조건 노출되는 hard boundary가 아니다. Bangs, fringe, loose strands는 hairline 앞을 덮을 수 있다. Root attachment와 visible silhouette를 구분한다.
+
+## Stage 7: Collision Correction
+
+검출 대상:
+
+- scalp penetration;
+- forehead/face penetration;
+- ear intersection;
+- neck/shoulder intersection;
+- floating roots;
+- impossible root direction;
+- extreme stretching or collapsed curls.
+
+후보 기법:
+
+- signed-distance field around user mesh;
+- root projection to scalp;
+- iterative point/curve displacement;
+- local Laplacian/elastic regularization;
+- strand-group optimization;
+- Blender physics-assisted relaxation for difficult cases.
+
+Collision correction는 hairstyle identity를 무너뜨리지 않아야 한다. Penetration count만 줄이고 volume과 silhouette를 망가뜨리는 해법은 실패다.
+
+## Stage 8: Hair Appearance
+
+Geometry와 material을 분리해 관리한다.
+
+- base color/melanin proxy;
+- roughness/specular;
+- root-to-tip color variation;
+- alpha/width;
+- anisotropic shader parameters;
+- highlight direction.
+
+Reference lighting을 그대로 bake하면 다른 view와 light에서 부자연스러울 수 있다. 첫 prototype은 neutral material로 geometry를 검증하고, 이후 appearance extraction을 추가한다.
+
+## Stage 9: Validation
+
+### Geometry and Style
+
+- front/side/rear silhouette similarity;
+- part direction;
+- length and layer distribution;
+- curl/wave/coily attributes;
+- volume and crown height;
+- bangs/fringe geometry;
+- strand orientation;
+- scalp coverage.
+
+### Fit
+
+- floating roots count;
+- penetration length/count;
+- ear/forehead collision;
+- hairline alignment;
+- severe deformation ratio;
+- several head-shape robustness.
+
+### Product
+
+- total runtime;
+- H100 VRAM;
+- failure and manual fix rate;
+- master asset size;
+- hair-card GLB size and mobile FPS;
+- user preference.
+
+## Stage 10: Mobile Conversion
+
+Full strand asset은 server render와 master storage에 유지할 수 있다. Mobile web에는 다음을 비교한다.
+
+- reduced strand count;
+- converted mesh tubes for limited styles;
+- clustered hair cards;
+- multiple LODs;
+- compressed textures;
+- Three.js anisotropic approximation.
+
+Mobile conversion은 strand master를 파괴하지 않는 derived artifact여야 한다.
+
+## Fine-Tuning Plan
+
+현재 순서:
+
+1. DiffLocks official inference 재현.
+2. Hair App-like real references로 baseline failure 수집.
+3. Im2Haircut/UniHair와 같은 style set으로 비교.
+4. output strand contract와 retarget feasibility 확인.
+5. 그 뒤 data gap이 명확한 component부터 fine-tune.
+
+가능한 fine-tuning target:
+
+- image feature encoder;
+- StrandVAE;
+- scalp diffusion/flow model;
+- style attribute conditioning;
+- diverse hair type coverage;
+- multi-view consistency;
+- collision-aware post-fit refinement.
+
+데이터와 license가 가장 큰 위험이다. H100 availability는 training을 쉽게 하지만 legal strand datasets와 representative real-image validation을 대신하지 않는다.
+
+## Failure and Fallback
+
+- single-image ambiguity가 크면 multiple style photos를 요구.
+- strand model이 style을 못 맞추면 multiple candidates를 생성하고 user selection.
+- 특정 braid/complex style은 UniHair 또는 specialized path로 routing.
+- 3D output이 아직 부족하면 FLUX.2/HairPort-like 2D preview를 명확한 fallback으로 제공.
+- geometry fit가 실패하면 user에게 다른 style view 또는 hairline scan을 요청.
+
+어떤 fallback도 실패 사실을 숨기거나 2D result를 rotatable true 3D로 표현하면 안 된다.

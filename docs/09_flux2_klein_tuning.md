@@ -1,61 +1,163 @@
-# FLUX.2 [klein] base-9B — Tuning Target Decision and Plan
+# FLUX.2 Klein Tuning Decision Record and Current Role
 
-Decision date: 2026-06-20. Status: decision recorded. No training code or runs yet; the reference repo was cloned for architecture study only.
+Original decision date: 2026-06-20
+Reclassified: 2026-06-21
+Status: 2D tuning plan preserved but superseded as the immediate top priority by the true 3D architecture; no training run completed
 
-This document records which model Hair App will fine-tune first, why, and the planned tuning approach. It builds on `docs/08_general_image_editing_strategy.md`.
+## Why This Document Still Exists
 
-## Decision
+Hair App은 2026-06-20에 `FLUX.2 [klein] base-9B`를 user portrait + hairstyle reference 2D editing의 first tuning target으로 선택했다. User가 Hugging Face Space에서 가능성을 확인했고, H100에서 fine-tuning 가능한 undistilled multi-reference base를 원했다.
 
-The first tuning target and synthesis base is **`FLUX.2 [klein] base-9B`** (`black-forest-labs/FLUX.2-klein-base-9B`), used for two-image hairstyle compositing (user portrait + hairstyle reference) and general portrait editing.
+그 다음 product requirement가 더 명확해졌다. 최종 목표는 한 장의 edited portrait가 아니라:
 
-This is a decision to **start adaptation directly on FLUX.2**, ahead of completing the full untuned `Qwen-Image-Edit-2511` / `HiDream-O1-Image` benchmark described in `docs/08`. The user validated promising quality hands-on in a Hugging Face Space and prioritizes iterating on a tunable, architecturally-fitting base.
+- editable hairless head mesh;
+- actual-photo face UV texture;
+- independent 3D strand hair;
+- scalp/hairline fitting;
+- rotatable 3D result
 
-## Requirements that drove the choice
+이다.
 
-- Input is two images composited: user portrait + reference (multi-reference editing).
-- Synthesis quality is the number-one priority.
-- Text understanding is not needed at inference; the user wants to bypass/remove the text encoder.
-- Plan is to fine-tune the synthesis core (LoRA), not train from scratch.
-- Current phase is testing (commercial later). The user has a single Colab H100.
+따라서 FLUX.2 tuning은 immediate top priority가 아니다. 이 문서는 당시 선택 근거와 재사용 가능한 기술 아이디어를 보존한다. 현재 source of truth는 `10_3d_hair_app_master_plan.md`다.
 
-## Why FLUX.2 [klein] base-9B
+## Original Decision
 
-1. **Base (undistilled) = correct fine-tuning starting point.** Distilled variants (`dev`, `klein` distilled) bake in few-step and guidance behavior and are poor LoRA bases. The base variant keeps the full training signal and runs with real CFG and arbitrary steps.
-2. **Clean text-encoder separability (matches the "remove text encoder" approach).** FLUX.2 routes text only through the text encoder, while reference images enter through the VAE as separate image tokens. So the text encoder can be dropped at inference (`text_encoder=None` plus precomputed or empty embeddings) without losing image conditioning. Verified in the reference code: text enters via `txt_in`; reference images are VAE-encoded into tokens (`encode_image_refs`). By contrast, `Qwen-Image-Edit` feeds the input image through both `Qwen2.5-VL` and the VAE, so its "text encoder" also performs image semantics and cannot be cleanly stripped.
-3. **Native multi-reference editing** for the portrait + hairstyle-reference shape.
-4. **9B (vs 4B) raises the quality ceiling** while still fitting a single H100 (~18-29 GB), matching the quality-first priority. 4B is the cheaper, commercial-safe fallback.
-5. **Mature, official edit-LoRA tooling:** diffusers `train_dreambooth_lora_flux2_img2img.py` (text-to-image and image-to-image), Black Forest Labs klein training docs, SimpleTuner FLUX.2, ostris ai-toolkit, and a hosted `flux-2-klein-9b-base-trainer` on fal.
-6. **H100-friendly:** one GPU is sufficient for both inference and LoRA.
+Original target:
 
-## Alternatives considered (and why not first)
+- model: `black-forest-labs/FLUX.2-klein-base-9B`;
+- task: two-image hairstyle compositing;
+- method: LoRA on DiT transformer;
+- frozen components: VAE and text encoder;
+- optimization: cached text embeddings and image latents;
+- hardware: single Colab H100;
+- data: portrait + hairstyle reference -> target edited portrait;
+- evaluation: identity, style, hairline, landmarks, protected regions, artifacts.
 
-- `Qwen-Image-Edit-2511` (20B): highest quality ceiling and the most mature LoRA ecosystem, Apache 2.0, but its `Qwen2.5-VL` encoder fuses text and image semantics, so the text encoder cannot be cleanly removed (conflicts with the lightweight approach); also the heaviest model. Kept as a quality reference and possible later comparison.
-- `FLUX.2 [dev]` (32B): higher ceiling but distilled (poor tuning base), non-commercial license, and needs FP8 or sequential offload on a single H100. Quality reference only.
-- `FLUX.2 [klein]` distilled 4B / 9B / 9b-kv: distilled, so good for fast inference but not ideal as a fine-tuning base.
-- `FLUX.2 [klein] base-4B`: Apache 2.0, lightest and cheapest iteration; the commercial-safe and prototyping fallback, but a lower quality ceiling than 9B.
-- `HiDream-O1-Image` (8B): strong, MIT, with scan-friendly layout/skeleton controls, but a newer ecosystem and less proven for this exact shape.
+No actual LoRA run, checkpoint, or benchmark result was produced before the architecture changed.
 
-## License and commercial note
+## Why It Was Chosen at the Time
 
-- `klein base-9B` is under the FLUX.2 Non-Commercial License: fine for testing and research, not for commercial launch.
-- For commercialization: switch to `klein base-4B` (Apache 2.0) and retrain the LoRA, or obtain a Black Forest Labs commercial license for 9B/dev.
-- The inference code (the `flux2` repo) and diffusers are Apache 2.0.
+1. Undistilled base variant was more appropriate for fine-tuning than a few-step distilled checkpoint.
+2. Reference images entered through the VAE path, making cached/empty text conditioning experiments plausible.
+3. Native multi-reference editing matched portrait + style input.
+4. 9B offered a higher ceiling than 4B while fitting H100-class hardware.
+5. Diffusers and ecosystem tooling supported edit-LoRA experimentation.
+6. The user had H100 access, so quality mattered more than minimal VRAM.
 
-## Planned tuning approach (not yet implemented)
+These arguments remain relevant for future 2D work. They do not make FLUX.2 a 3D geometry or strand-hair model.
 
-- **Method:** LoRA on the DiT transformer (the synthesis core). VAE and text encoder frozen.
-- **Text/VAE caching:** precompute the fixed instruction's text embedding once and cache image latents, so the text encoder is not resident during training. This implements the "remove text encoder" goal and saves VRAM.
-- **Dataset = triplets:** condition image(s) (portrait, plus hairstyle reference) -> target image (desired edited result) + caption (one fixed instruction). Hair App scan assets (best front frame, landmarks, hairline, masks) are preserved as side metadata for identity/hairline conditioning and evaluation.
-- **Data sourcing (the main open decision and blocker):** (a) same-person different-hairstyle pairs, (b) bootstrap targets from a stronger model (for example `dev`) then distill, or (c) public hairstyle datasets.
-- **Tooling:** diffusers img2img LoRA script (primary); SimpleTuner, ai-toolkit, or the fal hosted trainer as alternatives.
-- **Hardware:** single H100, bf16 (plus FP8). The base variant needs roughly 50 inference steps for a clean preview.
-- **Evaluation (Hair App-specific, per `docs/08` Phase 2):** identity similarity, hairstyle-reference similarity, hairline and temple fit, landmark displacement, background and clothing preservation, visible artifacts, time and VRAM. Compare pre- versus post-tuning on fixed seeds.
-- **Iteration:** if LoRA is insufficient, add data, then edit-SFT, then identity/landmark auxiliary losses. Defend outputs with protected-region compositing plus retry and ranking.
+## Current Valid Roles
 
-## Sources
+### 1. 2D Quality Benchmark
 
-- FLUX.2 klein LoRA guide: `https://huggingface.co/blog/black-forest-labs/flux-2-klein-lora`
-- diffusers FLUX.2 training: `https://github.com/huggingface/diffusers/blob/main/examples/dreambooth/README_flux2.md`
-- Black Forest Labs klein training docs: `https://docs.bfl.ml/flux_2/flux2_klein_training`
-- SimpleTuner FLUX.2 quickstart: `https://github.com/bghira/SimpleTuner/blob/main/documentation/quickstart/FLUX2.md`
-- FLUX.2 model variants and licensing: `https://deepwiki.com/black-forest-labs/flux2/2.2-model-variants`
+Compare a polished 2D result against the true 3D render to understand the visual gap.
+
+### 2. Auxiliary Hairstyle Views
+
+Generate several plausible side/rear hypotheses from one hairstyle image. These are priors, not observed truth, and must be tagged with uncertainty.
+
+### 3. Render Refinement
+
+Improve a server-rendered still while preserving face, hairline, camera, and protected regions. Refined pixels should not silently become geometry or UV evidence.
+
+### 4. Temporary 2D Fallback
+
+Offer a clearly labeled 2D preview if the 3D path is not yet product-ready.
+
+### 5. Training Data Bootstrap Research
+
+Generate candidate targets for controlled experiments. Synthetic targets require filtering and must not be assumed equivalent to real paired data.
+
+## Roles FLUX.2 Does Not Fill
+
+- It does not replace Pixel3DMM/KaoLRM for editable head geometry.
+- It does not replace the multi-photo UV baker for actual user skin pixels.
+- It does not output trustworthy 3D strand hair like the intended DiffLocks/Im2Haircut path.
+- It does not perform deterministic scalp retargeting or collision correction.
+- Independently edited views do not guarantee one consistent rotatable asset.
+
+## If Tuning Is Reactivated
+
+### Revalidation First
+
+Before executing the old plan:
+
+1. re-check current official model cards, code, weights, and licenses;
+2. reproduce untuned inference on a fixed Hair App 2D set;
+3. define the exact role: fallback, auxiliary views, or render refinement;
+4. ensure that the target data matches that role;
+5. compare with Qwen Image Edit, HiDream, HairPort-like methods, or newer candidates;
+6. decide whether LoRA beats prompt/control/compositing solutions.
+
+### Original Planned Training Shape
+
+- LoRA on the transformer core.
+- VAE frozen.
+- Text encoder frozen and optionally removed from resident memory by cached embeddings.
+- Source portrait and style reference as image conditions.
+- Fixed or limited instruction vocabulary.
+- Face/hair masks, landmarks, hairline, camera/render metadata as side information.
+- bf16 on H100; FP8/offload only if useful, not by default.
+
+### Role-Specific Dataset
+
+For 2D fallback:
+
+- user portrait;
+- hairstyle reference;
+- target edited portrait;
+- identity/protected-region masks.
+
+For auxiliary views:
+
+- one or more source style images;
+- real multi-view hairstyle targets where legally available;
+- camera/pose labels;
+- uncertainty and consistency supervision.
+
+For render refinement:
+
+- raw 3D render;
+- depth, normal, face, hair, and protected-region masks;
+- high-quality target render;
+- same camera and geometry.
+
+Do not use one mixed dataset without recording the role.
+
+### Evaluation
+
+- identity embedding similarity;
+- landmark displacement;
+- hairstyle reference similarity;
+- hairline/temple fit;
+- protected-region preservation;
+- cross-view consistency;
+- deviation from depth/normal evidence;
+- artifacts, time, VRAM, failure rate;
+- whether the result improves user decisions beyond the unrefined 3D render.
+
+## License Note
+
+The earlier plan treated `klein base-9B` as research/non-commercial and `base-4B` as the more permissive commercial fallback, subject to exact current license verification. This must be re-audited when tuning resumes. Code license, weight license, dataset license, LoRA derivative terms, and generated-data use are separate questions.
+
+## Current Decision Gate
+
+Do not start FLUX.2 LoRA merely because the old plan exists. Reactivate only if a controlled experiment shows that 2D fallback, auxiliary views, or render refinement is a measured bottleneck or valuable parallel product path.
+
+Immediate project priority remains:
+
+1. Pixel3DMM/KaoLRM geometry comparison;
+2. multi-photo UV prototype;
+3. 3D hair model comparison;
+4. geometric fitting;
+5. interactive asset.
+
+This priority can change after results, and any change should update `newchat.md`, `README.md`, and the master plan.
+
+## Preserved Sources
+
+- FLUX.2 repository: <https://github.com/black-forest-labs/flux2>
+- FLUX.2 klein LoRA guide: <https://huggingface.co/blog/black-forest-labs/flux-2-klein-lora>
+- Diffusers FLUX.2 training: <https://github.com/huggingface/diffusers/blob/main/examples/dreambooth/README_flux2.md>
+- Black Forest Labs training docs: <https://docs.bfl.ml/flux_2/flux2_klein_training>
+- SimpleTuner FLUX.2 quickstart: <https://github.com/bghira/SimpleTuner/blob/main/documentation/quickstart/FLUX2.md>
