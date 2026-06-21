@@ -135,14 +135,18 @@ FastAvatar는 core에서 제외됐다. 이유는 GPU가 아니라 Gaussian repre
 
 ## Immediate Next Step
 
-코드 구현보다 먼저 첫 3D bake-off를 작게 재현한다.
+첫 3D bake-off(Milestone 1)를 진행 중이다. Colab 노트북과 진행상황은
+`experiments/milestone1_geometry_bakeoff/` (특히 `pixel3dmm_colab.ipynb`와 README의 Progress/Resume).
 
-1. private user-like multi-photo set 준비: 정면, 좌우 3/4, 좌우 profile, hairline-visible frames.
-2. Pixel3DMM official inference를 Colab H100에서 재현.
-3. 같은 입력의 best frame으로 KaoLRM 비교.
-4. 두 결과를 같은 camera와 neutral material로 render해 geometry/identity/hairline을 평가.
-5. winner를 영구 확정하지 말고 첫 UV prototype에 사용할 temporary baseline으로 선택.
-6. Pixel3DMM camera/mesh를 이용한 direct UV projection prototype으로 넘어가기.
+진행 상태 (2026-06-21, A100에서 실행):
+
+- ✅ 환경 빌드(pytorch3d/nvdiffrast, CUDA 11.8 toolkit, A100 arch) 통과.
+- ✅ 전처리 설치 수정: 공식 스크립트의 SSH clone이 Colab에서 실패 → facer/PIPNet HTTPS 설치,
+  FaceBoxes에 Cython 필요, uv/normals ckpt를 올바른 위치로. facer `farl.py` `.long()` 패치.
+- ✅ 전처리(cropping + segmentation)까지 통과 확인. `VID_NAME`은 입력 폴더 basename으로 자동 도출.
+- ⚠️ 다음: `network_inference` → `track.py` end-to-end. **FLAME 다운로드 미검증**
+  (Colab에서 7997바이트 HTML만 받아진 정황 — tracking 전 FLAME 설치 확인 필요).
+- 그 뒤: 3D 미리보기 → KaoLRM 동일 입력 비교 → temporary baseline 선택 → direct UV prototype.
 
 ## Documentation Map
 
@@ -157,6 +161,7 @@ FastAvatar는 core에서 제외됐다. 이유는 GPU가 아니라 Gaussian repre
 - `docs/08_general_image_editing_strategy.md`: 2D auxiliary/fallback strategy.
 - `docs/09_flux2_klein_tuning.md`: superseded 2D tuning decision and reusable FLUX knowledge.
 - `docs/10_3d_hair_app_master_plan.md`: current detailed source of truth.
+- `experiments/milestone1_geometry_bakeoff/`: Milestone 1 bake-off Colab notebooks(Pixel3DMM/KaoLRM), scoring sheet, progress/resume notes.
 
 ## Working Rules
 
