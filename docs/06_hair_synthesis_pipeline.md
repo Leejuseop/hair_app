@@ -107,3 +107,5 @@ First practical pipeline:
 The next code-facing milestone is a controlled Colab benchmark using the same source portrait, hairstyle reference, prompt, and evaluation sheet for every candidate. No fine-tuning should begin until the raw baselines are compared.
 
 `docs/07_hair_engine_experiment_plan.md` preserves the completed StableHairV2 experiment. The active strategy and new candidate order are tracked in `docs/08_general_image_editing_strategy.md`.
+
+Update (2026-06-20): the first tuning target is now `FLUX.2 [klein] base-9B` (see `docs/09_flux2_klein_tuning.md`). The controlled benchmark above stays as the reference plan, but adaptation will start on this base directly.

@@ -149,24 +149,15 @@ Qwen and HiDream have not yet been run in Colab for Hair App. Do not describe th
 
 ## Immediate Next Step
 
-Create a clean Colab baseline for `Qwen-Image-Edit-2511` using:
+Model decision (2026-06-20): the first tuning target is `FLUX.2 [klein] base-9B`. Full reasoning and the planned tuning approach are in `docs/09_flux2_klein_tuning.md`. The user validated promising quality in a Hugging Face Space and prioritizes a tunable, architecturally-fitting base over completing the full untuned Qwen/HiDream benchmark first.
 
-- the same source portrait used in prior experiments.
-- the same hairstyle-reference image.
-- an explicit prompt that transfers only the hairstyle and preserves face, pose, expression, clothing, lighting, and background.
-- multiple fixed seeds with saved inputs, prompts, runtime, and outputs.
+Next actions:
 
-Then run the same test with `HiDream-O1-Image` and compare:
+1. Phase 0: set up a single-H100 Colab environment and reproduce an untuned two-image baseline on `FLUX.2 [klein] base-9B` (text encoder bypassed via precomputed or empty embeddings), saving fixed-seed outputs as the pre-tuning reference.
+2. Decide the training-data sourcing path (the main blocker): same-person different-hairstyle pairs, bootstrap targets from a stronger model, or public hairstyle datasets.
+3. Then LoRA on the DiT core with cached text and VAE embeddings, using diffusers `train_dreambooth_lora_flux2_img2img.py`.
 
-- identity similarity.
-- hairstyle-reference similarity.
-- hairline and temple fit.
-- landmark displacement.
-- background and clothing preservation.
-- visible artifacts.
-- GPU memory and inference time.
-
-Do not fine-tune until these raw baselines are compared. If quality is close, prefer the model with the simpler and cheaper tuning path.
+`Qwen-Image-Edit-2511` and `HiDream-O1-Image` remain documented quality references. Qwen's higher ceiling is offset by its `Qwen2.5-VL` encoder fusing text and image, so its text encoder cannot be cleanly removed. For commercial launch, retrain on `klein base-4B` (Apache 2.0) or license 9B.
 
 ## Colab And Tooling Notes
 
@@ -186,6 +177,7 @@ Do not fine-tune until these raw baselines are compared. If quality is close, pr
 - `docs/06_hair_synthesis_pipeline.md`: planned synthesis architecture.
 - `docs/07_hair_engine_experiment_plan.md`: historical StableHairV2 run and exact Colab recovery recipe.
 - `docs/08_general_image_editing_strategy.md`: active model shortlist and benchmark plan.
+- `docs/09_flux2_klein_tuning.md`: FLUX.2 klein base-9B selection, reasons, and planned LoRA tuning approach.
 
 ## Working Rules And User Preferences
 

@@ -75,6 +75,8 @@ The project now prioritizes high-performance general image editing over hair-onl
 
 The next controlled Colab benchmark will compare `Qwen-Image-Edit-2511`, `HiDream-O1-Image`, `FLUX.2 [klein] Base 4B`, and `LongCat-Image-Edit`. The first two are quality and multi-reference candidates; the latter two are especially interesting for practical fine-tuning and training-code access.
 
+Update (2026-06-20): the first tuning target is now `FLUX.2 [klein] base-9B`, chosen for its undistilled base (good for fine-tuning), cleanly separable text encoder, native multi-reference editing, and single-H100 fit. `Qwen-Image-Edit-2511` and `HiDream-O1-Image` remain quality references. See `docs/09_flux2_klein_tuning.md`.
+
 Hair App-specific value will come from the pipeline around the foundation model:
 
 - select the best source frame from the scan bundle.
@@ -109,6 +111,7 @@ hair_app/
     06_hair_synthesis_pipeline.md
     07_hair_engine_experiment_plan.md
     08_general_image_editing_strategy.md
+    09_flux2_klein_tuning.md
   newchat.md
   frontend/
     index.html

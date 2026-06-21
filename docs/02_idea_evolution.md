@@ -40,3 +40,5 @@ Closed editors such as GPT Image are useful quality references, but they do not 
 ## Current Decision
 
 Keep the existing scan and base-profile implementation. Do not build a foundation model from scratch and do not continue directly to another hair-only model. First run a controlled Qwen-versus-HiDream baseline with identical portrait, hairstyle reference, prompt, and evaluation criteria. Fine-tune only after the raw-quality winner is known.
+
+Update (2026-06-20): the project has since selected `FLUX.2 [klein] base-9B` as the first tuning target and will begin LoRA adaptation on it rather than completing the full untuned benchmark first. `Qwen-Image-Edit-2511` and `HiDream-O1-Image` remain quality references. Reasons and the planned tuning approach are in `docs/09_flux2_klein_tuning.md`.

@@ -95,6 +95,14 @@ Notes:
 
 These are June 2026 figures from model cards and hardware guides; re-verify exact VRAM numbers before relying on them.
 
+## Selected Tuning Target (2026-06-20)
+
+The first tuning target is now decided: **`FLUX.2 [klein] base-9B`**. The user validated promising quality hands-on in a Hugging Face Space and chose to start adaptation directly on a tunable, architecturally-fitting base, ahead of completing the full untuned Qwen/HiDream benchmark above.
+
+Key reasons: base (undistilled) is the correct fine-tuning starting point; FLUX.2's text encoder is cleanly separable from the VAE image path, matching the goal of bypassing the text encoder (`Qwen-Image-Edit` fuses text and image in `Qwen2.5-VL` and cannot be cleanly stripped); native multi-reference editing; 9B raises the quality ceiling while fitting a single H100; mature official edit-LoRA tooling. `klein base-9B` is non-commercial, so a commercial launch would switch to `klein base-4B` (Apache 2.0) or license 9B.
+
+Full decision record and planned tuning approach: `docs/09_flux2_klein_tuning.md`.
+
 ## Recommended Experiment Order
 
 ### Phase 1: Untuned Quality Benchmark
