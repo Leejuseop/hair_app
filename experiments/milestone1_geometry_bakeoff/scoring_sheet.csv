@@ -1,0 +1,4 @@
+run_id,model,model_version_commit,input_set_id,view_or_mode,iters_config,seed,gpu,runtime_min,identity_1to5,geometry_1to5,hairline_1to5,side_contour_1to5,scalp_ear_topology_1to5,execution_reliability_1to5,temporary_baseline,notes
+P3DMM-001,pixel3dmm,TBD,TBD,multi-image,iters=100;iters=1500,TBD,H100,TBD,,,,,,,,first official reproduction
+KAOLRM-001,kaolrm,TBD,TBD,mono,default,TBD,H100,TBD,,,,,,,,frontal comparison
+KAOLRM-002,kaolrm,TBD,TBD,multiview,default,TBD,H100,TBD,,,,,,,,profile comparison

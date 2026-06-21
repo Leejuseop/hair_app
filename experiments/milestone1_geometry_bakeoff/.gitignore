@@ -1,0 +1,13 @@
+# Private biometric inputs/outputs must never be committed (AGENTS.md, docs/10 §14)
+inputs/
+outputs/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.ply
+*.obj
+*.glb
+*.npz
+*.npy
+manifests/
