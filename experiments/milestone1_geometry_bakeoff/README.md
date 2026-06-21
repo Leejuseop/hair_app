@@ -27,6 +27,8 @@ Source of truth for the plan: `docs/10_3d_hair_app_master_plan.md` (Milestone 1)
 
 bake-off 전에 본인 사진으로 한 세트를 준비한다 (`docs/10` Stage 1, `docs/04` 참고). git 금지.
 
+> 사진은 Google Drive `MyDrive/hair_app/inputs/` 폴더에 넣는다. **Pixel3DMM은 폴더 안의 모든 이미지를 읽으므로 파일명은 자유다.** 결과 mesh와 manifest는 노트북이 `MyDrive/hair_app/results/`, `MyDrive/hair_app/manifests/` 에 저장한다.
+
 - [ ] 정면(front) — neutral expression, even light
 - [ ] 좌 3/4 (left three-quarter)
 - [ ] 우 3/4 (right three-quarter)
@@ -69,7 +71,7 @@ bake-off 전에 본인 사진으로 한 세트를 준비한다 (`docs/10` Stage 
 ## Known Risks (Colab)
 
 - **conda on Colab:** 두 repo 모두 conda 기반 → `condacolab` 필요, 커널 재시작 발생.
-- **pytorch3d / nvdiffrast 빌드:** Pixel3DMM에서 가장 깨지기 쉬운 부분. CUDA arch(`TORCH_CUDA_ARCH_LIST`)를 Colab GPU에 맞춰야 할 수 있다.
+- **pytorch3d / nvdiffrast 빌드:** Pixel3DMM에서 가장 깨지기 쉬운 부분. **env에 CUDA 11.8 toolkit(`cuda-nvcc` + dev libs)이 설치돼 있어야 컴파일된다**(노트북 셀 3-3). CUDA arch는 GPU에 맞춘다: **A100=`8.0+PTX`**, H100=`9.0+PTX`, T4=`7.5+PTX`. 빌드는 10~25분 소요.
 - **FLAME 등록:** `download_flame2023.sh` / KaoLRM `fetch_data.sh`는 https://flame.is.tue.mpg.de 계정·동의가 필요.
 - **KaoLRM checkpoints:** Releases 페이지에서 `releases/mono/`, `releases/multiview/`로 수동 배치.
 - **torch 버전 충돌:** Pixel3DMM(cu118, py3.9) vs KaoLRM(torch 2.9.1 cu126, py3.10) — 같은 runtime에서 섞지 말 것.
