@@ -1,6 +1,6 @@
 # Hair App 3D Master Plan
 
-Last synchronized: 2026-06-21
+Last synchronized: 2026-06-23
 Status: working architecture and experiment plan; not a frozen specification
 
 ## 1. Document Purpose
@@ -141,6 +141,8 @@ The preprocessing service should calculate:
 Frames with severe problems should be rejected or given low regional weights rather than silently averaged into the result.
 
 MediaPipe remains useful for live guidance and inexpensive quality checks. It is not expected to be the final high-accuracy 3D reconstruction engine.
+
+For the first Pixel3DMM reproduction, persistent crop preprocessing should stay close to the official distribution: detect a bbox independently for every discontinuous photo, make an official-compatible square crop, and do not normalize roll by default. The crop-time RetinaFace five points are not the tracker's final landmarks. Pixel3DMM runs PIPNet after the persistent crop to produce WFLW 98 landmarks and then optimizes camera/head rotation during FLAME fitting. MediaPipe may cross-check those results, but it should not silently replace PIPNet topology. See `docs/12_pixel3dmm_preprocessing_contract.md` for the audited order and coordinate contract.
 
 ### Stage 3: Hairless 3D Head Reconstruction
 

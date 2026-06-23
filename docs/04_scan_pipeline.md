@@ -1,6 +1,6 @@
 # Scan Pipeline
 
-Last synchronized: 2026-06-21
+Last synchronized: 2026-06-23
 Status: current capture implementation and proposed 3D extension
 
 ## Current Implemented Pipeline
@@ -111,6 +111,46 @@ backend/storage/scans/{scan_id}/
 - rear/high-angle head view는 scalp와 ear 주변 개선을 위해 optional로 실험.
 - beauty filter, portrait warp, severe wide-angle distortion을 감지·경고.
 - 원본 file을 보존하고 model용 crop을 derived asset으로 저장.
+
+### Canonical Face Crop Contract (planned; Pixel3DMM bake-off에서 검증 중)
+
+독립 사진은 video처럼 하나의 공통 bbox를 공유하지 않는다. 현재 Pixel3DMM-compatible 기본 계약은 각 사진을 official FaceBoxes convention으로 따로 crop하되 roll을 제거하지 않는 것이다.
+
+```text
+oriented source image
+  -> per-image FaceBoxes bbox
+  -> official-compatible square margin 1.42
+  -> source bounds 안으로 shift
+  -> 512x512 persistent crop, no roll
+  -> PIPNet temporary internal ROI
+  -> PIPNet 98 fitting landmarks in final-crop coordinates
+  -> FaRL segmentation
+  -> Pixel3DMM normal/UV
+  -> FLAME tracking including per-view roll
+```
+
+- 출력 face occupancy는 official `get_cstm_crop`의 `bbox_margin=1.42` convention으로 대략 통일한다.
+- source→crop 및 crop→source 3x3 affine matrix를 모두 저장한다. 이후 landmark reprojection과 observed-pixel UV bake가 이 변환을 재사용한다.
+- EXIF orientation을 적용한 좌표계를 metadata에 명시하고 raw 원본은 덮어쓰지 않는다.
+- roll, yaw, pitch는 첫 baseline에서 보존한다. Pixel3DMM tracker가 camera/head rotation을 최적화하며 official persistent crop도 roll normalization을 하지 않는다.
+- crop은 헤어라인·눈·코·입·턱·필요한 귀 영역을 포함하는지 network inference 전에 시각/자동 gate를 통과해야 한다.
+- PIPNet이 crop 안에서 다시 만드는 ROI는 98-point landmark network용 temporary input이며 persistent crop을 덮어쓰지 않는다.
+- FaRL의 face re-detection은 segmentation parser용 별도 단계다. zero-face fallback과 output-count/mask gate를 별도로 검증한다.
+- MediaPipe는 우선 capture quality와 PIPNet cross-check에 사용하며 WFLW 98 topology를 즉시 대체하지 않는다.
+
+#### Historical Roll Experiments
+
+v1~v3에서는 per-image RetinaFace bbox와 sparse 5-point alignment로 roll을 정규화했다.
+
+- v1: two-eye roll;
+- v2: 5-point plausibility gate와 profile roll skip;
+- v3: 코끝 anchor 기반 5-point similarity roll.
+
+per-image bbox/scale은 기존 static crop의 얼굴 잘림을 해결했다. 그러나 실제 v3 결과에서 RetinaFace 5점이 exact pupil/nose-tip/mouth-corner가 아닌 근사 alignment point라 roll 개선이 제한됐다. official source audit에서는 Pixel3DMM의 실제 fitting landmark가 persistent crop 이후 PIPNet이 생성하는 WFLW 98점임을 확인했다.
+
+따라서 v1~v3은 historical로 보존하고 safe notebook 기본값으로 연결하지 않는다. optional roll은 no-roll Pixel3DMM end-to-end 결과에서 실제 normal/UV/tracking 실패가 확인될 때만 two-pass A/B한다.
+
+모자·손·전화·헤드폰·머리카락 같은 장애물은 crop 거절 사유로 사용하지 않는다. crop 이후 segmentation과 regional confidence에서 표시하고 geometry/UV weight를 조절한다. v1~v3 상세는 `docs/11_canonical_crop_engine.md`, 최종 source audit와 계약은 `docs/12_pixel3dmm_preprocessing_contract.md`를 따른다.
 
 ### Star Selection
 

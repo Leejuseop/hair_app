@@ -161,6 +161,9 @@ Placeholder:
 - [`docs/08_general_image_editing_strategy.md`](docs/08_general_image_editing_strategy.md): 2D 편집 모델의 보조·fallback 역할.
 - [`docs/09_flux2_klein_tuning.md`](docs/09_flux2_klein_tuning.md): FLUX.2 학습 기록과 현재 3D 계획에서의 재배치.
 - [`docs/10_3d_hair_app_master_plan.md`](docs/10_3d_hair_app_master_plan.md): 현재 가장 상세한 3D 기준 문서.
+- [`docs/11_canonical_crop_engine.md`](docs/11_canonical_crop_engine.md): crop v1~v3 roll 실험과 sparse landmark 한계의 historical record.
+- [`docs/12_pixel3dmm_preprocessing_contract.md`](docs/12_pixel3dmm_preprocessing_contract.md): official Pixel3DMM source audit와 최종 per-image no-roll/PIPNet 98 계약.
+- [`docs/13_pixel3dmm_v4_live_run_2026-06-23.md`](docs/13_pixel3dmm_v4_live_run_2026-06-23.md): V4 live 실행 전체 오류·수정·Drive artifact·정확한 재개 절차.
 - [`newchat.md`](newchat.md): 새 대화용 간결한 최신 handoff.
 
 모든 계획은 실험 결과에 따라 수정할 수 있다. 문서가 코드 또는 측정 결과와 충돌하면 코드와 재현 가능한 결과를 우선하고 같은 작업에서 문서를 다시 동기화한다.
@@ -183,6 +186,14 @@ hair_app/
     08_general_image_editing_strategy.md
     09_flux2_klein_tuning.md
     10_3d_hair_app_master_plan.md
+    11_canonical_crop_engine.md
+    12_pixel3dmm_preprocessing_contract.md
+    13_pixel3dmm_v4_live_run_2026-06-23.md
+  experiments/
+    milestone1_geometry_bakeoff/
+      pixel3dmm_colab_v4.ipynb
+      README.md
+      scoring_sheet.csv
   frontend/
   backend/
   ai_engine/
