@@ -144,8 +144,8 @@ FastAvatar는 core에서 제외됐다. 이유는 GPU가 아니라 Gaussian repre
 - ✅ 전처리 설치 수정: 공식 스크립트의 SSH clone이 Colab에서 실패 → facer/PIPNet HTTPS 설치,
   FaceBoxes에 Cython 필요, uv/normals ckpt를 올바른 위치로. facer `farl.py` `.long()` 패치.
 - ✅ 전처리(cropping + segmentation)까지 통과 확인. `VID_NAME`은 입력 폴더 basename으로 자동 도출.
-- ⚠️ 다음: `network_inference` → `track.py` end-to-end. **FLAME 다운로드 미검증**
-  (Colab에서 7997바이트 HTML만 받아진 정황 — tracking 전 FLAME 설치 확인 필요).
+- ✅ 과거 오류와 공식 코드의 추가 함정을 반영한 `pixel3dmm_colab_safe.ipynb` 준비: A100/H100 arch 자동 감지, Torch pin, MICA zero-prior 우회, FLAME2020+2023 수동 검증 설치, dynamic batch, `global_iters` 교정, output/log 검증.
+- ⚠️ 다음: safe notebook으로 `network_inference` → `track.py` end-to-end. **FLAME2020/2023 실제 zip 설치와 tracking은 아직 실기 검증 전**.
 - 그 뒤: 3D 미리보기 → KaoLRM 동일 입력 비교 → temporary baseline 선택 → direct UV prototype.
 
 ## Documentation Map

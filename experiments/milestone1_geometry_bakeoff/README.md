@@ -6,7 +6,20 @@ Source of truth for the plan: `docs/10_3d_hair_app_master_plan.md` (Milestone 1)
 
 ## Progress / Resume (2026-06-21)
 
-`pixel3dmm_colab.ipynb`로 A100에서 실제 실행하며 잡은 fix가 노트북에 반영돼 있다. 다음에 이어서 시작할 지점:
+`pixel3dmm_colab.ipynb`로 A100에서 실제 실행하며 잡은 fix가 기록돼 있다. 다시 실행할 때는 과거 오류와 공식 코드의 추가 함정을 보강한 **`pixel3dmm_colab_safe.ipynb`를 우선 사용한다.**
+
+Safe rerun notebook에서 추가로 보강한 내용(2026-06-23):
+
+- A100/H100 compute capability 자동 감지 및 CUDA extension arch 설정.
+- 공식 environment 기준 Torch 2.7/cu118 pin.
+- `ignore_mica=True`인데도 upstream tracker가 MICA `identity.npy`를 강제로 읽는 부분을 zero prior로 우회.
+- tracking이 실제로 요구하는 **FLAME2020 + FLAME2023** 두 asset을 Drive zip에서 수동 설치하고 HTML/깨진 zip/필수 파일을 검증.
+- 공식 README의 중복 인자 `iters=100 iters=1500`을 `iters=100 global_iters=1500`으로 교정.
+- 입력 사진 수보다 default batch 16이 커서 crash하는 문제를 막기 위한 dynamic batch.
+- network inference가 내부 exception을 삼키는 문제를 보완하는 normals/UV output count 검증.
+- preprocess/network/tracking raw log와 실제 fix 목록을 Drive run manifest에 저장.
+
+기존 실행에서 멈춘 지점과 다음에 이어갈 지점:
 
 - ✅ **검증 완료(노트북에 반영됨):**
   - 환경 빌드: CUDA 11.8 toolkit(`cuda-nvcc` + dev libs) 설치 후 `pytorch3d`/`nvdiffrast`를 `--no-build-isolation`으로 빌드, `TORCH_CUDA_ARCH_LIST=8.0+PTX`(A100).
@@ -15,7 +28,7 @@ Source of truth for the plan: `docs/10_3d_hair_app_master_plan.md` (Milestone 1)
   - facer segmentation: `farl.py`의 인덱스를 `.long()`으로 캐스팅(torch 호환). → cropping + segmentation 통과 확인.
 - ⚠️ **다음에 검증할 지점(미완료):**
   - `network_inference`(8번) → `track.py`(9번) end-to-end.
-  - **FLAME 다운로드(4-3)** — Colab에서 7997바이트 HTML만 받아진 정황. tracking 전에 FLAME이 제대로 설치됐는지 확인 필요(https://flame.is.tue.mpg.de 계정/동의).
+  - **FLAME 설치** — Colab에서 7997바이트 HTML만 받아진 정황. Safe notebook은 자동 다운로드를 사용하지 않고, 본인이 FLAME 사이트에서 받은 `FLAME2020.zip`과 `FLAME2023.zip`을 `MyDrive/hair_app/models/`에 올려 검증 설치한다.
   - 성공 시 10번(3D 미리보기) → 11번(Drive 저장) → `scoring_sheet.csv` 기록.
 
 이 폴더는 Hair App의 **첫 3D 실험**인 민머리 head geometry bake-off를 Colab H100에서 재현하기 위한 starter다. 코드를 더 만들기 전에 *"Pixel3DMM 또는 KaoLRM이 사용자의 다중 사진에서 쓸만한 hairless head mesh를 만드는가"*라는 핵심 가설을 검증하는 것이 목적이다.
@@ -59,7 +72,7 @@ bake-off 전에 본인 사진으로 한 세트를 준비한다 (`docs/10` Stage 
 ## Run Order
 
 1. **입력 준비** — 위 체크리스트. Drive에 `hair_app_private/m1_inputs/{set_id}/`.
-2. **Pixel3DMM** — `pixel3dmm_colab.ipynb` 실행.
+2. **Pixel3DMM** — 새 실행은 `pixel3dmm_colab_safe.ipynb` 사용. `pixel3dmm_colab.ipynb`는 과거 live-debug 기록으로 유지.
    - preprocessing → network inference(normals, uv_map) → tracking(multi-image).
 3. **KaoLRM** — `kaolrm_colab.ipynb` 실행 (별도 conda env, 별도 Colab runtime 권장).
    - background 제거 → `infer_mono.sh`(frontal) / `infer_multiview.sh`(profile).
