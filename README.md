@@ -90,6 +90,21 @@ The three geometry candidates now used for the next visual experiment are:
 
 Those meshes and their private manifest must be frozen in the private Drive run folder with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`. The generated mesh files and private manifest are biometric runtime artifacts and must not be committed. The next implementation task is a custom observed-photo face texture baker that can apply the same private photo evidence to all three mesh candidates for visual comparison.
 
+Current storage status:
+
+- the personal no-MICA mesh and fitted mean-shape control are preserved in the private Drive run folder;
+- the raw FLAME template was generated for visualization in the Colab runtime and should be copied into Drive by running the freeze helper;
+- after the helper runs, the stable private handoff folder is `model_trio_for_texture/` inside the private run directory, with three PLY files plus `model_trio_manifest.json`.
+
+Private Drive cleanup guidance:
+
+- keep `runs/` until the texture baker and model-trio comparison are complete;
+- keep `inputs/` until texture baking has reproduced from the same source photos;
+- keep `models/` because it may contain weights and FLAME assets that are expensive or permission-gated to restore;
+- keep the old girl-model folders unless the user explicitly decides to remove that experiment;
+- `crop_test_512`, `crop_test_512_v2`, and `crop_test_512_v3` are old crop-debug folders and are deletion candidates after confirming they do not contain the old girl-model assets;
+- `comparisons/` is usually smaller diagnostic output, so inspect before deleting rather than removing blindly.
+
 ## Current Research Stack
 
 - capture guidance and low-cost quality checks: MediaPipe.

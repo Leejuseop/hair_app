@@ -1031,7 +1031,7 @@ The next engine to implement is the custom observed-photo face texture baker. It
 2. fitted mean-shape control, where identity shape is mean but camera, pose, expression, jaw, eyes, eyelids, and intrinsics were fit to the user's photos;
 3. personal no-MICA candidate, where identity shape was also fit to the user's photos.
 
-The three PLY files and the private manifest are produced by `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` inside the private Drive run folder. They must not be committed.
+The personal no-MICA mesh and fitted mean-shape control are preserved in the private Drive run folder. The stable three-PLY handoff folder and private manifest are produced by running `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` inside Colab. They must not be committed.
 
 The first texture implementation should be an observed-data baker, not a generative face completion model:
 

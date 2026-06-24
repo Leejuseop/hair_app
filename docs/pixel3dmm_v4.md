@@ -684,7 +684,8 @@ Interpretation:
 
 Private artifact rule:
 
-- freeze the three mesh candidates in the private Drive run folder with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`;
+- the personal no-MICA mesh and fitted mean-shape control are already preserved in the private Drive run folder;
+- the raw FLAME template may exist only in the Colab runtime after visualization, so run `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` once to create the stable private `model_trio_for_texture/` folder inside the run directory;
 - keep the generated PLY files, private manifest, source photos, tracking folders, textures, and overlays out of Git;
 - commit only the generic helper, contract, metrics summary, and next-step plan.
 
