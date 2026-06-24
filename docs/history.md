@@ -465,7 +465,7 @@ normal_super=2000, sil_super=1000
 
 변형량만으로 정답을 증명할 수는 없지만 mean head를 그대로 반환하지 않았다는 점은 확인했다. 같은 fitted camera·pose·expression을 고정한 quick landmark shape-swap test에서는 mean FLAME error `7.1109 px`, fitted error `5.8803 px`, improvement `1.2306 px`로 약 `17.3%` 좋아졌고 fitted가 8/8 view에서 이겼다.
 
-이 검증은 camera와 expression을 각 조건에서 다시 맞춘 완전한 control은 아니다. 따라서 다음에는 identity shape를 zero로 고정한 mean-FLAME run을 별도로 최적화해야 한다. 정확한 수치, 제한, loss 구조, 다음 MICA A/B는 `docs/pixel3dmm_v4.md`에 통합했다.
+이 검증은 camera와 expression을 각 조건에서 다시 맞춘 완전한 control은 아니다. 이후 같은 8장 입력으로 MICA prior와 MICA init-only를 A/B했지만 fixed-context 채택 기준을 통과하지 못했다. 또한 identity shape를 zero로 고정하고 camera/pose/expression을 다시 맞춘 mean-FLAME control이 `5.7423 px`로 no-MICA fitted-shape의 `5.8803 px`와 동률 또는 소폭 우세였기 때문에, 현재 canonical identity shape가 강하게 개인화됐다는 claim은 약해졌다. 정확한 수치, 제한, loss 구조, 다음 실험은 `docs/pixel3dmm_v4.md`에 통합했다.
 
 ## 13. 현재 구조와 남은 일
 
@@ -482,7 +482,8 @@ normal_super=2000, sil_super=1000
 
 현재 완료되지 않은 핵심 단계:
 
-- MICA versus no-MICA와 fully refitted mean-shape control;
+- completed MICA versus no-MICA and MICA init-only A/B, followed by fully refitted mean-shape control;
+- pending cross-context no-MICA fitted shape versus mean-shape validation;
 - 512 tracking resolution 및 float normal/UV precision A/B;
 - 더 많은 identity와 capture condition에서 Pixel3DMM geometry 검증;
 - 실제 multi-photo UV baker;
@@ -507,7 +508,7 @@ normal_super=2000, sil_super=1000
 | V4 area-heavy face ranking | 큰 false positive 선택 | candidate provenance와 confidence-first baseline |
 | PyTorch `weights_only=True` | official Lightning checkpoint load 실패 | trusted pinned checkpoint에 한정한 compatibility patch |
 | `!pip`/`%pip` trimesh 설치 | active kernel에서 import 실패 | `sys.executable -m pip`로 interpreter 일치 |
-| Pixel3DMM V4 no-MICA | 8장 end-to-end 성공, quick landmark error 약 17.3% 개선 | 첫 측정 가능한 personal geometry baseline과 MICA A/B control |
+| Pixel3DMM V4 no-MICA | 8장 end-to-end 성공, quick same-camera landmark error 약 17.3% 개선; MICA prior/init-only 탈락; fully refitted mean-shape control은 landmark 기준 동률/소폭 우세 | 첫 end-to-end geometry artifact이나 personal identity-shape claim은 추가 검증 필요 |
 
 ## 15. 프로젝트를 진행하며 세운 원칙
 
@@ -528,7 +529,9 @@ Hair App은 처음부터 완성된 3D 설계로 시작하지 않았다. 실제 �
 
 그 뒤 단순히 3D 모델 이름을 고른 것이 아니라 representation을 `editable head mesh + observed UV + independent strand hair`로 분리했다. Pixel3DMM을 실제 A100 환경에서 재현하면서 video용 crop 가정이 독립 셀카에 맞지 않는 문제를 찾았고, 여러 번의 crop 실험과 official source audit를 통해 per-image no-roll 구조로 수정했다. 실패한 heuristic은 candidate metadata로 원인을 확인해 confidence-first로 되돌렸고, 모든 전처리 artifact와 manifest를 재현 가능한 형태로 보존했다.
 
-최종적으로 crop, WFLW-98, FaRL, normal, UV, tracking을 8/8 입력에서 끝내고 첫 personalized FLAME mesh를 얻었다. 평균 FLAME와의 vertex 차이만 보는 데서 멈추지 않고 같은 camera/pose/expression의 landmark diagnostic을 만들어 fitted shape가 8/8 view에서 더 낫다는 수치도 확인했다. 동시에 그 검증이 fully refitted control이 아니라는 한계와 hidden scalp가 prior라는 한계를 문서에 명시했다. 다음 단계도 “더 복잡하게 만들기”가 아니라 MICA 하나만 바꾸는 controlled A/B로 정했다.
+최종적으로 crop, WFLW-98, FaRL, normal, UV, tracking을 8/8 입력에서 끝내고 첫 end-to-end FLAME geometry artifact를 얻었다. 평균 FLAME와의 vertex 차이만 보는 데서 멈추지 않고 같은 camera/pose/expression의 landmark diagnostic을 만들어 fitted shape가 8/8 view에서 더 낫다는 수치도 확인했다. 이후 MICA prior와 MICA init-only A/B를 추가했고, 둘 다 fixed-context 채택 기준을 통과하지 못했다. 더 강한 fully refitted mean-shape control은 no-MICA fitted shape와 landmark 기준 동률 또는 소폭 우세였으므로, 현재 mesh를 강하게 검증된 개인 두상이라고 말하지 않기로 정리했다.
+
+그 다음 제품 쪽 스캔 플로우도 연구 결론에 맞춰 바꿨다. 기존 preview 중심 스캔을 `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, `hairline` 6단계 geometry capture로 바꾸고, backend가 raw samples와 별도로 `selected_3dmm/` reconstruction input bundle을 만들도록 했다. 사용자는 실제 본인 셀카를 고르고 있으며, 다음 실험은 repo 밖 private selfie folder와 새 app-scan `selected_3dmm/` frames를 합쳐 Pixel3DMM no-MICA와 mean-shape control을 다시 돌리는 것이다.
 
 이 과정의 가치는 특정 모델 하나를 사용했다는 데 있지 않다. 문제 정의, 실제 입력 검증, 실패 원인 분석, representation 변경, 문서와 코드의 동기화, privacy와 license 경계까지 포함해 연구 prototype을 제품 구조로 발전시킨 경험에 있다.
 

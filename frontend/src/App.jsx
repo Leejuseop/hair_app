@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SCAN_STEPS,
   SCAN_STEP_CONFIG,
-  SCAN_TARGET_SAMPLES,
   analyzeScanFrame,
   captureVideoFrame,
   createScanSample,
   getFaceLandmarker,
+  getScanTargetSamples,
   measureFrameQuality,
 } from "./scanAnalyzer.js";
 
@@ -24,7 +24,7 @@ function createInitialScanState(step) {
     qualityScore: 0,
     samplesCount: 0,
     status: "idle",
-    targetSamples: SCAN_TARGET_SAMPLES,
+    targetSamples: getScanTargetSamples(step),
   };
 }
 
@@ -132,11 +132,17 @@ function App() {
 
   function buildScanBundle() {
     const completed = SCAN_STEPS.every(
-      (step) => scanSamplesRef.current[step].length >= SCAN_TARGET_SAMPLES,
+      (step) =>
+        scanSamplesRef.current[step].length >= getScanTargetSamples(step),
     );
 
     scanBundleRef.current = {
       completedAt: completed ? new Date().toISOString() : null,
+      reconstructionIntent: {
+        bundleType: "upload_plus_guided_scan_geometry_input",
+        selected3dmmStrategy: "backend_stepwise_best_frames",
+        version: "0.2",
+      },
       scanSessionId: scanSessionIdRef.current,
       steps: Object.fromEntries(
         SCAN_STEPS.map((step) => [
@@ -145,15 +151,17 @@ function App() {
             progress: Math.min(
               100,
               Math.round(
-                (scanSamplesRef.current[step].length / SCAN_TARGET_SAMPLES) *
+                (scanSamplesRef.current[step].length /
+                  getScanTargetSamples(step)) *
                   100,
               ),
             ),
             samples: scanSamplesRef.current[step],
             status:
-              scanSamplesRef.current[step].length >= SCAN_TARGET_SAMPLES
+              scanSamplesRef.current[step].length >= getScanTargetSamples(step)
                 ? "complete"
                 : "pending",
+            targetSamples: getScanTargetSamples(step),
           },
         ]),
       ),
@@ -222,7 +230,9 @@ function App() {
       return undefined;
     }
 
-    if (scanSamplesRef.current[activeStep].length >= SCAN_TARGET_SAMPLES) {
+    const activeTargetSamples = getScanTargetSamples(activeStep);
+
+    if (scanSamplesRef.current[activeStep].length >= activeTargetSamples) {
       return undefined;
     }
 
@@ -288,7 +298,7 @@ function App() {
 
             if (
               analysis.isGood &&
-              samplesCount < SCAN_TARGET_SAMPLES &&
+              samplesCount < getScanTargetSamples(currentStep) &&
               now - lastSampleAtRef.current[currentStep] > 350
             ) {
               const sample = createScanSample({
@@ -308,7 +318,9 @@ function App() {
 
             const progress = Math.min(
               100,
-              Math.round((samplesCount / SCAN_TARGET_SAMPLES) * 100),
+              Math.round(
+                (samplesCount / getScanTargetSamples(currentStep)) * 100,
+              ),
             );
             const isComplete = progress >= 100;
 
@@ -326,7 +338,7 @@ function App() {
               qualityScore: analysis.qualityScore,
               samplesCount,
               status: isComplete ? "complete" : "scanning",
-              targetSamples: SCAN_TARGET_SAMPLES,
+              targetSamples: getScanTargetSamples(currentStep),
             });
 
             if (isComplete) {
@@ -521,8 +533,8 @@ function App() {
               <div style={{ width: `${activeScan.progress}%` }} />
             </div>
             <p className="scan-instruction">
-              {allStepsComplete
-                ? "전체 스캔 완료. 베이스모델 생성에 쓸 프레임과 랜드마크가 준비됐습니다."
+          {allStepsComplete
+                ? "전체 스캔 완료. 3DMM 입력 후보 프레임과 랜드마크가 준비됐습니다."
                 : activeScan.instruction}
             </p>
             <div className="scan-metrics">
@@ -534,6 +546,12 @@ function App() {
                 Yaw{" "}
                 {activeScan.metrics?.yawProxy !== undefined
                   ? activeScan.metrics.yawProxy
+                  : "-"}
+              </span>
+              <span>
+                Pitch{" "}
+                {activeScan.metrics?.pitchProxy !== undefined
+                  ? activeScan.metrics.pitchProxy
                   : "-"}
               </span>
             </div>
@@ -561,7 +579,7 @@ function App() {
                 onClick={() => setActiveStep(step)}
               >
                 <span>{isComplete ? "✓" : index + 1}</span>
-                {step}
+                {SCAN_STEP_CONFIG[step].shortLabel ?? step}
               </button>
             );
           })}
@@ -612,6 +630,7 @@ function BaseProfilePreview({ uploadState }) {
   const hairlinePoints = Object.values(preview?.hairline_points ?? {});
   const faceMetrics = profile?.derived_metrics?.face ?? {};
   const hairlineMetrics = profile?.derived_metrics?.hairline ?? {};
+  const reconstructionBundle = profile?.reconstruction_bundle ?? {};
   const sideMetrics = profile?.derived_metrics?.side_profile ?? {};
 
   return (
@@ -662,7 +681,11 @@ function BaseProfilePreview({ uploadState }) {
             />
             <Metric
               label="Side symmetry"
-              value={sideMetrics.symmetry_proxy?.yaw_delta}
+              value={sideMetrics.oblique_symmetry_proxy?.yaw_delta}
+            />
+            <Metric
+              label="3DMM frames"
+              value={reconstructionBundle.selected_count}
             />
           </div>
         </>

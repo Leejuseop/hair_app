@@ -2,7 +2,7 @@
 
 Last synchronized: 2026-06-24
 
-Status: **A100 end-to-end V4 baseline complete; no-MICA geometry is the current measured baseline, not the final head model**
+Status: **A100 end-to-end V4 baseline complete; MICA rejected, but no-MICA identity-shape benefit is not yet proven against fully refitted mean FLAME**
 
 Executable notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 
@@ -20,7 +20,7 @@ Keeping executable code under `experiments/` and long-lived knowledge under `doc
 
 ## 2. Executive Result
 
-The first complete Hair App Pixel3DMM baseline now works from eight independent photos through a personalized FLAME mesh.
+The first complete Hair App Pixel3DMM baseline now works from eight independent photos through a reproducible FLAME geometry artifact. The mesh is useful, but the later mean-shape control means it should not yet be called a strongly validated personalized head.
 
 ```text
 8 source photos
@@ -30,7 +30,7 @@ The first complete Hair App Pixel3DMM baseline now works from eight independent 
   -> 8 predicted normal maps
   -> 8 predicted UV correspondence maps
   -> joint multi-photo FLAME tracking
-  -> personalized canonical.ply + per-view tracking renders
+  -> canonical.ply + per-view tracking renders
 ```
 
 Confirmed live on an NVIDIA A100-SXM4-80GB:
@@ -104,7 +104,7 @@ ignore_mica=True
 is_discontinuous=True
 ```
 
-The resulting run folder name contained `_noMICA_uv2000.0_n2000.0`. `ignore_mica=True` is important: the current result starts without a MICA identity prior and is the required no-MICA control for the next A/B test.
+The resulting run folder name contained `_noMICA_uv2000.0_n2000.0`. `ignore_mica=True` is important: the current result starts without a MICA identity prior and became the control for the MICA A/B tests. Those follow-ups did not pass the adoption gate, so this no-MICA run remains the active measured baseline.
 
 ## 4. What Each Intermediate Output Means
 
@@ -456,6 +456,18 @@ Limitation:
 
 > This is a quick shape-swap diagnostic, not a fully fair independent baseline. A fairer comparison must rerun optimization with identity shape fixed to zero so camera, pose, and expression can refit for the mean-shape control.
 
+The fully refitted mean-shape control was then run. Identity shape was forced to zero while camera, pose, expression, jaw, eyes, eyelids, and intrinsics were allowed to refit. The result was:
+
+```json
+{
+  "views": 8,
+  "mean_shape_refit_average_error_px": 5.742349992829476,
+  "previous_no_mica_fitted_shape_average_error_px": 5.880312144215164
+}
+```
+
+In that run the validation script reports fitted and mean as identical because the fitted identity shape is intentionally zero. This weakens the earlier landmark-only personalization claim: mean FLAME can match or slightly beat the no-MICA fitted-shape landmark score once camera, pose, and expression are allowed to refit. The current no-MICA output remains a working end-to-end geometry artifact, but the optimized identity shape should not yet be described as strongly validated personal head geometry.
+
 ### 9.3 Visual inspection
 
 The official result showed, for each of the eight views:
@@ -526,9 +538,9 @@ This distinction matters: merely changing “98 landmarks” to “478 landmarks
 
 The next changes should be introduced one at a time against this frozen no-MICA baseline.
 
-### Priority 1: MICA identity-prior A/B
+### Completed: MICA identity-prior and init-only A/B
 
-Run the same eight images and same tracking settings with MICA enabled.
+The same eight images and same non-MICA settings were tested with MICA enabled.
 
 MICA's role:
 
@@ -536,24 +548,39 @@ MICA's role:
 - give Pixel3DMM a better starting identity than mean FLAME;
 - allow dense normal/UV/silhouette evidence to refine it across all views.
 
-MICA is not guaranteed to win. It may overconstrain the face, import single-view bias, or interact poorly with stylized/selfie inputs. Measure it.
+Result: MICA is not adopted as the default geometry path for this baseline.
 
-Required comparison:
+MICA prior run:
 
-- same input set;
-- same crop, PIPNet, FaRL, normal, and UV artifacts where compatible;
-- same iteration counts and all non-MICA weights;
-- saved exact configs and manifests;
-- mean-shape and fitted landmark errors;
-- fixed-view renders and overlays;
-- nose, cheek, jaw, forehead, ear, and profile inspection;
-- runtime and failure count.
+- MICA preprocessing completed 8/8;
+- MICA tracking produced `canonical.ply`, eight per-view meshes, and a result video;
+- canonical displacement versus no-MICA after centroid alignment: mean `4.2749 mm`, median `3.2221 mm`, p95 `8.0128 mm`, max `17.0235 mm`;
+- in the no-MICA camera/pose/expression context, MICA shape worsened average landmark error from `5.8803 px` to `7.2801 px`, losing 8/8 views;
+- in the MICA camera/pose/expression context, MICA shape improved `6.0530 px` to `5.7006 px`, winning 5/8 views;
+- native-run comparison improved only `0.1797 px`, but this is not a fixed-context comparison.
 
-Decision gate: keep MICA only if identity improves without worse multi-view alignment or implausible geometry.
+MICA init-only run:
 
-### Priority 2: fully refitted mean-shape control
+- no-MICA context: MICA init-only shape worsened `5.8803 px` to `7.2036 px`, losing 8/8 views;
+- MICA init-only context: MICA shape improved `5.9761 px` to `5.7245 px`, winning 5/8 views;
+- native-run comparison improved only `0.1558 px`.
 
-Rerun tracking with identity shape fixed to zero while allowing camera, pose, and expression to optimize. This removes the main limitation of the quick shape-swap diagnostic and produces a stronger personalization claim.
+Interpretation:
+
+- MICA changes the final geometry, but the fixed-context test shows the no-MICA fitted shape is preferred under the original no-MICA solution;
+- the small native-run gain appears to come largely from camera/pose/expression compensation around the MICA-shaped identity;
+- profile and contour-heavy views are especially risky;
+- MICA may remain a research reference, but it is not the default baseline for the current Hair App geometry path.
+
+The comparison helper is `experiments/milestone1_geometry_bakeoff/validate_mica_vs_no_mica.py`.
+
+### Priority 1: fully refitted mean-shape control
+
+Completed. Rerun tracking with identity shape fixed to zero while allowing camera, pose, expression, jaw, eyes, eyelids, and intrinsics to optimize. The result matched or slightly beat the no-MICA fitted-shape landmark score, so it did not strengthen the personalization claim.
+
+### Priority 2: cross-context no-MICA shape versus mean-shape validation
+
+Compare the no-MICA optimized shape and the refitted mean shape under both runs' fixed camera/pose/expression contexts. Also compare dense overlays, silhouette, normals, and UV evidence, because PIPNet landmarks alone may be absorbable by camera and pose.
 
 ### Priority 3: optimization resolution 256 versus 512
 
@@ -603,17 +630,26 @@ Improve the capture protocol with pulled-back-hair front/temple/profile views, v
 
 ## 13. Immediate Next Experiment
 
-The next new-chat task is **MICA versus no-MICA on the same eight-photo set**.
+The immediate product-data task is to rerun the geometry baseline on a stronger private input set:
 
-1. Preserve the existing no-MICA Drive folder and manifests.
-2. Confirm the latest V4 notebook and current Pixel3DMM checkout.
-3. Add MICA assets and preprocessing without changing crop, normals, UVs, iterations, or unrelated weights.
-4. Run the MICA condition into a new output folder; never overwrite the control.
-5. run the fully refitted mean-shape control if time allows;
-6. generate the same landmark metrics and fixed-view comparison sheet;
-7. record result, exact command, runtime, and decision here and in `newchat.md`.
+1. keep the user's selected selfies outside the repository;
+2. complete the six-step app scan;
+3. collect `backend/storage/scans/{scan_id}/selected_3dmm/`;
+4. combine private selfies and selected scan frames into one Pixel3DMM input folder;
+5. rerun no-MICA Pixel3DMM and the fully refitted mean-shape control on that set.
 
-Only after that should the project test tracker resolution 512 or high-precision maps. Changing MICA, resolution, precision, and landmarks together would make the cause of an improvement unknowable.
+After the new private-data run, the next diagnostic task is the **cross-context no-MICA shape versus mean-shape validation**.
+
+1. Preserve the existing no-MICA, MICA-prior, and MICA-init-only folders and manifests.
+2. Preserve the fully refitted mean-shape control folder and manifest.
+3. Confirm the latest V4 notebook and current Pixel3DMM checkout.
+4. Do not change crop, normals, UVs, iterations, resolution, or unrelated weights.
+5. Compare no-MICA fitted shape and mean shape under both runs' fixed contexts.
+6. Generate landmark metrics and fixed-view comparison sheets.
+7. Inspect dense render/silhouette/normal/UV evidence before deciding whether to proceed to 512 resolution.
+8. Record result, exact command, runtime, and decision here and in `newchat.md`.
+
+Only after that should the project test tracker resolution 512 or high-precision maps. Changing mean-shape control, resolution, precision, and landmarks together would make the cause of an improvement unknowable.
 
 ## 14. Notebook Run and Human Gates
 

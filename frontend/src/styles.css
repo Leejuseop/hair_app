@@ -133,18 +133,30 @@ h1 {
   z-index: 1;
 }
 
-.camera-frame.left .face-guide,
-.camera-frame.right .face-guide {
+.camera-frame.left_45 .face-guide,
+.camera-frame.right_45 .face-guide,
+.camera-frame.left_profile .face-guide,
+.camera-frame.right_profile .face-guide {
   width: 38%;
   border-radius: 46% 52% 44% 46%;
 }
 
-.camera-frame.left .face-guide {
+.camera-frame.left_45 .face-guide {
   transform: translateX(-18%);
 }
 
-.camera-frame.right .face-guide {
+.camera-frame.right_45 .face-guide {
   transform: translateX(18%);
+}
+
+.camera-frame.left_profile .face-guide {
+  width: 34%;
+  transform: translateX(-26%);
+}
+
+.camera-frame.right_profile .face-guide {
+  width: 34%;
+  transform: translateX(26%);
 }
 
 .camera-frame.hairline .face-guide {
@@ -264,7 +276,7 @@ h1 {
 
 .scan-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -281,7 +293,7 @@ h1 {
 
 .scan-steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
 }
@@ -513,6 +525,7 @@ h1 {
     font-size: 1.85rem;
   }
 
+  .scan-metrics,
   .scan-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

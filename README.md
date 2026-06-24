@@ -26,11 +26,14 @@ head + hair
 - React 18 + Vite mobile-first frontend.
 - browser `getUserMedia` camera.
 - MediaPipe Face Landmarker.
-- `front`, `left`, `right`, `hairline` 4단계 자동 capture.
-- 단계별 accepted sample 20개와 quality guidance.
+- `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, `hairline` 6단계 geometry-oriented guided capture.
+- 단계별 accepted sample 8~12개와 quality/pose guidance.
 - FastAPI `POST /api/scan`과 file-based scan storage.
-- `base_profile.json` version `0.1`.
-- representative image, landmark, hairline-guide preview.
+- `selected_3dmm/` reconstruction input bundle과 `selected_3dmm_manifest.json` 자동 생성.
+- `base_profile.json` version `0.2`.
+- representative image, landmark, hairline-guide preview, 3DMM selected-frame count.
+
+현재 앱 스캔은 제품 안에서 바로 3D reconstruction을 돌리지는 않는다. 대신 사용자의 실제 셀카 묶음과 앱이 만든 `selected_3dmm/` 스캔 프레임을 다음 오프라인 Pixel3DMM 입력으로 넘기기 위한 capture/provenance 단계다. 기존 셀카 업로드 UI는 아직 없으므로, 다음 실험에서는 셀카를 repository 밖 private 폴더에 보관하고 앱 스캔 결과와 수동으로 합친다.
 
 ### 오프라인 연구에서 완료된 부분
 
@@ -47,7 +50,9 @@ head + hair
 - mean FLAME landmark error under the same fitted cameras/poses/expressions: `7.1109 px`;
 - quick diagnostic improvement: `1.2306 px`, approximately `17.3%`, fitted wins 8/8 views.
 
-이 결과는 첫 개인화 geometry baseline이다. 제품 FastAPI에 연결되지 않았고, 실제 피부 UV texture·3D hair·retargeting·GLB도 아직 구현하지 않았다. hidden scalp/rear head는 여전히 prior 추정이다.
+이 결과는 첫 end-to-end geometry baseline이다. 다만 fully refitted mean-shape control은 평균 landmark error `5.7423 px`로 no-MICA fitted shape의 `5.8803 px`와 동률 또는 소폭 우세였다. 따라서 현재 수치만으로는 fitted identity shape의 개인화 이득이 증명됐다고 말하지 않는다. 제품 FastAPI에 연결되지 않았고, 실제 피부 UV texture·3D hair·retargeting·GLB도 아직 구현하지 않았다. hidden scalp/rear head는 여전히 prior 추정이다.
+
+같은 8장 입력에서 MICA prior와 MICA init-only도 A/B했다. MICA run은 정상 완료됐지만 2x2 fixed-context landmark 비교에서 no-MICA context 기준 MICA shape가 8/8 view에서 악화됐고, init-only도 같은 결론이었다. 따라서 현재 기본 geometry baseline은 no-MICA Pixel3DMM V4로 유지한다.
 
 ### 아직 미구현인 부분
 
@@ -65,7 +70,9 @@ head + hair
 
 - capture guidance and low-cost quality checks: MediaPipe.
 - first head geometry baseline: Pixel3DMM + FLAME.
-- next immediate experiment: same-input MICA versus no-MICA A/B.
+- current geometry choice: Pixel3DMM V4 no-MICA pipeline as the working reconstruction baseline; its optimized identity shape is not yet proven better than a refitted mean FLAME control.
+- next practical experiment: collect the user's selected selfies plus a fresh app scan, build one private Pixel3DMM input set from selfies + `selected_3dmm/`, then rerun no-MICA and the mean-shape control on that better capture set.
+- next diagnostic experiment after that: cross-context no-MICA fitted shape versus fully refitted mean-shape comparison, then decide whether to improve shape evidence before tracker size 256 versus 512.
 - optional geometry/camera assistance: VGGT.
 - face appearance: custom multi-photo observed-pixel UV baker.
 - missing UV research baseline: FreeUV versus simpler completion.
@@ -110,6 +117,18 @@ Current placeholders, not finished generation APIs:
 - `POST /api/style-reference`
 - `POST /api/generate`
 - `GET /api/result/{result_id}`
+
+## Current Manual Data Handoff
+
+Until selfie upload is implemented, private input preparation is manual:
+
+1. keep chosen selfies outside the Git repository, for example `C:\Users\User\Documents\hair_app_private\my_selfies_01\`;
+2. run the backend and frontend locally;
+3. complete the six-step guided scan in the browser;
+4. copy or record the resulting `scan_id`;
+5. use `backend/storage/scans/{scan_id}/selected_3dmm/` plus the private selfie folder as the next Pixel3DMM input set.
+
+The private selfie folder, `backend/storage/`, Colab Drive outputs, meshes, textures, embeddings, and videos are biometric-sensitive runtime data and must not be committed.
 
 ## Project Structure
 

@@ -53,7 +53,7 @@ Current first-stack hypothesis:
 
 - MediaPipe for capture guidance and low-cost checks;
 - Pixel3DMM/FLAME for first geometry baseline;
-- next MICA identity-prior A/B;
+- no-MICA Pixel3DMM V4 as the current measured geometry baseline after MICA A/B;
 - optional VGGT camera/depth/point initialization;
 - custom observed-pixel multi-photo UV baker;
 - FreeUV versus simple completion only for missing UV;
@@ -69,11 +69,12 @@ Implemented in the app repository:
 
 - React + Vite mobile web;
 - browser camera and MediaPipe Face Landmarker;
-- guided `front`, `left`, `right`, `hairline` capture;
-- 20 accepted samples per step;
+- guided `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, `hairline` capture;
+- 8~12 accepted samples per step;
 - FastAPI scan upload and file-based storage;
-- `base_profile.json` version `0.1`;
-- representative image, landmark, and hairline-guide previews.
+- backend-created `selected_3dmm/` reconstruction input bundle and `selected_3dmm_manifest.json`;
+- `base_profile.json` version `0.2`;
+- representative image, landmark, hairline-guide previews, and selected 3DMM frame count.
 
 Not implemented in the product:
 
@@ -134,6 +135,30 @@ is_discontinuous=True
 
 This is the **no-MICA control baseline**.
 
+MICA follow-up on the same eight photos:
+
+- MICA preprocessing completed 8/8 and MICA tracking produced `canonical.ply`, eight per-view meshes, and a result video;
+- MICA prior run changed the canonical mesh by mean `4.2749 mm`, median `3.2221 mm`, p95 `8.0128 mm`, max `17.0235 mm` versus no-MICA after centroid alignment;
+- 2x2 fixed-context landmark comparison rejected the MICA prior as the default: in the no-MICA camera/pose/expression context, MICA shape worsened average error from `5.8803 px` to `7.2801 px` and lost 8/8 views;
+- MICA's own context improved from `6.0530 px` with no-MICA shape to `5.7006 px` with MICA shape, winning 5/8 views, but this was not enough because the no-MICA fixed context strongly preferred the no-MICA shape;
+- native-run comparison showed only a small non-fixed-context gain: `5.8803 px` no-MICA versus `5.7006 px` MICA.
+
+MICA init-only follow-up also failed the adoption gate:
+
+- no-MICA context: MICA init-only shape worsened `5.8803 px` to `7.2036 px`, losing 8/8 views;
+- MICA init-only context: MICA shape improved `5.9761 px` to `5.7245 px`, winning 5/8 views;
+- native-run comparison improved only `0.1558 px`;
+- conclusion: do not use MICA by default for this baseline. MICA may be kept as a research reference, but the active baseline remains no-MICA Pixel3DMM V4.
+
+Fully refitted mean-shape control:
+
+- identity shape was forced to zero while camera, pose, expression, jaw, eyes, eyelids, and intrinsics were allowed to refit;
+- mean-shape refit average landmark error: `5.742349992829476 px`;
+- the validation script reports fitted and mean as identical because the run's fitted shape is intentionally the mean shape;
+- this is slightly better than the previous no-MICA fitted-shape landmark diagnostic value `5.880312144215164 px`;
+- interpretation: the earlier same-camera shape-swap improvement from `7.1109 px` to `5.8803 px` was not a fair proof of personal identity shape, because refitting camera/pose/expression lets the mean shape reach the same landmark accuracy;
+- do not claim the current `canonical.ply` is a strongly validated personal head shape yet. It is an end-to-end geometry artifact and working baseline, but identity-shape evidence is weak under this landmark metric.
+
 ## 5. Pixel3DMM Result and Meaning
 
 Mean FLAME versus fitted identity vertex displacement after centroid alignment:
@@ -158,15 +183,14 @@ Quick same-camera/pose/expression shape-swap landmark diagnostic:
 
 Approximate improvement: `17.3%`. The fitted shape beat mean FLAME on 8/8 views.
 
-The exact final `track.py` total/component loss values were not pasted into chat and must not be invented. The numbers above are a post-run landmark diagnostic, not the optimizer's weighted objective. Preserve and parse raw component losses in the next MICA A/B.
+The exact final no-MICA `track.py` total/component loss values were not pasted into chat and must not be invented. The numbers above are post-run landmark diagnostics, not the tracker's weighted objective.
 
 Correct interpretation:
 
-- tracking changed the mean FLAME shape into a user-specific shape;
-- the fitted identity explains observed landmarks better under the same fitted cameras/poses/expressions;
-- this is a useful first personal geometry baseline;
-- it is not proof of production-grade identity;
-- a fairer control must rerun with identity shape fixed to zero while camera/pose/expression refit;
+- tracking changed the mean FLAME mesh into a different geometry artifact;
+- the fitted identity explains observed landmarks better only under the same fitted cameras/poses/expressions;
+- the fully refitted mean-shape control matched or slightly beat that landmark score;
+- therefore this is a useful first end-to-end geometry baseline, not a validated personal identity shape yet;
 - hidden crown/rear scalp remain prior-driven, not measured truth.
 
 The official tracking comparison's third column is a per-view posed/expressive fitted render, not the neutral canonical mesh. `canonical.ply` is the shared neutral identity.
@@ -207,29 +231,31 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-Run **MICA enabled versus the preserved no-MICA baseline** on the same eight photos.
+The practical next task is to create a new private input set from the user's own data:
 
-Rules:
+1. keep the user's selected selfies in a repository-external private folder;
+2. run the local backend and frontend;
+3. complete a fresh six-step app scan;
+4. record the `scan_id`;
+5. use `backend/storage/scans/{scan_id}/selected_3dmm/` plus the private selfie folder as the next Pixel3DMM input set;
+6. rerun Pixel3DMM no-MICA and the fully refitted mean-shape control on this new private set.
 
-1. keep the no-MICA Drive folder unchanged;
-2. use the same crop, PIPNet, FaRL, normal, and UV inputs where compatible;
-3. change only MICA-related initialization/prior behavior;
-4. keep iterations, resolution, and unrelated weights identical;
-5. write the MICA run into a new folder;
-6. generate the same fixed-view renders and metrics;
-7. compare front, oblique, tilt, profile, nose, cheek, jaw, forehead, and ears;
-8. record runtime and failures;
-9. keep MICA only if it measurably improves identity without worse multi-view consistency or implausible geometry.
+The next diagnostic task after the new data run is the **cross-context no-MICA fitted shape versus fully refitted mean-shape comparison**.
 
-After the MICA A/B:
+For the diagnostic comparison:
 
-1. fully refitted mean-shape control;
-2. tracker size 256 versus 512;
-3. float32/16-bit normal and UV versus current 8-bit PNG;
-4. robust regional landmarks and occlusion confidence;
-5. more identities/capture conditions;
-6. only then normal/UV fine-tuning;
-7. begin observed-pixel UV baker after the temporary geometry baseline is chosen.
+1. preserve all no-MICA, MICA-prior, MICA-init-only, and mean-shape-control folders;
+2. compare no-MICA optimized shape and mean shape under both runs' fixed camera/pose/expression contexts;
+3. inspect dense render/silhouette/normal/UV overlays, not only PIPNet landmarks;
+4. if mean-shape remains equal or better, prioritize improving shape evidence and constraints before treating the canonical mesh as a validated personal head;
+5. only after the geometry evidence is understood, run tracker size 256 versus 512, float/16-bit maps, robust regional landmarks, and occlusion confidence one at a time.
+
+Product scan update now implemented:
+
+- the app's guided scan flow is geometry-oriented rather than only profile-preview-oriented;
+- backend keeps raw accepted samples and additionally creates a curated `selected_3dmm/` folder with 10 best scan frames;
+- intended next data experiment: combine the user's chosen selfies with this app-scan bundle, then rerun Pixel3DMM no-MICA and mean-shape control on the new private dataset.
+- the product still lacks selfie upload UI, so selfie selection currently happens outside the app in a private local folder.
 
 Do not change MICA, resolution, map precision, and landmark losses in one run; otherwise the improvement cause is unknowable.
 
@@ -238,7 +264,9 @@ Do not change MICA, resolution, map precision, and landmark losses in one run; o
 Prioritized ideas are fully specified in `docs/pixel3dmm_v4.md`:
 
 - MICA identity prior A/B;
-- fair mean-shape control with camera/expression refit;
+- MICA init-only A/B;
+- fully refitted mean-shape control, which matched or slightly beat no-MICA fitted-shape landmark error;
+- cross-context no-MICA shape versus mean-shape validation;
 - 512 tracking resolution;
 - float normal/UV outputs instead of only 8-bit PNG;
 - robust nose/brow/jaw/mouth regional constraints with visibility/confidence;
@@ -280,4 +308,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We completed the first multi-photo personal head baseline. Eight photos now pass crop, landmarks, segmentation, normal, UV, and FLAME tracking, producing a personalized neutral mesh. A quick landmark diagnostic improved about 17.3% over mean FLAME on all eight views. Next we must test whether MICA improves identity, then strengthen the control, resolution, map precision, and regional evidence before building the photo-based UV texture and 3D hair pipeline.
+> We have a working app scan foundation and a first offline Pixel3DMM geometry baseline. MICA did not pass the adoption gate, and a fully refitted mean-shape control showed that the current landmark numbers do not yet prove strong identity-shape personalization. The app scan has been upgraded to collect six geometry-oriented steps and produce `selected_3dmm/` frames. The immediate next move is to combine the user's selected selfies with a fresh app scan, rerun no-MICA and mean-shape control on that private set, then decide whether to improve capture evidence, optimization, or dense losses.

@@ -4,7 +4,14 @@ import statistics
 from typing import Any
 
 
-SCAN_STEPS = ("front", "left", "right", "hairline")
+SCAN_STEPS = (
+    "front",
+    "left_45",
+    "right_45",
+    "left_profile",
+    "right_profile",
+    "hairline",
+)
 
 
 def build_base_profile(scan_record: dict[str, Any]) -> dict[str, Any]:
@@ -20,10 +27,13 @@ def build_base_profile(scan_record: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "scan_id": scan_record["scan_id"],
-        "version": "0.1",
+        "version": "0.2",
         "status": "ready",
         "assets": _build_assets(best_samples),
         "raw_landmark_samples": _build_raw_landmark_samples(steps),
+        "reconstruction_bundle": _build_reconstruction_bundle_summary(
+            scan_record.get("reconstruction_bundle", {}),
+        ),
         "derived_metrics": _build_derived_metrics(steps, best_samples),
         "synthesis_anchors": _build_synthesis_anchors(front, hairline),
         "preview": _build_preview(front, hairline),
@@ -82,14 +92,40 @@ def _build_raw_landmark_samples(steps: dict[str, Any]) -> dict[str, list[dict[st
     return raw_samples
 
 
+def _build_reconstruction_bundle_summary(bundle: dict[str, Any]) -> dict[str, Any]:
+    images = bundle.get("selected_images", [])
+
+    return {
+        "manifest_path": bundle.get("manifest_path"),
+        "manifest_url": bundle.get("manifest_url"),
+        "selected_count": bundle.get("selected_count", len(images)),
+        "selected_dir": bundle.get("selected_dir"),
+        "selected_images": [
+            {
+                "image_path": image.get("image_path"),
+                "image_url": image.get("image_url"),
+                "index": image.get("index"),
+                "quality_score": image.get("quality_score"),
+                "source_sample_id": image.get("source_sample_id"),
+                "source_step": image.get("source_step"),
+                "view_role": image.get("view_role"),
+            }
+            for image in images
+        ],
+        "version": bundle.get("version"),
+    }
+
+
 def _build_derived_metrics(
     steps: dict[str, Any],
     best_samples: dict[str, dict[str, Any] | None],
 ) -> dict[str, Any]:
     front = best_samples["front"]
     hairline = best_samples["hairline"]
-    left = best_samples["left"]
-    right = best_samples["right"]
+    left_45 = best_samples["left_45"]
+    right_45 = best_samples["right_45"]
+    left_profile = best_samples["left_profile"]
+    right_profile = best_samples["right_profile"]
 
     return {
         "average_quality": {
@@ -99,9 +135,15 @@ def _build_derived_metrics(
         "face": _face_metrics(front),
         "hairline": _hairline_metrics(hairline),
         "side_profile": {
-            "left": _side_metrics(left),
-            "right": _side_metrics(right),
-            "symmetry_proxy": _side_symmetry_proxy(left, right),
+            "left_45": _side_metrics(left_45),
+            "left_profile": _side_metrics(left_profile),
+            "oblique_symmetry_proxy": _side_symmetry_proxy(left_45, right_45),
+            "profile_symmetry_proxy": _side_symmetry_proxy(
+                left_profile,
+                right_profile,
+            ),
+            "right_45": _side_metrics(right_45),
+            "right_profile": _side_metrics(right_profile),
         },
     }
 

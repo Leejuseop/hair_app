@@ -75,15 +75,16 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 
 - React + Vite mobile web.
 - MediaPipe Face Landmarker.
-- `front`, `left`, `right`, `hairline` 4단계 자동 capture.
-- 단계별 accepted sample 20개.
+- `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, `hairline` 6단계 geometry-oriented 자동 capture.
+- 단계별 accepted sample 8~12개.
 - FastAPI `POST /api/scan`과 scan storage.
-- `base_profile.json` version `0.1`.
+- `selected_3dmm/` reconstruction input bundle.
+- `base_profile.json` version `0.2`.
 - 대표 이미지·랜드마크·헤어라인 guide preview.
 
 현재 미구현:
 
-- 기존 셀카 multi-upload와 star UI.
+- 기존 셀카 multi-upload와 star UI. 현재는 사용자가 고른 셀카를 repository 밖 private 폴더에 두고, 앱 스캔의 `selected_3dmm/` 프레임과 오프라인에서 합친다.
 - 실제 style-reference persistence.
 - 3D head reconstruction.
 - UV baking/completion.
@@ -96,7 +97,9 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 
 - `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`로 A100 Pixel3DMM no-MICA baseline을 8장 입력에서 end-to-end 완료했다.
 - crop/PIPNet/FaRL/normal/UV가 각각 8/8이고, FLAME `canonical.ply`와 tracking render를 생성했다.
-- 이 연구 결과는 제품 FastAPI 경로에 연결되지 않았다. 정확한 결과와 다음 MICA A/B는 `docs/pixel3dmm_v4.md`를 따른다.
+- MICA prior와 MICA init-only는 fixed-context adoption gate를 통과하지 못했다.
+- fully refitted mean-shape control이 landmark 기준 no-MICA fitted shape와 동률 또는 소폭 우세였으므로, 현재 `canonical.ply`를 강하게 검증된 개인 두상으로 설명하지 않는다.
+- 이 연구 결과는 제품 FastAPI 경로에 연결되지 않았다. 정확한 결과와 다음 실험은 `docs/pixel3dmm_v4.md`를 따른다.
 
 ## Experiment Rules
 

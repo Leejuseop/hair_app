@@ -1,26 +1,84 @@
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
-export const SCAN_TARGET_SAMPLES = 20;
-export const SCAN_STEPS = ["front", "left", "right", "hairline"];
+export const SCAN_TARGET_SAMPLES = 12;
+export const SCAN_STEPS = [
+  "front",
+  "left_45",
+  "right_45",
+  "left_profile",
+  "right_profile",
+  "hairline",
+];
 
 export const SCAN_STEP_CONFIG = {
   front: {
-    label: "Front scan",
-    readyInstruction: "얼굴을 화면 중앙에 맞춰주세요.",
+    geometryRole: "front_geometry",
+    label: "Front geometry scan",
+    readyInstruction: "정면을 보고 입을 편하게 다문 상태로 얼굴을 중앙에 맞춰주세요.",
+    selected3dmmLimit: 2,
+    shortLabel: "Front",
+    targetSamples: 12,
+    type: "front",
   },
-  left: {
-    label: "Left scan",
-    readyInstruction: "왼쪽 옆얼굴이 보이게 고개를 왼쪽으로 돌려주세요.",
+  left_45: {
+    direction: -1,
+    geometryRole: "left_oblique_geometry",
+    label: "Left 45° scan",
+    readyInstruction: "왼쪽 45도 얼굴이 보이게 천천히 고개를 돌려주세요.",
+    selected3dmmLimit: 2,
+    shortLabel: "L 45°",
+    targetSamples: 10,
+    targetYawProxy: -0.34,
+    type: "oblique",
   },
-  right: {
-    label: "Right scan",
-    readyInstruction: "오른쪽 옆얼굴이 보이게 고개를 오른쪽으로 돌려주세요.",
+  right_45: {
+    direction: 1,
+    geometryRole: "right_oblique_geometry",
+    label: "Right 45° scan",
+    readyInstruction: "오른쪽 45도 얼굴이 보이게 천천히 고개를 돌려주세요.",
+    selected3dmmLimit: 2,
+    shortLabel: "R 45°",
+    targetSamples: 10,
+    targetYawProxy: 0.34,
+    type: "oblique",
+  },
+  left_profile: {
+    direction: -1,
+    geometryRole: "left_profile_geometry",
+    label: "Left profile scan",
+    readyInstruction: "왼쪽 측면에 가깝게 돌려 코·입·턱 옆선이 보이게 해주세요.",
+    selected3dmmLimit: 1,
+    shortLabel: "L Side",
+    targetSamples: 8,
+    targetYawProxy: -0.6,
+    type: "profile",
+  },
+  right_profile: {
+    direction: 1,
+    geometryRole: "right_profile_geometry",
+    label: "Right profile scan",
+    readyInstruction: "오른쪽 측면에 가깝게 돌려 코·입·턱 옆선이 보이게 해주세요.",
+    selected3dmmLimit: 1,
+    shortLabel: "R Side",
+    targetSamples: 8,
+    targetYawProxy: 0.6,
+    type: "profile",
   },
   hairline: {
+    geometryRole: "hairline_geometry",
     label: "Hairline scan",
-    readyInstruction: "이마와 헤어라인이 잘 보이게 정면을 유지해주세요.",
+    readyInstruction:
+      "이마와 헤어라인이 보이게 앞머리를 살짝 치우고 정면을 유지해주세요.",
+    selected3dmmLimit: 2,
+    shortLabel: "Hairline",
+    targetSamples: 12,
+    type: "hairline",
   },
 };
+
+export function getScanTargetSamples(step) {
+  return SCAN_STEP_CONFIG[step]?.targetSamples ?? SCAN_TARGET_SAMPLES;
+}
 
 const MEDIAPIPE_VERSION = "0.10.35";
 const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
@@ -132,11 +190,13 @@ export function analyzeScanFrame({
     result,
   });
 
-  if (step === "left" || step === "right") {
-    return analyzeSideFrame({ common, step });
+  const stepConfig = SCAN_STEP_CONFIG[step];
+
+  if (stepConfig?.type === "oblique" || stepConfig?.type === "profile") {
+    return analyzeTurnedFrame({ common, step, stepConfig });
   }
 
-  if (step === "hairline") {
+  if (stepConfig?.type === "hairline") {
     return analyzeHairlineFrame(common);
   }
 
@@ -160,9 +220,17 @@ export function captureVideoFrame(video) {
 }
 
 export function createScanSample({ analysis, imageDataUrl, sampleIndex, step }) {
+  const stepConfig = SCAN_STEP_CONFIG[step];
+
   return {
     id: `${step}_${String(sampleIndex + 1).padStart(3, "0")}`,
     capturedAt: new Date().toISOString(),
+    geometry: {
+      source: "app_guided_scan",
+      targetYawProxy: stepConfig?.targetYawProxy ?? 0,
+      useFor: ["geometry_evidence", "texture_reference"],
+      viewRole: stepConfig?.geometryRole ?? step,
+    },
     imageDataUrl,
     landmarks: analysis.landmarks,
     quality: {
@@ -170,6 +238,10 @@ export function createScanSample({ analysis, imageDataUrl, sampleIndex, step }) 
       ...analysis.metrics,
     },
     scanStep: step,
+    selection: {
+      candidateFor3dmm: true,
+      selected3dmmLimit: stepConfig?.selected3dmmLimit ?? 1,
+    },
     ...analysis.sample,
   };
 }
@@ -297,15 +369,18 @@ function analyzeFrontFrame(common) {
   });
 }
 
-function analyzeSideFrame({ common, step }) {
-  const direction = step === "left" ? -1 : 1;
+function analyzeTurnedFrame({ common, step, stepConfig }) {
+  const direction = stepConfig.direction;
   const directedYaw = common.yawProxy * direction;
   const scores = getCommonScores(common);
-  const sideAngleScore = scoreByRange(directedYaw, 0.1, 0.16, 0.48, 0.68);
+  const isProfile = stepConfig.type === "profile";
+  const angleScore = isProfile
+    ? scoreByRange(directedYaw, 0.34, 0.48, 0.72, 0.84)
+    : scoreByRange(directedYaw, 0.12, 0.22, 0.46, 0.58);
   const qualityScore =
     scores.centered * 0.18 +
     scores.sideSize * 0.14 +
-    sideAngleScore * 0.31 +
+    angleScore * 0.31 +
     scores.sideRoll * 0.08 +
     scores.brightness * 0.1 +
     scores.sharpness * 0.07 +
@@ -316,14 +391,22 @@ function analyzeSideFrame({ common, step }) {
       Math.abs(common.centerOffset.x) <= 0.22 &&
       Math.abs(common.centerOffset.y) <= 0.22,
     distanceOk: common.height >= 0.38 && common.height <= 0.82,
-    sideFacing: directedYaw >= 0.14 && directedYaw <= 0.68,
+    sideFacing: isProfile
+      ? directedYaw >= 0.4 && directedYaw <= 0.84
+      : directedYaw >= 0.16 && directedYaw <= 0.58,
     stable: common.stability.isStable,
     upright: Math.abs(common.roll) <= 15,
   };
 
   return createAnalysisResult({
     common,
-    instruction: getSideInstruction({ checks, common, directedYaw, step }),
+    instruction: getTurnedInstruction({
+      checks,
+      common,
+      directedYaw,
+      isProfile,
+      step,
+    }),
     isGood:
       checks.brightEnough &&
       checks.centered &&
@@ -331,7 +414,7 @@ function analyzeSideFrame({ common, step }) {
       checks.sideFacing &&
       checks.stable &&
       checks.upright &&
-      qualityScore >= 0.66,
+      qualityScore >= (isProfile ? 0.62 : 0.66),
     qualityScore,
   });
 }
@@ -459,8 +542,9 @@ function getFrontInstruction({ checks, common }) {
   return "좋아요. 그대로 유지하세요.";
 }
 
-function getSideInstruction({ checks, common, directedYaw, step }) {
-  const sideText = step === "left" ? "왼쪽" : "오른쪽";
+function getTurnedInstruction({ checks, common, directedYaw, isProfile, step }) {
+  const sideText = step.startsWith("left") ? "왼쪽" : "오른쪽";
+  const targetText = isProfile ? "측면" : "45도";
 
   if (!checks.brightEnough) {
     return "조명을 조금 더 밝게 해주세요.";
@@ -486,11 +570,11 @@ function getSideInstruction({ checks, common, directedYaw, step }) {
     return `반대 방향입니다. ${sideText}으로 고개를 돌려주세요.`;
   }
 
-  if (directedYaw < 0.14) {
-    return `${sideText} 옆얼굴이 보이게 고개를 더 돌려주세요.`;
+  if (directedYaw < (isProfile ? 0.4 : 0.16)) {
+    return `${sideText} ${targetText} 얼굴이 보이게 고개를 더 돌려주세요.`;
   }
 
-  if (directedYaw > 0.68) {
+  if (directedYaw > (isProfile ? 0.84 : 0.58)) {
     return "너무 많이 돌렸어요. 얼굴을 조금만 정면 쪽으로 돌려주세요.";
   }
 
@@ -498,7 +582,7 @@ function getSideInstruction({ checks, common, directedYaw, step }) {
     return "좋아요. 그 각도에서 잠시만 멈춰주세요.";
   }
 
-  return "좋아요. 옆얼굴 각도를 그대로 유지하세요.";
+  return `좋아요. ${sideText} ${targetText} 각도를 그대로 유지하세요.`;
 }
 
 function getHairlineInstruction({ checks, common }) {

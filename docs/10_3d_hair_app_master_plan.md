@@ -94,18 +94,22 @@ Implemented:
 - React and Vite mobile web frontend.
 - Browser camera access with `getUserMedia`.
 - MediaPipe Face Landmarker in the browser.
-- Guided `front`, `left`, `right`, and `hairline` capture steps.
-- Automatic frame-quality checks and capture of 20 accepted samples per step.
+- Guided `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, and `hairline` geometry capture steps.
+- Automatic frame-quality checks and capture of 8~12 accepted samples per step.
 - FastAPI scan upload and file-based storage.
-- `base_profile.json` version `0.1` with raw landmarks, selected frames, derived metrics, anchors, and preview data.
+- Backend-created `selected_3dmm/` reconstruction input bundle and `selected_3dmm_manifest.json`.
+- `base_profile.json` version `0.2` with raw landmarks, selected frames, derived metrics, anchors, preview data, and reconstruction-bundle summary.
 - A reproducible A100 Pixel3DMM V4 research notebook for eight independent photos.
 - V4 preprocessing with FaceBoxes per-photo no-roll crop, PIPNet WFLW-98, and FaRL, confirmed 8/8.
 - Pixel3DMM normal and UV inference, multi-photo FLAME tracking, and `canonical.ply` generation.
 - A measured no-MICA geometry baseline: 5,023 vertices, 9,976 faces, and approximately 17.3% lower quick landmark error than mean FLAME under fixed fitted cameras/poses/expressions.
+- Same-input MICA prior and MICA init-only A/B runs were completed; neither passed the fixed-context adoption gate, so no-MICA remains the active Pixel3DMM V4 baseline.
+- A fully refitted mean-shape control reached `5.7423 px` average landmark error, matching or slightly beating the no-MICA fitted-shape value `5.8803 px`; therefore the current identity-shape personalization claim is weak under the landmark metric.
+- A product-facing scan update now creates a six-step geometry-oriented app scan and a backend-selected `selected_3dmm/` frame bundle. The next private-data experiment should combine the user's selected selfies with this app-scan bundle before rerunning Pixel3DMM.
 
 Not implemented:
 
-- Manual upload of several existing selfies with one or two starred images.
+- Manual upload of several existing selfies with one or two starred images. Until this exists, selected selfies are kept in a private folder outside the repository and joined with app-scan frames offline.
 - A dedicated pulled-back-hair head scan beyond the current hairline capture step.
 - Any 3D reconstruction backend connected to the product API or storage model.
 - UV texture projection and completion.
@@ -114,7 +118,7 @@ Not implemented:
 - GLB generation and interactive 3D viewer.
 - Production storage, job queue, authentication, privacy controls, billing, or deployment.
 
-The exact V4 configuration, errors, validation metrics, limitations, and next MICA A/B experiment are in `docs/pixel3dmm_v4.md`.
+The exact V4 configuration, errors, validation metrics, limitations, MICA A/B result, mean-shape control, and next diagnostic experiments are in `docs/pixel3dmm_v4.md`.
 
 ## 4. Core Architectural Decision
 
@@ -585,10 +589,10 @@ Gate: one scan bundle can be replayed reproducibly through preprocessing.
 
 ### Milestone 1: Hairless Geometry Bake-Off
 
-- **Current:** the first Pixel3DMM V4 no-MICA run completed end to end on one eight-photo set.
-- **Measured:** fitted identity beat mean FLAME on all 8/8 views in a same-camera quick landmark diagnostic, improving average error from `7.1109 px` to `5.8803 px`.
-- Run the next MICA versus no-MICA A/B without changing other variables.
-- Run a fully refitted mean-shape control and then test 256 versus 512 tracking resolution.
+- **Current:** the first Pixel3DMM V4 no-MICA run completed end to end on one eight-photo set, MICA prior/init-only did not beat it under the fixed-context decision gate, and fully refitted mean-shape control matched or slightly beat it on landmarks.
+- **Measured:** fitted identity beat mean FLAME on all 8/8 views in a same-camera quick landmark diagnostic, improving average error from `7.1109 px` to `5.8803 px`, but the stronger refitted mean-shape control reached `5.7423 px`.
+- Run a cross-context no-MICA fitted shape versus mean-shape validation and inspect dense evidence.
+- Then decide whether to improve shape constraints or test 256 versus 512 tracking resolution.
 - Expand Pixel3DMM evaluation to representative multi-photo sets.
 - Run KaoLRM on the best comparable inputs.
 - Optionally use VGGT camera/depth initialization.
@@ -822,16 +826,17 @@ This section absorbs the former standalone mobile MVP and scan documents so the 
 
 1. The user opens the React/Vite mobile web app.
 2. The browser requests camera permission and starts MediaPipe Face Landmarker.
-3. The app guides `front`, `left`, `right`, and `hairline` capture steps.
-4. Each step collects 20 accepted samples after quality checks.
+3. The app guides `front`, `left_45`, `right_45`, `left_profile`, `right_profile`, and `hairline` capture steps.
+4. Each step collects 8~12 accepted samples after quality checks.
 5. The completed bundle is uploaded with `POST /api/scan`.
 6. FastAPI stores the scan under `backend/storage/scans/{scan_id}/`.
-7. The backend creates `base_profile.json` version `0.1`.
-8. The frontend shows representative images, landmark overlays, a hairline guide, and summary metrics.
+7. The backend creates `selected_3dmm/` and `selected_3dmm_manifest.json` by choosing the best stepwise geometry frames.
+8. The backend creates `base_profile.json` version `0.2`.
+9. The frontend shows representative images, landmark overlays, a hairline guide, selected 3DMM frame count, and summary metrics.
 
 Current capture checks include face presence, distance/size, center alignment, brightness, sharpness, yaw, roll, and short-term stability. The exact thresholds are implementation details and must be checked in code when this document and code disagree.
 
-The current hairline step improves frontal hairline and temple evidence. It is not yet a complete crown/rear scalp scan. A future pulled-back-hair flow should explicitly request:
+The current hairline step improves frontal hairline and temple evidence. The left/right 45-degree and profile steps are meant to give Pixel3DMM/VGGT-style geometry models stronger profile evidence than arbitrary selfies. This is still not a complete crown/rear scalp scan. A future pulled-back-hair flow should explicitly request:
 
 - frontal hairline with hair fully pulled back;
 - left and right temple/profile views;
@@ -843,7 +848,15 @@ The current hairline step improves frontal hairline and temple evidence. It is n
 
 Each accepted sample preserves the camera frame plus raw face-landmark and quality metadata needed to reproduce later decisions. Raw data should be retained independently from derived previews so a future model can rerun from original evidence.
 
-The four guided steps and automatic samples are implemented. Existing-selfie multi-upload, star selection, region-aware photo ranking, and persistent style-reference upload remain planned.
+The six guided steps, automatic samples, and backend 3DMM selected-frame bundle are implemented. Existing-selfie multi-upload, star selection, region-aware photo ranking across uploaded selfies, and persistent style-reference upload remain planned.
+
+For the immediate private-data experiment, the operational handoff is:
+
+1. the user selects selfies manually and stores them outside the repository;
+2. the user completes the app scan;
+3. the backend creates `backend/storage/scans/{scan_id}/selected_3dmm/`;
+4. an offline preparation step combines private selfies and selected app-scan frames into one Pixel3DMM input folder;
+5. no-MICA Pixel3DMM and the mean-shape control are rerun on that combined set.
 
 The future star behavior should be:
 
@@ -878,12 +891,16 @@ backend/storage/scans/{scan_id}/
   request and scan metadata
   accepted frame images
   raw landmark samples
+  selected_3dmm/
+    curated geometry input frames
+    manifest.json
+  selected_3dmm_manifest.json
   selected representative images
   base_profile.json
   preview assets
 ```
 
-Any `base_profile.json` schema change must increment its version and document migration or backward compatibility. A future 3D artifact tree should not overwrite the `0.1` scan profile; it should reference it as an immutable parent.
+Any `base_profile.json` schema change must increment its version and document migration or backward compatibility. A future 3D artifact tree should not overwrite the `0.2` scan profile; it should reference it as an immutable parent.
 
 ### 18.5 Planned mobile states
 
@@ -904,13 +921,14 @@ The app must not imply that a one-image hairstyle contains known back geometry. 
 
 This section absorbs the former base-model design document. It separates the current 2D profile from the future reusable 3D personal asset.
 
-### 19.1 Current `base_profile.json` version 0.1
+### 19.1 Current `base_profile.json` version 0.2
 
 The current profile is structured scan data and preview information, not a 3D mesh. It contains or references:
 
 - scan ID and schema version;
 - current capture steps and selected representative frames;
 - raw face-landmark samples;
+- selected 3DMM reconstruction bundle summary;
 - derived face/head metrics and anchors;
 - hairline guide information;
 - preview asset paths and summary metadata.
