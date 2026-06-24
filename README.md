@@ -151,17 +151,12 @@ Placeholder:
 
 ## Documentation Map
 
-- [`docs/01_problem_definition.md`](docs/01_problem_definition.md): 현재 문제 정의와 성공 기준.
-- [`docs/02_idea_evolution.md`](docs/02_idea_evolution.md): 2D 편집 중심에서 진짜 3D 구조로 바뀐 이유.
+- [`docs/history.md`](docs/history.md): 아이디어의 시작, 2D 모델 실험과 실패, 3D 전환, Pixel3DMM crop 수정까지의 상세 프로젝트 연대기.
 - [`docs/03_mobile_web_mvp.md`](docs/03_mobile_web_mvp.md): 현재 웹 구현과 계획 UI의 경계.
 - [`docs/04_scan_pipeline.md`](docs/04_scan_pipeline.md): 현재 스캔 데이터와 3D용 확장 계획.
 - [`docs/05_base_model_design.md`](docs/05_base_model_design.md): 현재 `base_profile.json`과 미래 3D asset 계약.
-- [`docs/06_hair_synthesis_pipeline.md`](docs/06_hair_synthesis_pipeline.md): 3D 헤어 복원·결합 파이프라인.
-- [`docs/07_hair_engine_experiment_plan.md`](docs/07_hair_engine_experiment_plan.md): StableHairV2 과거 실험과 재현 recipe.
-- [`docs/08_general_image_editing_strategy.md`](docs/08_general_image_editing_strategy.md): 2D 편집 모델의 보조·fallback 역할.
-- [`docs/09_flux2_klein_tuning.md`](docs/09_flux2_klein_tuning.md): FLUX.2 학습 기록과 현재 3D 계획에서의 재배치.
+- [`docs/06_hair_synthesis_pipeline.md`](docs/06_hair_synthesis_pipeline.md): hairstyle 사진을 3D strand hair로 만들고 사용자 두상에 맞춰 collision을 제거하는 미래 단계.
 - [`docs/10_3d_hair_app_master_plan.md`](docs/10_3d_hair_app_master_plan.md): 현재 가장 상세한 3D 기준 문서.
-- [`docs/11_canonical_crop_engine.md`](docs/11_canonical_crop_engine.md): crop v1~v3 roll 실험과 sparse landmark 한계의 historical record.
 - [`docs/12_pixel3dmm_preprocessing_contract.md`](docs/12_pixel3dmm_preprocessing_contract.md): official Pixel3DMM source audit와 최종 per-image no-roll/PIPNet 98 계약.
 - [`docs/13_pixel3dmm_v4_live_run_2026-06-23.md`](docs/13_pixel3dmm_v4_live_run_2026-06-23.md): V4 live 실행 전체 오류·수정·Drive artifact·정확한 재개 절차.
 - [`newchat.md`](newchat.md): 새 대화용 간결한 최신 handoff.
@@ -176,17 +171,12 @@ hair_app/
   AGENTS.md
   newchat.md
   docs/
-    01_problem_definition.md
-    02_idea_evolution.md
+    history.md
     03_mobile_web_mvp.md
     04_scan_pipeline.md
     05_base_model_design.md
     06_hair_synthesis_pipeline.md
-    07_hair_engine_experiment_plan.md
-    08_general_image_editing_strategy.md
-    09_flux2_klein_tuning.md
     10_3d_hair_app_master_plan.md
-    11_canonical_crop_engine.md
     12_pixel3dmm_preprocessing_contract.md
     13_pixel3dmm_v4_live_run_2026-06-23.md
   experiments/

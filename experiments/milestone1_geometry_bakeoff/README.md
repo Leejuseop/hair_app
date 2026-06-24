@@ -11,7 +11,7 @@ This directory intentionally keeps only one executable notebook:
 
 It contains the complete Colab flow: pinned Pixel3DMM checkout, A100/H100 environment setup, validated FLAME assets, per-image no-roll crop, PIPNet 98 landmarks, FaRL segmentation, preprocessing gates, Drive artifact backup, normal/UV inference, FLAME tracking, mesh preview, and run manifest.
 
-Earlier Pixel3DMM notebooks, the KaoLRM scaffold, and crop v1/v2/v3 code, tests, and crop-only notebooks were removed on 2026-06-24. Their conclusions remain in `docs/11_canonical_crop_engine.md`, `docs/12_pixel3dmm_preprocessing_contract.md`, `docs/13_pixel3dmm_v4_live_run_2026-06-23.md`, and Git history. They are not current execution paths.
+Earlier Pixel3DMM notebooks, the KaoLRM scaffold, and crop v1/v2/v3 code, tests, and crop-only notebooks were removed on 2026-06-24. Their conclusions remain in `docs/history.md`, `docs/12_pixel3dmm_preprocessing_contract.md`, `docs/13_pixel3dmm_v4_live_run_2026-06-23.md`, and Git history. They are not current execution paths.
 
 ## Current Result
 

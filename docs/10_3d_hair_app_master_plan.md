@@ -1,6 +1,6 @@
 # Hair App 3D Master Plan
 
-Last synchronized: 2026-06-23
+Last synchronized: 2026-06-24
 Status: working architecture and experiment plan; not a frozen specification
 
 ## 1. Document Purpose
@@ -45,6 +45,45 @@ personal head + strand hair
   -> retargeting and collision correction
   -> mobile-ready GLB and optional high-quality renders
 ```
+
+### Product Problem and User Value
+
+사용자는 마음에 드는 헤어스타일 사진을 찾아도 그 스타일이 자신의 실제 얼굴, 두상, 헤어라인, 이마, 귀, 옆모습과 어울릴지 판단하기 어렵다. 한 장짜리 2D 합성은 빠른 미리보기에는 유용하지만 얼굴 깊이와 좌우 비대칭, 실제 hairline, 측면·후면의 일관성, 머리카락과 얼굴·귀·두피의 충돌을 안정적으로 표현하지 못한다.
+
+Hair App이 해결하려는 핵심 문제는 다음과 같다.
+
+> 여러 사용자 사진과 가이드 스캔으로 재사용 가능한 개인 3D 머리를 만들고, 실제 사진 기반 얼굴 표면과 독립된 3D 헤어스타일을 결합해 여러 각도에서 확인할 수 있게 한다.
+
+사용자에게 필요한 가치는 다음과 같다.
+
+- 미용실 방문 전에 원하는 스타일을 정면뿐 아니라 측면과 후면에서도 확인;
+- 실제 얼굴형, 이마, hairline과 temple 모양을 반영;
+- 헤어스타일을 바꿀 때마다 얼굴을 다시 만들지 않는 reusable personal head;
+- 사진에서 관측된 부분과 모델이 추정한 부분을 구분하는 정직한 결과;
+- 휴대전화에서 회전·확대할 수 있는 결과와 필요한 경우 고품질 still render.
+
+### Working Product Hypotheses
+
+1. **Multi-photo geometry:** 정면·좌우·profile·hairline-visible 입력을 함께 사용하면 한 장보다 얼굴 깊이와 side contour가 좋아진다.
+2. **Observed UV texture:** 보이는 얼굴을 AI가 다시 그리는 것보다 실제 사진 픽셀을 공통 UV에 투영하는 편이 identity를 잘 보존한다.
+3. **Independent hair:** head mesh, face UV, strand hair를 분리해야 스타일 교체와 collision correction이 가능하다.
+4. **Pulled-back-hair capture:** 머리를 뒤로 넘긴 사진은 hairline·temple·귀 주변을 개선하지만 계속 가려진 crown/rear scalp는 여전히 prior 추정이다.
+5. **Star plus regional quality:** 사용자가 고른 대표 사진은 appearance에 bonus를 주되, 측면 영역에서는 실제 측면 사진의 관측을 우선한다.
+6. **3D before 2D polish:** 먼저 일관된 3D geometry를 만들고 필요할 때만 2D model을 presentation refinement에 사용한다.
+
+이 가설은 고정된 진리가 아니다. 동일 입력 비교에서 실패하면 capture, representation, model, fine-tuning 순서를 바꾼다.
+
+### Research Success and First-Prototype Non-Goals
+
+초기 성공은 단순히 notebook이 실행되는 것으로 판정하지 않는다. neutral render에서 사용자가 자신을 알아볼 수 있어야 하고, observed texture가 실제 얼굴색과 특징을 유지해야 하며, hair silhouette·part·length·volume이 여러 view에서 일관되어야 한다. Hair root가 scalp와 hairline에 붙고 명백한 penetration이 없어야 하며, observed/generated 영역과 confidence를 manifest로 구분할 수 있어야 한다.
+
+첫 3D prototype의 목표가 아닌 것:
+
+- 의료용 두개골·두피 측정 정확도;
+- 실시간 물리 기반 strand simulation;
+- 모든 braid와 모든 모발 유형의 완전한 지원;
+- 처음부터 foundation model 전체 학습;
+- 연구용 비상업 모델을 그대로 commercial production에 배포하는 것.
 
 ## 3. What Is Already Implemented
 

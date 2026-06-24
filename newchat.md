@@ -88,11 +88,12 @@ On 2026-06-24 the repository was simplified to the final V4 notebook only. The f
 - the original and Safe Pixel3DMM notebooks;
 - the old KaoLRM notebook scaffold.
 
-The historical reasoning remains in docs 11–13 and Git history. Do not reintroduce those files unless a concrete same-input A/B experiment requires them.
+The historical reasoning remains in `docs/history.md`, docs 12–13, and Git history. Do not reintroduce those files unless a concrete same-input A/B experiment requires them.
 
 ## Key Documents
 
 - `README.md`: project overview and implemented boundary.
+- `docs/history.md`: full project chronology from the first 2D attempts through the 3D pivot and Pixel3DMM crop redesign.
 - `docs/04_scan_pipeline.md`: capture and preprocessing flow.
 - `docs/10_3d_hair_app_master_plan.md`: complete 3D plan and decision gates.
 - `docs/12_pixel3dmm_preprocessing_contract.md`: final no-roll crop/PIPNet/FaRL contract.

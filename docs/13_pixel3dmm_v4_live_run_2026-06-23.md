@@ -13,7 +13,7 @@ Audited Pixel3DMM commit: `fcd1fa973c7715b02a8948dfc679dff53cf85924`
 상세 설계 근거는 다음 문서와 함께 본다.
 
 - `docs/10_3d_hair_app_master_plan.md`: Hair App 전체 3D 방향.
-- `docs/11_canonical_crop_engine.md`: v1~v3 roll 실험의 역사와 실패 원인.
+- `docs/history.md`: v1~v3 roll 실험을 포함한 전체 프로젝트 역사와 실패 원인.
 - `docs/12_pixel3dmm_preprocessing_contract.md`: official source audit와 최종 좌표/전처리 계약.
 - `experiments/milestone1_geometry_bakeoff/README.md`: Milestone 1 실행·평가 규칙.
 
@@ -397,7 +397,7 @@ The repository V4 notebook already applies this patch automatically in its compa
 
 ## 6. Crop v1–v3 Historical Experiments
 
-The following experiments explain why roll normalization was removed from the default. Their standalone code, tests, and crop-only notebooks were deleted from the active repository on 2026-06-24; this table, docs 11–12, and Git history preserve the reasoning.
+The following experiments explain why roll normalization was removed from the default. Their standalone code, tests, and crop-only notebooks were deleted from the active repository on 2026-06-24; this table, `docs/history.md`, docs 12, and Git history preserve the reasoning.
 
 | Version | Core idea | Result |
 | --- | --- | --- |
@@ -625,13 +625,13 @@ Primary implementation:
 - `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 - `experiments/milestone1_geometry_bakeoff/README.md`
 
-Only `pixel3dmm_colab_v4.ipynb` remains as an executable notebook. Earlier Pixel3DMM notebooks, the KaoLRM scaffold, and crop v1~v3 implementation/test notebooks were removed on 2026-06-24 because they were superseded. Their historical conclusions remain in this document, docs 11–12, and Git history.
+Only `pixel3dmm_colab_v4.ipynb` remains as an executable notebook. Earlier Pixel3DMM notebooks, the KaoLRM scaffold, and crop v1~v3 implementation/test notebooks were removed on 2026-06-24 because they were superseded. Their historical conclusions remain in this document, `docs/history.md`, docs 12, and Git history.
 
 Documentation:
 
 - `docs/04_scan_pipeline.md`
 - `docs/10_3d_hair_app_master_plan.md`
-- `docs/11_canonical_crop_engine.md`
+- `docs/history.md`
 - `docs/12_pixel3dmm_preprocessing_contract.md`
 - this document;
 - `newchat.md`.

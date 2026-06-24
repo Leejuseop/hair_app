@@ -1,7 +1,13 @@
 # 3D Hair Synthesis and Fitting Pipeline
 
-Last synchronized: 2026-06-21
+Last synchronized: 2026-06-24
 Status: planned research pipeline; not implemented and not frozen
+
+## 한 문장으로 설명
+
+사용자가 원하는 헤어스타일 사진을 넣으면 그 머리를 **얼굴 이미지에 바로 합성하는 것이 아니라 독립된 3D 머리카락 가닥으로 만들고**, 그 가닥의 뿌리를 사용자의 두피와 헤어라인에 맞춘 다음 얼굴·귀·두피를 뚫는 부분을 고쳐서 회전 가능한 결과로 만드는 미래 단계다.
+
+현재 구현된 기능이 아니라 Pixel3DMM으로 개인 head를 만든 뒤 진행할 hair 쪽 설계다. DiffLocks·Im2Haircut 같은 후보 중 어떤 엔진을 쓸지 비교하고, 최종 strand 결과를 사용자 두상에 옮기는 방법을 정리한다.
 
 ## Purpose
 
