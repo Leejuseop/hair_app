@@ -87,7 +87,7 @@ Hair App이 해결하려는 핵심 문제는 다음과 같다.
 
 ## 3. What Is Already Implemented
 
-The repository currently implements the scan and structured-profile foundation, not the final 3D pipeline.
+The repository currently implements the scan and structured-profile foundation. In addition, the offline research notebook now reproduces one complete Pixel3DMM geometry baseline. The 3D baseline is **not** connected to the FastAPI product flow and is not yet a production result pipeline.
 
 Implemented:
 
@@ -98,17 +98,23 @@ Implemented:
 - Automatic frame-quality checks and capture of 20 accepted samples per step.
 - FastAPI scan upload and file-based storage.
 - `base_profile.json` version `0.1` with raw landmarks, selected frames, derived metrics, anchors, and preview data.
+- A reproducible A100 Pixel3DMM V4 research notebook for eight independent photos.
+- V4 preprocessing with FaceBoxes per-photo no-roll crop, PIPNet WFLW-98, and FaRL, confirmed 8/8.
+- Pixel3DMM normal and UV inference, multi-photo FLAME tracking, and `canonical.ply` generation.
+- A measured no-MICA geometry baseline: 5,023 vertices, 9,976 faces, and approximately 17.3% lower quick landmark error than mean FLAME under fixed fitted cameras/poses/expressions.
 
 Not implemented:
 
 - Manual upload of several existing selfies with one or two starred images.
 - A dedicated pulled-back-hair head scan beyond the current hairline capture step.
-- Pixel3DMM, VGGT, KaoLRM, or another 3D reconstruction backend.
+- Any 3D reconstruction backend connected to the product API or storage model.
 - UV texture projection and completion.
 - 3D hairstyle reconstruction.
 - Hair-to-scalp retargeting and collision handling.
 - GLB generation and interactive 3D viewer.
 - Production storage, job queue, authentication, privacy controls, billing, or deployment.
+
+The exact V4 configuration, errors, validation metrics, limitations, and next MICA A/B experiment are in `docs/pixel3dmm_v4.md`.
 
 ## 4. Core Architectural Decision
 
@@ -181,7 +187,7 @@ Frames with severe problems should be rejected or given low regional weights rat
 
 MediaPipe remains useful for live guidance and inexpensive quality checks. It is not expected to be the final high-accuracy 3D reconstruction engine.
 
-For the first Pixel3DMM reproduction, persistent crop preprocessing should stay close to the official distribution: detect a bbox independently for every discontinuous photo, make an official-compatible square crop, and do not normalize roll by default. The crop-time RetinaFace five points are not the tracker's final landmarks. Pixel3DMM runs PIPNet after the persistent crop to produce WFLW 98 landmarks and then optimizes camera/head rotation during FLAME fitting. MediaPipe may cross-check those results, but it should not silently replace PIPNet topology. See `docs/12_pixel3dmm_preprocessing_contract.md` for the audited order and coordinate contract.
+For the first Pixel3DMM reproduction, persistent crop preprocessing stays close to the official distribution: detect a bbox independently for every discontinuous photo, make an official-compatible square crop, and do not normalize roll by default. Crop-time sparse points are not the tracker's final landmarks. Pixel3DMM runs PIPNet after the persistent crop to produce WFLW 98 landmarks and then optimizes camera/head rotation during FLAME fitting. MediaPipe may cross-check those results, but it should not silently replace PIPNet topology. The V4 run confirmed this contract 8/8; see `docs/pixel3dmm_v4.md`.
 
 ### Stage 3: Hairless 3D Head Reconstruction
 
@@ -579,7 +585,11 @@ Gate: one scan bundle can be replayed reproducibly through preprocessing.
 
 ### Milestone 1: Hairless Geometry Bake-Off
 
-- Run Pixel3DMM on representative multi-photo sets.
+- **Current:** the first Pixel3DMM V4 no-MICA run completed end to end on one eight-photo set.
+- **Measured:** fitted identity beat mean FLAME on all 8/8 views in a same-camera quick landmark diagnostic, improving average error from `7.1109 px` to `5.8803 px`.
+- Run the next MICA versus no-MICA A/B without changing other variables.
+- Run a fully refitted mean-shape control and then test 256 versus 512 tracking resolution.
+- Expand Pixel3DMM evaluation to representative multi-photo sets.
 - Run KaoLRM on the best comparable inputs.
 - Optionally use VGGT camera/depth initialization.
 - Render all outputs from the same cameras and score them.
@@ -803,3 +813,317 @@ This recommendation is intentionally revisable. The stable part is the product c
 - PERM: <https://github.com/c-he/perm>
 - UniHair: <https://github.com/PAULYZHENG/UniHair>
 - HairPort: <https://github.com/deepmancer/HairPort>
+
+## 18. Current Mobile Web, Scan, API, and Storage Contract
+
+This section absorbs the former standalone mobile MVP and scan documents so the current product boundary and future 3D plan stay together.
+
+### 18.1 Current user flow
+
+1. The user opens the React/Vite mobile web app.
+2. The browser requests camera permission and starts MediaPipe Face Landmarker.
+3. The app guides `front`, `left`, `right`, and `hairline` capture steps.
+4. Each step collects 20 accepted samples after quality checks.
+5. The completed bundle is uploaded with `POST /api/scan`.
+6. FastAPI stores the scan under `backend/storage/scans/{scan_id}/`.
+7. The backend creates `base_profile.json` version `0.1`.
+8. The frontend shows representative images, landmark overlays, a hairline guide, and summary metrics.
+
+Current capture checks include face presence, distance/size, center alignment, brightness, sharpness, yaw, roll, and short-term stability. The exact thresholds are implementation details and must be checked in code when this document and code disagree.
+
+The current hairline step improves frontal hairline and temple evidence. It is not yet a complete crown/rear scalp scan. A future pulled-back-hair flow should explicitly request:
+
+- frontal hairline with hair fully pulled back;
+- left and right temple/profile views;
+- both ears where possible;
+- crown and rear coverage when the chosen geometry model can use it;
+- recapture when a required region remains unobserved.
+
+### 18.2 Current sample and bundle meaning
+
+Each accepted sample preserves the camera frame plus raw face-landmark and quality metadata needed to reproduce later decisions. Raw data should be retained independently from derived previews so a future model can rerun from original evidence.
+
+The four guided steps and automatic samples are implemented. Existing-selfie multi-upload, star selection, region-aware photo ranking, and persistent style-reference upload remain planned.
+
+The future star behavior should be:
+
+- user star is an appearance-quality bonus, not an absolute override;
+- at most one or two photos may receive a strong global bonus;
+- a clear side photo still wins in its visible side region even if a frontal photo is starred;
+- automatic blur, occlusion, pose, lighting, and regional-coverage scores combine with the star;
+- low-quality or contradictory photos may be excluded with an explanation.
+
+### 18.3 Implemented API
+
+- `POST /api/scan`
+- `GET /api/scan/{scan_id}`
+- `GET /api/base-profile/{scan_id}`
+
+Current placeholders, not completed generation routes:
+
+- `POST /api/style-reference`
+- `POST /api/generate`
+- `GET /api/result/{result_id}`
+
+Future GPU work must be asynchronous. Long head, UV, or hair inference must not run directly inside the web request process. A future job boundary needs explicit queued/running/succeeded/failed states, retry behavior, artifact IDs, logs, and user-visible deletion.
+
+### 18.4 Current storage
+
+File-based local storage remains the current implementation until a database/object-store decision is made. `backend/storage/` is runtime data and never belongs in Git.
+
+Conceptually:
+
+```text
+backend/storage/scans/{scan_id}/
+  request and scan metadata
+  accepted frame images
+  raw landmark samples
+  selected representative images
+  base_profile.json
+  preview assets
+```
+
+Any `base_profile.json` schema change must increment its version and document migration or backward compatibility. A future 3D artifact tree should not overwrite the `0.1` scan profile; it should reference it as an immutable parent.
+
+### 18.5 Planned mobile states
+
+The future UI should distinguish:
+
+- upload/capture;
+- automatic quality review;
+- user star and recapture decisions;
+- head reconstruction queued/running/failed/complete;
+- hairstyle-reference review and hidden-region uncertainty;
+- hair reconstruction and fit progress;
+- final touch rotation, zoom, reset, fixed camera presets, and still-render selection;
+- deletion and training opt-in controls.
+
+The app must not imply that a one-image hairstyle contains known back geometry. Generated or prior-driven regions should be labeled as estimates.
+
+## 19. Personal Base Asset Contract
+
+This section absorbs the former base-model design document. It separates the current 2D profile from the future reusable 3D personal asset.
+
+### 19.1 Current `base_profile.json` version 0.1
+
+The current profile is structured scan data and preview information, not a 3D mesh. It contains or references:
+
+- scan ID and schema version;
+- current capture steps and selected representative frames;
+- raw face-landmark samples;
+- derived face/head metrics and anchors;
+- hairline guide information;
+- preview asset paths and summary metadata.
+
+It is useful as capture provenance and a future worker input, but it must never be presented as the finished personal base model.
+
+### 19.2 Future reusable personal head asset
+
+The future asset should be hairstyle-independent and versioned:
+
+```text
+personal_head/{head_id}/
+  manifest.json
+  source_scan_reference.json
+  geometry/
+    neutral_head.glb or neutral_head.ply
+    topology.json
+    flame_parameters.npz
+    scalp_region_mask
+    cameras.json
+  texture/
+    base_color_observed.png
+    base_color_completed.png
+    coverage.exr or npy
+    confidence.exr or npy
+    generated_region_mask.png
+    optional_normal_roughness_specular_maps
+  hairline/
+    curve_3d.json
+    temple_anchors.json
+    confidence.json
+  quality/
+    geometry_report.json
+    texture_report.json
+    uncertainty.json
+```
+
+Exact file formats may change, but the semantic separation is required.
+
+### 19.3 Geometry contract
+
+The head representation should expose:
+
+- stable topology and a documented coordinate system;
+- neutral identity shape separate from expression and pose;
+- UV coordinates;
+- scalp, face, ears, neck, and eye-region masks;
+- camera calibration or per-view projection information;
+- source-view visibility and confidence;
+- hairline and temple anchors;
+- provenance for model, weights, code commit, config, and parent inputs.
+
+The current Pixel3DMM V4 `canonical.ply` is an initial geometry artifact. It does not yet satisfy the full production contract because texture, observed/inferred confidence, product storage, and commercial licensing are unresolved.
+
+### 19.4 Face texture contract
+
+Observed and generated appearance must remain distinct:
+
+- `observed` preserves actual sampled photo evidence;
+- `completed` fills seams and unseen regions;
+- `coverage` records how many and which views contribute;
+- `confidence` combines angle, resolution, segmentation, sharpness, exposure, occlusion, and cross-view agreement;
+- `generated_region_mask` identifies every area changed or invented by completion.
+
+Never overwrite the raw observed texture with the completed texture. A later model should be reproducible from the raw inputs and manifests.
+
+### 19.5 Hairline contract
+
+Hairline is shared between head reconstruction, UV masking, and hair fitting. Store it as a 3D curve or ordered scalp-surface anchors with:
+
+- frontal, temporal, sideburn, and optional rear regions;
+- source-view support;
+- observed versus inferred labels;
+- regional confidence;
+- coordinate transforms into the canonical head and final fitted head.
+
+### 19.6 Reuse principle
+
+The personal head is generated once and reused across hairstyle experiments. Changing hair must not require reconstructing the user's face unless new evidence or a new head-model version is intentionally introduced.
+
+## 20. 3D Hair Reconstruction and Fitting Contract
+
+This section absorbs the former hair-synthesis document. It remains a plan: no strand-hair model or fitting module is implemented in this repository yet.
+
+### 20.1 Target flow
+
+```text
+hairstyle reference image(s)
+  -> reference validation and segmentation
+  -> hairstyle geometry reconstruction
+  -> canonical strand representation
+  -> scalp/root correspondence
+  -> hairline-aware retargeting to personal head
+  -> collision correction
+  -> appearance/material estimation
+  -> master strand asset + mobile LOD/hair cards
+```
+
+### 20.2 Preferred inputs and uncertainty
+
+Preferred hairstyle inputs are consistent front, oblique, side, and back images of the same style. One image remains supported as a research case, but hidden back volume, internal strand flow, part continuation, and root placement are estimates. The product should expose that uncertainty rather than presenting generated geometry as observed truth.
+
+Before reconstruction, validate:
+
+- whether all references show the same hairstyle;
+- face/head orientation and crop quality;
+- hair, face, background, accessory, and occluder masks;
+- visible hairline and parting;
+- approximate length, volume, curl type, bangs, and tied/loose state;
+- whether the reference can support a 3D claim.
+
+### 20.3 Candidate models
+
+**DiffLocks** is the first strand baseline because it directly targets 3D hair geometry, but it is not preselected as the long-term winner. It must export usable curves/strands and survive retargeting.
+
+Mandatory comparisons:
+
+- Im2Haircut for image-to-hair reconstruction;
+- UniHair or another current multi-view/strand candidate;
+- PERM as a longer-term parametric or training foundation;
+- newly available models with clearer commercial paths.
+
+The same references, render cameras, head assets, and fit metrics must be used across candidates.
+
+### 20.4 Canonical hair contract
+
+The master representation should preserve:
+
+- ordered root-to-tip points per strand;
+- root position and normal in canonical scalp coordinates;
+- strand grouping or guide/follower relationships;
+- widths, color/material attributes, and confidence;
+- reference-view visibility and generated-region labels;
+- hairstyle descriptors such as part, length, volume, curl, bangs, and ponytail/bun groups;
+- model/version/license/config provenance.
+
+Possible files include `strands.abc`, curve-based USD, or a documented `curves.npz`; the semantic contract matters more than the first container format.
+
+### 20.5 Scalp correspondence and retargeting
+
+Hair generated on a canonical head cannot simply be translated onto a user head. The custom fitting module should:
+
+1. map canonical scalp vertices or UV coordinates to the personal scalp;
+2. align frontal and temporal hairline anchors;
+3. transport strand roots and local frames;
+4. deform guide curves with a smooth scalp-aware field;
+5. preserve parting, length, curl, and overall silhouette;
+6. update follower strands;
+7. report regions whose roots are inferred or unsupported.
+
+### 20.6 Collision correction
+
+After retargeting, detect intersection with scalp, forehead, ears, face, neck, and shoulders when modeled. Correct in stages:
+
+- push penetrated roots to the valid scalp surface;
+- repair early strand segments while preserving tangent continuity;
+- move long strands along collision gradients or a signed-distance field;
+- regularize neighboring guides together to prevent noisy separation;
+- recheck collision after every deformation pass;
+- record penetration count, depth, affected strands, and residual failure regions.
+
+Collision correction must not silently destroy bangs, volume, or curl to obtain a low penetration score. Visual style metrics and fit metrics are both required.
+
+### 20.7 Hair appearance
+
+Geometry and appearance remain separable. Estimate or expose:
+
+- root-to-tip color variation;
+- melanin/dye parameters where the renderer supports them;
+- width and roughness;
+- highlight and anisotropy parameters;
+- reference-lighting uncertainty.
+
+Do not bake a reference photograph's background illumination into geometry. A master material may target Blender/server rendering, while a simplified material or hair-card atlas targets mobile GLB.
+
+### 20.8 Validation
+
+Geometry/style metrics:
+
+- front/side/back silhouette similarity;
+- part-line location;
+- length, volume, curl, and strand-flow agreement;
+- multi-view consistency;
+- hidden-region uncertainty.
+
+Fit metrics:
+
+- root-to-scalp distance;
+- hairline alignment error;
+- penetration count and maximum/mean depth;
+- detached roots;
+- ear/face collision by region;
+- change in style metrics before versus after fitting.
+
+Product metrics:
+
+- runtime and failure/recapture rate;
+- mobile GLB size and frame rate;
+- touch rotation, zoom, reset, and fixed-view usability;
+- user judgment that the result resembles both their identity and the requested hairstyle.
+
+### 20.9 Mobile conversion and fallback
+
+Keep a high-quality master strand asset. Derive mobile LODs, optimized guide/follower strands, meshes, or hair cards from it. Do not make the mobile representation the only source of truth.
+
+If 3D hair reconstruction is uncertain, acceptable fallbacks include asking for more views, offering a lower-confidence preview, generating server-side still turntables, or using a clearly labeled 2D refinement. A fallback must not be described as measured 3D truth.
+
+### 20.10 Hair fine-tuning order
+
+1. reproduce official inference;
+2. verify export and retargeting contracts;
+3. score fixed Hair App references;
+4. identify the dominant failure mode;
+5. confirm data and model licensing;
+6. fine-tune only the stage whose measured gap justifies it;
+7. keep the original baseline for regression testing.

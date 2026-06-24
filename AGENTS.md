@@ -92,6 +92,12 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 - asynchronous GPU jobs.
 - GLB viewer/result.
 
+현재 오프라인 연구 구현:
+
+- `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`로 A100 Pixel3DMM no-MICA baseline을 8장 입력에서 end-to-end 완료했다.
+- crop/PIPNet/FaRL/normal/UV가 각각 8/8이고, FLAME `canonical.ply`와 tracking render를 생성했다.
+- 이 연구 결과는 제품 FastAPI 경로에 연결되지 않았다. 정확한 결과와 다음 MICA A/B는 `docs/pixel3dmm_v4.md`를 따른다.
+
 ## Experiment Rules
 
 - README의 예시 품질만으로 모델을 채택하지 않는다.
@@ -136,9 +142,9 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 ## Backend Rules
 
 - 현재 backend는 FastAPI다.
-- 현재 실제 API는 README와 `docs/03_mobile_web_mvp.md`를 기준으로 한다.
+- 현재 실제 API는 README와 `docs/10_3d_hair_app_master_plan.md`의 현재 모바일/API 계약을 기준으로 한다.
 - file-based storage는 사용자가 DB 도입을 결정하기 전까지 유지한다.
-- storage layout이 바뀌면 README, `docs/04_scan_pipeline.md`, `docs/05_base_model_design.md`를 갱신한다.
+- storage layout이 바뀌면 README와 `docs/10_3d_hair_app_master_plan.md`의 scan/storage/personal-asset 계약을 갱신한다.
 - `base_profile.json` 변경 시 version을 올리고 migration/compatibility를 문서화한다.
 - 미래 3D worker API는 구현 전까지 계획으로만 표시한다.
 - 사용자 biometric asset 삭제와 training opt-in은 production design의 필수 요구사항으로 취급한다.

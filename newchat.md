@@ -1,101 +1,283 @@
 # Hair App New-Chat Handoff
 
 Last synchronized: 2026-06-24
+
+Branch expected: `main`
+
 Current architecture source of truth: `docs/10_3d_hair_app_master_plan.md`
-Current Pixel3DMM runbook: `docs/13_pixel3dmm_v4_live_run_2026-06-23.md`
 
-## Start Here
+Current experiment source of truth: `docs/pixel3dmm_v4.md`
 
-1. Run `git status --short --branch` and inspect the current code.
-2. Read `AGENTS.md`.
-3. For the current experiment, read this file, the milestone README, and docs 12–13.
-4. Do not commit private photos, landmarks, masks, textures, meshes, or Drive run folders.
+Executable research notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 
-## Current Product Direction
+Documentation consolidation status: committed and pushed to `main` on 2026-06-24 with this handoff; use `git log -1` for the exact immutable commit hash.
 
-Hair App targets a real editable 3D pipeline rather than a single 2D edited image:
+## 1. How to Resume
+
+At the beginning of a new conversation:
+
+1. run `git status --short --branch`;
+2. read `AGENTS.md`;
+3. read every tracked Markdown file;
+4. inspect the actual code/notebook before trusting this handoff;
+5. do not commit private biometric inputs or outputs.
+
+Detailed Markdown is intentionally consolidated:
+
+- `docs/10_3d_hair_app_master_plan.md`: complete product, current app/API/storage, personal-head asset, UV, hair, service, evaluation, privacy, and license plan;
+- `docs/pixel3dmm_v4.md`: all Pixel3DMM source audit, crop contract, runtime errors/fixes, measured result, current losses, limitations, and next experiments;
+- `docs/history.md`: full project chronology and portfolio-quality reasoning;
+- this file: compact current handoff.
+
+Root `README.md`, `AGENTS.md`, and `newchat.md` remain outside `docs/` because GitHub and coding agents discover them at the repository root.
+
+## 2. Product Direction
+
+Hair App targets a real editable 3D pipeline, not one isolated 2D edited image.
 
 ```text
 multiple user photos + guided hairline/head scan
-  -> reusable hairless head mesh
+  -> reusable editable hairless head mesh
   -> observed multi-photo face UV texture
 
-hairstyle reference
-  -> independent strand hair
+hairstyle reference image(s)
+  -> independent 3D strand hair
 
 head + hair
-  -> retargeting + collision correction
-  -> rotatable GLB + optional renders
+  -> hairline-aware scalp retargeting
+  -> collision correction
+  -> rotatable mobile GLB + optional renders
 ```
 
-The current research stack is MediaPipe capture guidance, Pixel3DMM geometry baseline, a future Hair App UV baker, a strand-hair baseline such as DiffLocks, custom fitting/collision correction, and GLB delivery. Every model choice remains replaceable after same-input evaluation. FastAvatar is not the current core because Gaussian representation conflicts with the editable UV mesh and independent-hair requirement.
+Current first-stack hypothesis:
 
-## Current Implementation Boundary
+- MediaPipe for capture guidance and low-cost checks;
+- Pixel3DMM/FLAME for first geometry baseline;
+- next MICA identity-prior A/B;
+- optional VGGT camera/depth/point initialization;
+- custom observed-pixel multi-photo UV baker;
+- FreeUV versus simple completion only for missing UV;
+- DiffLocks versus Im2Haircut/current alternatives for strand hair;
+- custom scalp/root fitting and collision correction;
+- Blender/server validation and GLB/Three.js delivery.
 
-Implemented today:
+All model choices remain replaceable. FastAvatar is not current core because Gaussian output conflicts with editable UV mesh and independently replaceable hair. FLUX.2/2D work remains useful for quality benchmarks, auxiliary views, still-render refinement, and fallback.
 
-- React + Vite mobile scan flow for `front`, `left`, `right`, and `hairline`;
-- MediaPipe Face Landmarker quality guidance and automatic sample collection;
-- FastAPI scan upload/storage and `base_profile.json` version `0.1`;
-- representative-image, landmark, and hairline-guide previews.
+## 3. Actual Product Implementation Boundary
 
-Not implemented yet:
+Implemented in the app repository:
 
-- selfie multi-upload and star UI;
-- production 3D reconstruction/UV baking;
-- hairstyle persistence and strand reconstruction;
-- hair retargeting/collision correction;
-- GPU job queue, GLB result viewer, and final 3D result API.
+- React + Vite mobile web;
+- browser camera and MediaPipe Face Landmarker;
+- guided `front`, `left`, `right`, `hairline` capture;
+- 20 accepted samples per step;
+- FastAPI scan upload and file-based storage;
+- `base_profile.json` version `0.1`;
+- representative image, landmark, and hairline-guide previews.
 
-## Pixel3DMM V4 Exact State
+Not implemented in the product:
 
-Only one executable repository notebook is retained:
+- existing-selfie multi-upload and star UI;
+- production 3D reconstruction worker/API;
+- observed-photo UV baker/completion;
+- style-reference persistence and strand hair;
+- head/hair retargeting and collision;
+- GPU job queue;
+- GLB builder/viewer;
+- production privacy/auth/deletion infrastructure.
 
-- `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
+Important: the Pixel3DMM result below is an offline research baseline. It is not connected to FastAPI or the frontend.
 
-Live A100 result from 2026-06-23:
+## 4. Pixel3DMM V4: Completed State
 
-- environment/CUDA extensions passed;
-- FLAME assets passed;
-- FaceBoxes per-image, margin 1.42, 512×512, no-roll crop passed 8/8;
-- confidence-first selection fixed the profile image false-positive crop;
-- PIPNet WFLW 98 landmarks passed 8/8;
-- FaRL segmentation passed 8/8;
-- count gate was `8/8/8/8/8/8`;
-- the complete private preprocessing bundle was saved to Drive;
-- normal inference then stopped at PyTorch 2.6+ checkpoint loading because `weights_only=True` became the default.
+The only active executable notebook is:
 
-The latest V4 notebook patches the trusted official Lightning checkpoint load to `weights_only=False`. This fix is implemented locally and in Git, but normal/UV has not yet been confirmed in a live runtime. Tracking and mesh output therefore remain incomplete.
+```text
+experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb
+```
 
-## Immediate Next Step
+Audited Pixel3DMM commit:
 
-Recommended after returning:
+```text
+fcd1fa973c7715b02a8948dfc679dff53cf85924
+```
 
-1. Open the latest V4 notebook in a fresh A100/H100 Colab runtime.
-2. Run from the top; do not reuse only fragments from an old runtime unless necessary.
-3. Confirm preprocessing again and set `PREPROCESSING_APPROVED=True` only after visual inspection.
-4. Run normal/UV inference and require `expected/normals/uv: 8 8 8`.
-5. Only then run `track.py`, preview the mesh, and save the full run bundle.
+Live A100 run on the same eight private photos completed end to end:
 
-If the old Colab runtime is still alive, docs 13 §11 contains the exact checkpoint compatibility patch and rerun command.
+- official FaceBoxes per-photo, highest-confidence, margin `1.42`, `512x512`, no-roll crop: 8/8;
+- PIPNet WFLW-98 landmarks: 8/8;
+- FaRL CelebM segmentation: 8/8;
+- Pixel3DMM normal inference: 8/8;
+- Pixel3DMM UV correspondence inference: 8/8;
+- multi-photo FLAME tracking: complete;
+- mesh: `canonical.ply`, 5,023 vertices, 9,976 faces;
+- official result video and eight source/fitted overlays visually inspected;
+- full private artifacts were saved with the notebook workflow to Drive; the exact final folder must be checked in Drive/Colab output because it was not pasted into chat.
 
-## Repository Cleanup Decision
+Tracking configuration:
 
-On 2026-06-24 the repository was simplified to the final V4 notebook only. The following executable artifacts were removed because they were superseded or no longer part of the immediate path:
+```text
+iters=100
+global_iters=1500
+batch_size=8
+include_neck=False
+w_exp=0.1
+use_mouth_lmk=False
+w_shape=0.01
+w_shape_general=0.001
+normal_super=2000.0
+sil_super=1000.0
+use_flame2023=True
+ignore_mica=True
+is_discontinuous=True
+```
 
-- crop v1/v2/v3 Python implementations and unit tests;
-- crop-only v1/v2/v3 Colab notebooks;
-- the original and Safe Pixel3DMM notebooks;
-- the old KaoLRM notebook scaffold.
+This is the **no-MICA control baseline**.
 
-The historical reasoning remains in `docs/history.md`, docs 12–13, and Git history. Do not reintroduce those files unless a concrete same-input A/B experiment requires them.
+## 5. Pixel3DMM Result and Meaning
 
-## Key Documents
+Mean FLAME versus fitted identity vertex displacement after centroid alignment:
 
-- `README.md`: project overview and implemented boundary.
-- `docs/history.md`: full project chronology from the first 2D attempts through the 3D pivot and Pixel3DMM crop redesign.
-- `docs/04_scan_pipeline.md`: capture and preprocessing flow.
-- `docs/10_3d_hair_app_master_plan.md`: complete 3D plan and decision gates.
-- `docs/12_pixel3dmm_preprocessing_contract.md`: final no-roll crop/PIPNet/FaRL contract.
-- `docs/13_pixel3dmm_v4_live_run_2026-06-23.md`: exact errors, fixes, artifacts, and resume instructions.
-- `experiments/milestone1_geometry_bakeoff/README.md`: concise current experiment status.
+- mean: `3.73 mm`;
+- RMS: `5.50 mm`;
+- p95: `11.37 mm`;
+- max: `25.02 mm`.
+
+Quick same-camera/pose/expression shape-swap landmark diagnostic:
+
+```json
+{
+  "views": 8,
+  "mean_flame_average_error_px": 7.110900421740904,
+  "fitted_average_error_px": 5.880312144215164,
+  "average_improvement_px": 1.2305882775257402,
+  "fitted_wins_views": 8,
+  "mean_wins_views": 0
+}
+```
+
+Approximate improvement: `17.3%`. The fitted shape beat mean FLAME on 8/8 views.
+
+The exact final `track.py` total/component loss values were not pasted into chat and must not be invented. The numbers above are a post-run landmark diagnostic, not the optimizer's weighted objective. Preserve and parse raw component losses in the next MICA A/B.
+
+Correct interpretation:
+
+- tracking changed the mean FLAME shape into a user-specific shape;
+- the fitted identity explains observed landmarks better under the same fitted cameras/poses/expressions;
+- this is a useful first personal geometry baseline;
+- it is not proof of production-grade identity;
+- a fairer control must rerun with identity shape fixed to zero while camera/pose/expression refit;
+- hidden crown/rear scalp remain prior-driven, not measured truth.
+
+The official tracking comparison's third column is a per-view posed/expressive fitted render, not the neutral canonical mesh. `canonical.ply` is the shared neutral identity.
+
+## 6. What Drives the Current Fit
+
+Do not summarize it as “98 landmarks + UV + normal with equal weight.”
+
+Inputs/evidence include:
+
+- PIPNet WFLW-98 extraction;
+- selected active eye contour, eye-closure, and iris landmark losses;
+- mouth landmarks disabled in the current run;
+- dense UV correspondence;
+- surface normals;
+- FaRL silhouette/valid-region evidence;
+- shape, expression, pose, camera, symmetry, and other regularizers;
+- optional MICA identity prior, disabled in this control.
+
+Blindly replacing 98 with MediaPipe 478 will not automatically improve geometry. A robust mapping, visibility, regional confidence, and explicit loss terms are required.
+
+## 7. Important V4 Fixes Already in the Notebook
+
+- independent per-photo crop replaced upstream static video bbox averaging;
+- no crop-time roll normalization;
+- highest detector confidence replaced area-heavy false-positive ranking;
+- complete FLAME2020/2023/masks/embedding installer with SHA/key checks;
+- legacy FaceBoxes import path fix;
+- resumable FaRL download and JIT validation;
+- trusted official Lightning checkpoint load with `weights_only=False` for PyTorch 2.6+;
+- HTTPS dependency clones, Cython/build fixes, Facer index dtype fix;
+- corrected `iters=100 global_iters=1500`;
+- normal/UV exact count gates;
+- private Drive bundle and manifest/hash save;
+- `trimesh`/Plotly installed with `sys.executable -m pip`, avoiding the previous wrong-interpreter import failure.
+
+Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires them. Their lessons are in `docs/history.md` and `docs/pixel3dmm_v4.md`.
+
+## 8. Immediate Next Task
+
+Run **MICA enabled versus the preserved no-MICA baseline** on the same eight photos.
+
+Rules:
+
+1. keep the no-MICA Drive folder unchanged;
+2. use the same crop, PIPNet, FaRL, normal, and UV inputs where compatible;
+3. change only MICA-related initialization/prior behavior;
+4. keep iterations, resolution, and unrelated weights identical;
+5. write the MICA run into a new folder;
+6. generate the same fixed-view renders and metrics;
+7. compare front, oblique, tilt, profile, nose, cheek, jaw, forehead, and ears;
+8. record runtime and failures;
+9. keep MICA only if it measurably improves identity without worse multi-view consistency or implausible geometry.
+
+After the MICA A/B:
+
+1. fully refitted mean-shape control;
+2. tracker size 256 versus 512;
+3. float32/16-bit normal and UV versus current 8-bit PNG;
+4. robust regional landmarks and occlusion confidence;
+5. more identities/capture conditions;
+6. only then normal/UV fine-tuning;
+7. begin observed-pixel UV baker after the temporary geometry baseline is chosen.
+
+Do not change MICA, resolution, map precision, and landmark losses in one run; otherwise the improvement cause is unknowable.
+
+## 9. Current Improvement Ideas
+
+Prioritized ideas are fully specified in `docs/pixel3dmm_v4.md`:
+
+- MICA identity prior A/B;
+- fair mean-shape control with camera/expression refit;
+- 512 tracking resolution;
+- float normal/UV outputs instead of only 8-bit PNG;
+- robust nose/brow/jaw/mouth regional constraints with visibility/confidence;
+- MediaPipe 478 as cross-check before direct loss integration;
+- hand/phone/headphone/hair/general-unknown occlusion masks;
+- angular/multi-scale normal loss and multi-view UV consistency;
+- Hair App-style normal/UV fine-tuning after baseline diagnosis;
+- face-only displacement/high-resolution refinement beyond FLAME;
+- better pulled-back-hair, crown/rear, depth, or VGGT scalp evidence.
+
+## 10. Repository Layout After Documentation Consolidation
+
+```text
+README.md                              # GitHub landing/current status
+AGENTS.md                              # repository agent rules
+newchat.md                             # this compact handoff
+docs/
+  10_3d_hair_app_master_plan.md        # complete system/product plan
+  pixel3dmm_v4.md                      # all current geometry experiment knowledge
+  history.md                           # chronology/portfolio record
+experiments/
+  milestone1_geometry_bakeoff/
+    pixel3dmm_colab_v4.ipynb           # executable output-free notebook
+    scoring_sheet.csv                  # experiment score template
+```
+
+Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-run, and experiment README files were merged into the three detailed documents above and removed. Git history preserves the originals.
+
+## 11. Privacy and License Guardrails
+
+- Never commit private face photos, scan samples, landmarks, segmentations, normals, UV maps, embeddings, textures, meshes, or videos.
+- Drive run folders are biometric-sensitive.
+- Product inference data and training data must remain separate.
+- Training requires explicit opt-in.
+- Pixel3DMM, FLAME, KaoLRM, DiffLocks, Im2Haircut, FreeUV, and related assets need separate code/weight/data/dependency license audits.
+- A research run does not imply commercial safety.
+
+## 12. What to Say When Asked “Where Are We?”
+
+Short answer:
+
+> We completed the first multi-photo personal head baseline. Eight photos now pass crop, landmarks, segmentation, normal, UV, and FLAME tracking, producing a personalized neutral mesh. A quick landmark diagnostic improved about 17.3% over mean FLAME on all eight views. Next we must test whether MICA improves identity, then strengthen the control, resolution, map precision, and regional evidence before building the photo-based UV texture and 3D hair pipeline.

@@ -438,13 +438,34 @@ runtime이 사라져도 재현할 수 있도록 Drive bundle에 다음을 저장
 
 private photo와 biometric artifact는 Git에 넣지 않는다.
 
-### 현재 마지막 오류
+### checkpoint 오류를 넘어서 첫 mesh까지
 
 첫 normal inference에서 PyTorch 2.6+가 `torch.load`의 기본값을 `weights_only=True`로 바꾼 영향으로 official Lightning checkpoint 내부 `omegaconf.DictConfig` load가 거부됐다.
 
-V4는 official Google Drive ID에서 받은 trusted Pixel3DMM checkpoint에 한정해 `load_from_checkpoint(..., weights_only=False)`를 명시하도록 수정됐다. 이 수정은 repository notebook에 반영됐지만 live normal/UV 8/8 성공은 아직 확인 전이다.
+V4는 official Google Drive ID에서 받은 trusted Pixel3DMM checkpoint에 한정해 `load_from_checkpoint(..., weights_only=False)`를 명시하도록 수정했다. 이후 normal과 UV inference가 각각 8/8 완료됐고, 다음 설정으로 multi-photo FLAME tracking을 끝냈다.
 
-정확한 당시 traceback, patch code, 재개 명령은 V4 성공 전까지 `13_pixel3dmm_v4_live_run_2026-06-23.md`에 유지한다.
+```text
+iters=100, global_iters=1500, batch_size=8
+use_flame2023=True, ignore_mica=True, is_discontinuous=True
+normal_super=2000, sil_super=1000
+```
+
+`canonical.ply`는 5,023 vertices와 9,976 faces를 가졌다. tracking result video에서 원본, source overlay, per-view fitted render를 8장 모두 확인했다. neutral identity shape는 입력마다 공유하고 camera, pose, jaw, expression은 사진마다 따로 최적화됐다.
+
+첫 Plotly preview가 옆으로 누워 있고 flat gray라 형상을 알아보기 어려웠다. 이는 mesh 실패가 아니라 기본 camera/shading 문제였다. 또 `!pip`와 `%pip`가 notebook kernel과 다른 interpreter에 설치되어 `trimesh` import가 실패했으며, `sys.executable -m pip` 방식으로 고쳤다. 실행 노트북도 이 수정으로 최신화했다.
+
+### 첫 개인화 검증
+
+평균 FLAME와 fitted identity를 centroid 정렬한 뒤 vertex displacement를 측정했다.
+
+- mean `3.73 mm`;
+- RMS `5.50 mm`;
+- p95 `11.37 mm`;
+- max `25.02 mm`.
+
+변형량만으로 정답을 증명할 수는 없지만 mean head를 그대로 반환하지 않았다는 점은 확인했다. 같은 fitted camera·pose·expression을 고정한 quick landmark shape-swap test에서는 mean FLAME error `7.1109 px`, fitted error `5.8803 px`, improvement `1.2306 px`로 약 `17.3%` 좋아졌고 fitted가 8/8 view에서 이겼다.
+
+이 검증은 camera와 expression을 각 조건에서 다시 맞춘 완전한 control은 아니다. 따라서 다음에는 identity shape를 zero로 고정한 mean-FLAME run을 별도로 최적화해야 한다. 정확한 수치, 제한, loss 구조, 다음 MICA A/B는 `docs/pixel3dmm_v4.md`에 통합했다.
 
 ## 13. 현재 구조와 남은 일
 
@@ -461,7 +482,9 @@ V4는 official Google Drive ID에서 받은 trusted Pixel3DMM checkpoint에 한�
 
 현재 완료되지 않은 핵심 단계:
 
-- Pixel3DMM normal/UV 8/8 및 첫 mesh;
+- MICA versus no-MICA와 fully refitted mean-shape control;
+- 512 tracking resolution 및 float normal/UV precision A/B;
+- 더 많은 identity와 capture condition에서 Pixel3DMM geometry 검증;
 - 실제 multi-photo UV baker;
 - strand hair baseline 비교;
 - head/hair retargeting과 collision;
@@ -482,6 +505,9 @@ V4는 official Google Drive ID에서 받은 trusted Pixel3DMM checkpoint에 한�
 | crop v2 | 안전장치 강화, 체감 개선 제한 | warning, validity, reversible transform 개념 |
 | crop v3 | 수학은 동작, sparse landmark 정밀도 한계 | 공식 downstream landmark를 먼저 확인해야 한다는 교훈 |
 | V4 area-heavy face ranking | 큰 false positive 선택 | candidate provenance와 confidence-first baseline |
+| PyTorch `weights_only=True` | official Lightning checkpoint load 실패 | trusted pinned checkpoint에 한정한 compatibility patch |
+| `!pip`/`%pip` trimesh 설치 | active kernel에서 import 실패 | `sys.executable -m pip`로 interpreter 일치 |
+| Pixel3DMM V4 no-MICA | 8장 end-to-end 성공, quick landmark error 약 17.3% 개선 | 첫 측정 가능한 personal geometry baseline과 MICA A/B control |
 
 ## 15. 프로젝트를 진행하며 세운 원칙
 
@@ -501,6 +527,8 @@ V4는 official Google Drive ID에서 받은 trusted Pixel3DMM checkpoint에 한�
 Hair App은 처음부터 완성된 3D 설계로 시작하지 않았다. 실제 사용자가 원하는 헤어스타일 합성을 만들기 위해 hair-specific 2D 모델을 재현했고, 일반 portrait에서 identity가 무너지는 실패를 확인했다. 더 강한 범용 editor와 FLUX.2 fine-tuning을 조사했지만, 사용자가 원하는 경험을 다시 정의하면서 한 장의 예쁜 이미지보다 회전 가능하고 헤어를 교체할 수 있는 3D asset이 핵심이라는 결론에 도달했다.
 
 그 뒤 단순히 3D 모델 이름을 고른 것이 아니라 representation을 `editable head mesh + observed UV + independent strand hair`로 분리했다. Pixel3DMM을 실제 A100 환경에서 재현하면서 video용 crop 가정이 독립 셀카에 맞지 않는 문제를 찾았고, 여러 번의 crop 실험과 official source audit를 통해 per-image no-roll 구조로 수정했다. 실패한 heuristic은 candidate metadata로 원인을 확인해 confidence-first로 되돌렸고, 모든 전처리 artifact와 manifest를 재현 가능한 형태로 보존했다.
+
+최종적으로 crop, WFLW-98, FaRL, normal, UV, tracking을 8/8 입력에서 끝내고 첫 personalized FLAME mesh를 얻었다. 평균 FLAME와의 vertex 차이만 보는 데서 멈추지 않고 같은 camera/pose/expression의 landmark diagnostic을 만들어 fitted shape가 8/8 view에서 더 낫다는 수치도 확인했다. 동시에 그 검증이 fully refitted control이 아니라는 한계와 hidden scalp가 prior라는 한계를 문서에 명시했다. 다음 단계도 “더 복잡하게 만들기”가 아니라 MICA 하나만 바꾸는 controlled A/B로 정했다.
 
 이 과정의 가치는 특정 모델 하나를 사용했다는 데 있지 않다. 문제 정의, 실제 입력 검증, 실패 원인 분석, representation 변경, 문서와 코드의 동기화, privacy와 license 경계까지 포함해 연구 prototype을 제품 구조로 발전시킨 경험에 있다.
 
