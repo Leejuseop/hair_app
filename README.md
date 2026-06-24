@@ -88,22 +88,24 @@ The three geometry candidates now used for the next visual experiment are:
 2. fitted mean-shape control, where identity shape is mean but camera/pose/expression context is fitted from the private photos;
 3. personal no-MICA candidate, where identity shape is also fitted from the private photos.
 
-Those meshes and their private manifest must be frozen in the private Drive run folder with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`. The generated mesh files and private manifest are biometric runtime artifacts and must not be committed. The next implementation task is a custom observed-photo face texture baker that can apply the same private photo evidence to all three mesh candidates for visual comparison.
+Those meshes and their private manifest have been frozen into the private Drive model-trio handoff folder. The generic helper that created the handoff is tracked at `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`, but the generated mesh files and private manifest are biometric runtime artifacts and must not be committed. The next implementation task is a custom observed-photo face texture baker that can apply the same private photo evidence to all three mesh candidates for visual comparison.
 
 Current storage status:
 
-- the personal no-MICA mesh and fitted mean-shape control are preserved in the private Drive run folder;
-- the raw FLAME template was generated for visualization in the Colab runtime and should be copied into Drive by running the freeze helper;
-- after the helper runs, the stable private handoff folder is `model_trio_for_texture/` inside the private run directory, with three PLY files plus `model_trio_manifest.json`.
+- the private Drive data has been reorganized into the stable top-level folders `input/`, `output/`, and `shared/`;
+- `input/<person>/` contains source selfies, app scan frames, and the clean Pixel3DMM input image set when applicable;
+- `output/<person>/` contains preprocessing artifacts, tracking folders, validation renders/metrics, and model folders for that person;
+- `shared/models/` contains reusable non-person-specific model assets;
+- the current user's next texture-baker entrypoint is the private `output/<person>/models/model_trio_for_texture/model_trio_manifest.json`;
+- the legacy girl-model experiment is preserved under the same `input/<person>/` and `output/<person>/` style layout;
+- generated mesh files, private manifests, crops, segmentations, landmarks, and photos are biometric runtime artifacts and must not be committed.
 
 Private Drive cleanup guidance:
 
-- keep `runs/` until the texture baker and model-trio comparison are complete;
-- keep `inputs/` until texture baking has reproduced from the same source photos;
-- keep `models/` because it may contain weights and FLAME assets that are expensive or permission-gated to restore;
-- keep the old girl-model folders unless the user explicitly decides to remove that experiment;
-- `crop_test_512`, `crop_test_512_v2`, and `crop_test_512_v3` are old crop-debug folders and are deletion candidates after confirming they do not contain the old girl-model assets;
-- `comparisons/` is usually smaller diagnostic output, so inspect before deleting rather than removing blindly.
+- keep the new `input/`, `output/`, `shared/`, and `data_layout_manifest.json`;
+- keep each person's source inputs, crop/landmark/segmentation outputs, tracking folders, and model manifests until texture baking has reproduced from the same evidence;
+- staging folders with names such as `_OLD_STAGING_AFTER_CLEAN_LAYOUT_*`, `_TRASH_REVIEW_*`, and `_REMOVE_FROM_KEEP_REVIEW_*` are deletion candidates after the new `input/`, `output/`, and `shared/` folders have been visually checked;
+- do not delete permission-gated shared model assets unless there is a known backup.
 
 ## Current Research Stack
 
@@ -159,7 +161,27 @@ Current placeholders, not finished generation APIs:
 
 ## Current Manual Data Handoff
 
-Until selfie upload is implemented, private input preparation is manual:
+Until selfie upload is implemented, private input preparation is manual. The cleaned Drive layout is the current private data source of truth:
+
+```text
+MyDrive/hair_app/
+  input/
+    <person>/
+      selfies/
+      scan/
+      pixel3dmm_input/
+  output/
+    <person>/
+      preprocessing/
+      models/
+      tracking/
+      validation/
+  shared/
+    models/
+  data_layout_manifest.json
+```
+
+For a new private run:
 
 1. keep chosen selfies outside the Git repository, for example `C:\Users\User\Documents\hair_app_private\my_selfies_01\`;
 2. run the backend and frontend locally;
@@ -167,7 +189,7 @@ Until selfie upload is implemented, private input preparation is manual:
 4. copy or record the resulting `scan_id`;
 5. use `backend/storage/scans/{scan_id}/selected_3dmm/` or the exported `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\` plus the private selfie folder as the next Pixel3DMM input set.
 
-The private selfie folder, `backend/storage/`, Colab Drive outputs, meshes, textures, embeddings, and videos are biometric-sensitive runtime data and must not be committed.
+The private selfie folder, `backend/storage/`, Colab Drive outputs, crops, segmentations, landmarks, meshes, textures, embeddings, and videos are biometric-sensitive runtime data and must not be committed.
 
 ## Project Structure
 

@@ -374,43 +374,52 @@ The first Plotly view also used an unhelpful default camera and flat gray shadin
 
 ## 8. Generated Artifact Contract
 
-The private preprocessing bundle is stored under a timestamped folder such as:
+The current private Drive source of truth has been cleaned into a person-oriented layout:
 
 ```text
-MyDrive/hair_app/runs/
-  pixel3dmm_v4_preprocessing_{VID_NAME}_{UTC}/
+MyDrive/hair_app/
+  input/
+    <person>/
+      selfies/
+      scan/
+      pixel3dmm_input/
+  output/
+    <person>/
+      preprocessing/
+      models/
+      tracking/
+      validation/
+  shared/
+    models/
+  data_layout_manifest.json
 ```
 
-The final full-run save copies the tracking result and the complete preprocessed actor. The user reported that the save workflow completed, but the exact final printed Drive directory was not pasted into chat; it must be read from the Colab variable/output or checked in Drive rather than guessed.
+Older timestamped `runs/`, `inputs/`, `models/`, `comparisons/`, and crop-test folders were consolidated into this cleaned layout. Staging folders such as `_OLD_STAGING_AFTER_CLEAN_LAYOUT_*`, `_TRASH_REVIEW_*`, and `_REMOVE_FROM_KEEP_REVIEW_*` are review/delete candidates after the cleaned layout has been visually checked.
 
 Expected private artifacts include:
 
 ```text
-raw_inputs/
-rgb/
-cropped/
-crop_meta/
-  manifest.json
-  00000.json ...
-PIPnet_landmarks/
-PIPnet_annotated_images/
-pipnet/test.npy
-landmarks_json/
-landmarks_all.json
-landmarks_long.csv
-seg_og/
-seg_non_crop_annotations/
-segmentation_statistics.json
-preprocessing_overview.png
-p3dmm/
-  normals/
-  uv_map/
-tracking result folder/
-  mesh/canonical.ply
-  result.mp4
-logs/
-environment and exact config
-manifest and SHA-256 inventory
+input/<person>/
+  original source photos and app-selected scan frames
+  cleaned Pixel3DMM input set
+output/<person>/preprocessing/
+  rgb/
+  cropped/
+  crop_meta/
+  PIPnet_landmarks/
+  PIPnet_annotated_images/
+  landmarks_json/
+  seg_og/
+  seg_non_crop_annotations/
+  p3dmm normals and UV maps
+output/<person>/tracking/
+  no-MICA and control tracking folders
+output/<person>/models/
+  model manifests and frozen candidate meshes
+output/<person>/validation/
+  overlays, metrics, and inspection sheets
+shared/models/
+  reusable non-person-specific assets
 ```
 
 None of these biometric artifacts belongs in Git. Training use requires separate opt-in.
@@ -684,8 +693,9 @@ Interpretation:
 
 Private artifact rule:
 
-- the personal no-MICA mesh and fitted mean-shape control are already preserved in the private Drive run folder;
-- the raw FLAME template may exist only in the Colab runtime after visualization, so run `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` once to create the stable private `model_trio_for_texture/` folder inside the run directory;
+- the personal no-MICA mesh, fitted mean-shape control, and raw FLAME template have been frozen into the private model-trio handoff folder;
+- the current private entrypoint for the texture baker is `output/<person>/models/model_trio_for_texture/model_trio_manifest.json` inside the cleaned Drive layout;
+- the legacy girl-model experiment is preserved in the same cleaned person-oriented layout, including source photos, preprocessing outputs, and model artifacts;
 - keep the generated PLY files, private manifest, source photos, tracking folders, textures, and overlays out of Git;
 - commit only the generic helper, contract, metrics summary, and next-step plan.
 
@@ -705,7 +715,7 @@ Do not use a generative completion model as the first texture result. First pres
 
 The previous product-data geometry task is complete for the current private run. The new immediate task is texture:
 
-1. freeze the three mesh candidates and their manifest in the private Drive run folder;
+1. load the frozen three-mesh candidate manifest from the cleaned private Drive layout;
 2. implement the first observed-photo texture baker in this repository;
 3. run it against all three mesh candidates without changing the input photos;
 4. inspect textured front, oblique, profile, and neutral turntable renders;

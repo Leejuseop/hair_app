@@ -123,7 +123,7 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 - raw inputs와 observed texture를 보존하고 AI completion 결과로 덮어쓰지 않는다.
 - generated region과 observed region을 coverage/confidence map으로 구분한다.
 - model, weight, license, code commit, config, input IDs, output parents를 manifest에 기록한다.
-- 현재 private geometry handoff는 raw FLAME template, fitted mean-shape control, personal no-MICA 세 mesh의 texture 비교다. `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`로 private Drive bundle을 만들고, 다음 구현은 그 manifest를 입력으로 받는 observed-photo texture baker부터 시작한다.
+- 현재 private geometry handoff는 raw FLAME template, fitted mean-shape control, personal no-MICA 세 mesh의 texture 비교다. 세 mesh는 private Drive의 cleaned `output/<person>/models/model_trio_for_texture/model_trio_manifest.json`에 고정되어 있으며, 다음 구현은 그 manifest를 입력으로 받는 observed-photo texture baker부터 시작한다.
 
 ## Implementation Rules
 

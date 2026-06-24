@@ -568,6 +568,18 @@ The landmark-only gate still does not prove that the personal no-MICA identity s
 
 The generic helper for freezing the private trio is tracked at `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`. Its generated outputs are biometric runtime artifacts and must never be committed.
 
+After the model-trio freeze, the private Drive data was consolidated into a clean person-oriented layout:
+
+```text
+MyDrive/hair_app/
+  input/<person>/
+  output/<person>/
+  shared/models/
+  data_layout_manifest.json
+```
+
+The current user data now includes selfies, scan frames, the clean 19-image Pixel3DMM input set, preprocessing outputs, tracking outputs, validation artifacts, and the three-mesh texture handoff. The legacy girl experiment is preserved under the same style of `input/<person>/` and `output/<person>/` folders. Old staging, trash-review, and crop-test folders are no longer the source of truth and can be removed after manual verification of the cleaned layout.
+
 ## 18. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.

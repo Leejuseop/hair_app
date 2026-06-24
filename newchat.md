@@ -182,8 +182,9 @@ Private 19-view app-scan plus selfie run on 2026-06-24:
 Current decision:
 
 - keep the personal no-MICA mesh as a temporary development candidate, not a validated production identity mesh;
-- personal no-MICA and fitted mean-shape control are preserved in the private Drive run folder;
-- run `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` once in Colab to create the stable private `model_trio_for_texture/` folder containing raw FLAME, fitted mean-shape control, personal no-MICA, and `model_trio_manifest.json`;
+- personal no-MICA, fitted mean-shape control, and raw FLAME have been frozen into the private model-trio handoff folder;
+- the current private Drive source of truth is the cleaned `MyDrive/hair_app/input`, `MyDrive/hair_app/output`, and `MyDrive/hair_app/shared` layout, with `data_layout_manifest.json` as the index;
+- the next texture-baker entrypoint is the private `output/<current-person>/models/model_trio_for_texture/model_trio_manifest.json`;
 - next implement the custom observed-photo face texture baker and apply the same private photo evidence to all three candidates before deciding which visual asset to carry forward.
 
 ## 5. Pixel3DMM Result and Meaning
@@ -275,17 +276,17 @@ Product scan update now implemented:
 - the app's guided scan flow is geometry-oriented rather than only profile-preview-oriented;
 - backend keeps raw accepted samples and additionally creates a curated `selected_3dmm/` folder with 10 best scan frames;
 - backend also copies the curated scan frames to `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\` for local manual use;
-- completed private data experiment: combined the user's chosen selfies with the app-scan bundle and reran Pixel3DMM no-MICA plus the mean-shape control. Run the freeze helper once to make the stable three-mesh texture handoff folder.
+- completed private data experiment: combined the user's chosen selfies with the app-scan bundle and reran Pixel3DMM no-MICA plus the mean-shape control. The stable three-mesh texture handoff folder now exists in the cleaned private Drive layout.
 - the product still lacks selfie upload UI, so selfie selection currently happens outside the app in a private local folder.
 
 Do not change geometry, texture, completion, and landmark losses in one run; otherwise the improvement cause is unknowable.
 
 Private Drive cleanup guidance:
 
-- keep `runs/`, `inputs/`, and `models/` until the observed-photo texture baker has run successfully;
-- keep the old girl-model experiment folders unless the user explicitly removes that experiment;
-- `crop_test_512`, `crop_test_512_v2`, and `crop_test_512_v3` are likely old crop-debug folders and can be deleted after confirming they are not the old girl-model data;
-- inspect `comparisons/` before deletion because it may contain useful visual diagnostics.
+- keep the cleaned `input/`, `output/`, `shared/`, and `data_layout_manifest.json`;
+- keep the current user and legacy girl experiment under the same person-oriented layout;
+- staging folders such as `_OLD_STAGING_AFTER_CLEAN_LAYOUT_*`, `_TRASH_REVIEW_*`, and `_REMOVE_FROM_KEEP_REVIEW_*` can be deleted after visually confirming that the cleaned layout contains the source inputs, preprocessing artifacts, model folders, tracking folders, and manifests;
+- do not commit any private Drive artifact to Git.
 
 ## 9. Current Improvement Ideas
 
@@ -339,4 +340,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We have a working app scan foundation and offline Pixel3DMM geometry artifacts. The private 19-view run produced raw FLAME, fitted mean-shape control, and personal no-MICA candidates; they look different, but cross-context landmarks still did not prove the personal no-MICA identity shape over the refitted mean-shape control. The immediate next move is to freeze the three private meshes and implement the custom observed-photo face texture baker so all three candidates can be compared with the user's real face appearance applied.
+> We have a working app scan foundation and offline Pixel3DMM geometry artifacts. The private 19-view run produced and froze raw FLAME, fitted mean-shape control, and personal no-MICA candidates in the cleaned private Drive layout. They look different, but cross-context landmarks still did not prove the personal no-MICA identity shape over the refitted mean-shape control. The immediate next move is to implement the custom observed-photo face texture baker so all three candidates can be compared with the user's real face appearance applied.

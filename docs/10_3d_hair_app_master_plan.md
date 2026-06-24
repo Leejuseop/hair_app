@@ -1031,7 +1031,7 @@ The next engine to implement is the custom observed-photo face texture baker. It
 2. fitted mean-shape control, where identity shape is mean but camera, pose, expression, jaw, eyes, eyelids, and intrinsics were fit to the user's photos;
 3. personal no-MICA candidate, where identity shape was also fit to the user's photos.
 
-The personal no-MICA mesh and fitted mean-shape control are preserved in the private Drive run folder. The stable three-PLY handoff folder and private manifest are produced by running `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` inside Colab. They must not be committed.
+The personal no-MICA mesh, fitted mean-shape control, and raw FLAME template have been frozen in the private Drive data layout. The texture baker should start from the private `output/<person>/models/model_trio_for_texture/model_trio_manifest.json` entrypoint, not from ad hoc Colab runtime files. The generated PLY files, private manifests, crops, segmentations, landmarks, textures, and renders must not be committed.
 
 The first texture implementation should be an observed-data baker, not a generative face completion model:
 
@@ -1042,6 +1042,27 @@ The first texture implementation should be an observed-data baker, not a generat
 - only after this layer is reproducible, add completion for missing or low-confidence texture regions.
 
 This visual comparison may show that the personal no-MICA shape is useful even though the current landmark-only gate did not prove it. The adoption decision should consider both geometry diagnostics and textured visual inspection.
+
+### 19.8 Private research data layout
+
+Private Colab/Drive artifacts are organized outside Git under a cleaned layout:
+
+```text
+MyDrive/hair_app/
+  input/<person>/
+    selfies/
+    scan/
+    pixel3dmm_input/
+  output/<person>/
+    preprocessing/
+    models/
+    tracking/
+    validation/
+  shared/models/
+  data_layout_manifest.json
+```
+
+This layout is the source of truth for the next texture work. Older staging and trash-review folders are not part of the active pipeline once `input/`, `output/`, `shared/`, and `data_layout_manifest.json` have been checked.
 
 ## 20. 3D Hair Reconstruction and Fitting Contract
 
