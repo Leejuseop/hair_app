@@ -73,6 +73,7 @@ Implemented in the app repository:
 - 8~12 accepted samples per step;
 - FastAPI scan upload and file-based storage;
 - backend-created `selected_3dmm/` reconstruction input bundle and `selected_3dmm_manifest.json`;
+- backend also exports selected 3DMM frames to `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\`;
 - `base_profile.json` version `0.2`;
 - representative image, landmark, hairline-guide previews, and selected 3DMM frame count.
 
@@ -159,6 +160,31 @@ Fully refitted mean-shape control:
 - interpretation: the earlier same-camera shape-swap improvement from `7.1109 px` to `5.8803 px` was not a fair proof of personal identity shape, because refitting camera/pose/expression lets the mean shape reach the same landmark accuracy;
 - do not claim the current `canonical.ply` is a strongly validated personal head shape yet. It is an end-to-end geometry artifact and working baseline, but identity-shape evidence is weak under this landmark metric.
 
+Private 19-view app-scan plus selfie run on 2026-06-24:
+
+- the private input set combined selected selfies and app scan frames;
+- clean views: `19`;
+- no-MICA Pixel3DMM tracking completed and produced `canonical.ply`;
+- full no-MICA tracking was preserved in the private Drive run folder;
+- fully refitted mean-shape control completed with identity shape effectively zero;
+- raw FLAME, fitted mean-shape control, and personal no-MICA were visualized side by side and are visibly different;
+- cross-context landmark comparison still did not validate the personal no-MICA identity shape over the refitted mean-shape control:
+
+```json
+{
+  "views": 19,
+  "no_mica_context_gain_px": 0.19544085823244828,
+  "mean_shape_context_gain_px": -0.6038492081183984,
+  "no_mica_wins_both_contexts": false
+}
+```
+
+Current decision:
+
+- keep the personal no-MICA mesh as a temporary development candidate, not a validated production identity mesh;
+- freeze all three mesh candidates in private Drive with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`;
+- next implement the custom observed-photo face texture baker and apply the same private photo evidence to all three candidates before deciding which visual asset to carry forward.
+
 ## 5. Pixel3DMM Result and Meaning
 
 Mean FLAME versus fitted identity vertex displacement after centroid alignment:
@@ -231,33 +257,27 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-The practical next task is to create a new private input set from the user's own data:
+The practical next task is the custom observed-photo face texture baker:
 
-1. keep the user's selected selfies in a repository-external private folder;
-2. run the local backend and frontend;
-3. complete a fresh six-step app scan;
-4. record the `scan_id`;
-5. use `backend/storage/scans/{scan_id}/selected_3dmm/` plus the private selfie folder as the next Pixel3DMM input set;
-6. rerun Pixel3DMM no-MICA and the fully refitted mean-shape control on this new private set.
+1. use the private frozen model trio manifest as input;
+2. load raw FLAME, fitted mean-shape control, and personal no-MICA meshes;
+3. load the corresponding private preprocessed crops, masks, UV maps, and tracking cameras;
+4. project actual observed photo pixels onto each mesh candidate;
+5. write texture atlas, coverage map, confidence map, source-view map, and provenance;
+6. render all three textured candidates from the same inspection cameras;
+7. decide visually and numerically whether the personal no-MICA mesh is worth carrying forward as the temporary head asset.
 
-The next diagnostic task after the new data run is the **cross-context no-MICA fitted shape versus fully refitted mean-shape comparison**.
-
-For the diagnostic comparison:
-
-1. preserve all no-MICA, MICA-prior, MICA-init-only, and mean-shape-control folders;
-2. compare no-MICA optimized shape and mean shape under both runs' fixed camera/pose/expression contexts;
-3. inspect dense render/silhouette/normal/UV overlays, not only PIPNet landmarks;
-4. if mean-shape remains equal or better, prioritize improving shape evidence and constraints before treating the canonical mesh as a validated personal head;
-5. only after the geometry evidence is understood, run tracker size 256 versus 512, float/16-bit maps, robust regional landmarks, and occlusion confidence one at a time.
+Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 
 Product scan update now implemented:
 
 - the app's guided scan flow is geometry-oriented rather than only profile-preview-oriented;
 - backend keeps raw accepted samples and additionally creates a curated `selected_3dmm/` folder with 10 best scan frames;
-- intended next data experiment: combine the user's chosen selfies with this app-scan bundle, then rerun Pixel3DMM no-MICA and mean-shape control on the new private dataset.
+- backend also copies the curated scan frames to `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\` for local manual use;
+- completed private data experiment: combined the user's chosen selfies with the app-scan bundle, reran Pixel3DMM no-MICA and mean-shape control, and produced the model trio for the next texture experiment.
 - the product still lacks selfie upload UI, so selfie selection currently happens outside the app in a private local folder.
 
-Do not change MICA, resolution, map precision, and landmark losses in one run; otherwise the improvement cause is unknowable.
+Do not change geometry, texture, completion, and landmark losses in one run; otherwise the improvement cause is unknowable.
 
 ## 9. Current Improvement Ideas
 
@@ -266,7 +286,9 @@ Prioritized ideas are fully specified in `docs/pixel3dmm_v4.md`:
 - MICA identity prior A/B;
 - MICA init-only A/B;
 - fully refitted mean-shape control, which matched or slightly beat no-MICA fitted-shape landmark error;
-- cross-context no-MICA shape versus mean-shape validation;
+- cross-context no-MICA shape versus mean-shape validation on the private 19-view run;
+- freeze raw FLAME, fitted mean-shape control, and personal no-MICA as a private model trio;
+- custom observed-photo face texture baker for all three frozen candidates;
 - 512 tracking resolution;
 - float normal/UV outputs instead of only 8-bit PNG;
 - robust nose/brow/jaw/mouth regional constraints with visibility/confidence;
@@ -290,6 +312,7 @@ docs/
 experiments/
   milestone1_geometry_bakeoff/
     pixel3dmm_colab_v4.ipynb           # executable output-free notebook
+    freeze_model_trio_for_texture.py   # private Drive model-trio freeze helper
     scoring_sheet.csv                  # experiment score template
 ```
 
@@ -308,4 +331,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We have a working app scan foundation and a first offline Pixel3DMM geometry baseline. MICA did not pass the adoption gate, and a fully refitted mean-shape control showed that the current landmark numbers do not yet prove strong identity-shape personalization. The app scan has been upgraded to collect six geometry-oriented steps and produce `selected_3dmm/` frames. The immediate next move is to combine the user's selected selfies with a fresh app scan, rerun no-MICA and mean-shape control on that private set, then decide whether to improve capture evidence, optimization, or dense losses.
+> We have a working app scan foundation and offline Pixel3DMM geometry artifacts. The private 19-view run produced raw FLAME, fitted mean-shape control, and personal no-MICA candidates; they look different, but cross-context landmarks still did not prove the personal no-MICA identity shape over the refitted mean-shape control. The immediate next move is to freeze the three private meshes and implement the custom observed-photo face texture baker so all three candidates can be compared with the user's real face appearance applied.

@@ -98,6 +98,7 @@ Implemented:
 - Automatic frame-quality checks and capture of 8~12 accepted samples per step.
 - FastAPI scan upload and file-based storage.
 - Backend-created `selected_3dmm/` reconstruction input bundle and `selected_3dmm_manifest.json`.
+- Automatic desktop copy of the selected 3DMM input frames under `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\`.
 - `base_profile.json` version `0.2` with raw landmarks, selected frames, derived metrics, anchors, preview data, and reconstruction-bundle summary.
 - A reproducible A100 Pixel3DMM V4 research notebook for eight independent photos.
 - V4 preprocessing with FaceBoxes per-photo no-roll crop, PIPNet WFLW-98, and FaRL, confirmed 8/8.
@@ -105,7 +106,9 @@ Implemented:
 - A measured no-MICA geometry baseline: 5,023 vertices, 9,976 faces, and approximately 17.3% lower quick landmark error than mean FLAME under fixed fitted cameras/poses/expressions.
 - Same-input MICA prior and MICA init-only A/B runs were completed; neither passed the fixed-context adoption gate, so no-MICA remains the active Pixel3DMM V4 baseline.
 - A fully refitted mean-shape control reached `5.7423 px` average landmark error, matching or slightly beating the no-MICA fitted-shape value `5.8803 px`; therefore the current identity-shape personalization claim is weak under the landmark metric.
-- A product-facing scan update now creates a six-step geometry-oriented app scan and a backend-selected `selected_3dmm/` frame bundle. The next private-data experiment should combine the user's selected selfies with this app-scan bundle before rerunning Pixel3DMM.
+- A later private 19-view run from selected selfies plus app scan frames generated the no-MICA mesh and the fitted mean-shape control, but cross-context landmarks still did not validate no-MICA identity shape over the refitted mean-shape control.
+- The next practical asset experiment is now to freeze raw FLAME, fitted mean-shape control, and personal no-MICA as three private mesh candidates, then apply the same observed-photo face texture baker to all three for visual comparison.
+- A product-facing scan update now creates a six-step geometry-oriented app scan and a backend-selected `selected_3dmm/` frame bundle. The current private-data rerun is complete; the next product-facing research step is the observed-photo face texture baker.
 
 Not implemented:
 
@@ -118,7 +121,7 @@ Not implemented:
 - GLB generation and interactive 3D viewer.
 - Production storage, job queue, authentication, privacy controls, billing, or deployment.
 
-The exact V4 configuration, errors, validation metrics, limitations, MICA A/B result, mean-shape control, and next diagnostic experiments are in `docs/pixel3dmm_v4.md`.
+The exact V4 configuration, errors, validation metrics, limitations, MICA A/B result, mean-shape control, private 19-view result summary, and next texture experiment are in `docs/pixel3dmm_v4.md`.
 
 ## 4. Core Architectural Decision
 
@@ -591,7 +594,8 @@ Gate: one scan bundle can be replayed reproducibly through preprocessing.
 
 - **Current:** the first Pixel3DMM V4 no-MICA run completed end to end on one eight-photo set, MICA prior/init-only did not beat it under the fixed-context decision gate, and fully refitted mean-shape control matched or slightly beat it on landmarks.
 - **Measured:** fitted identity beat mean FLAME on all 8/8 views in a same-camera quick landmark diagnostic, improving average error from `7.1109 px` to `5.8803 px`, but the stronger refitted mean-shape control reached `5.7423 px`.
-- Run a cross-context no-MICA fitted shape versus mean-shape validation and inspect dense evidence.
+- **Private 19-view follow-up:** no-MICA and the mean-shape control both completed, and cross-context landmarks still did not validate no-MICA identity shape over the refitted mean-shape control.
+- Freeze raw FLAME, fitted mean-shape control, and personal no-MICA as private mesh candidates and texture all three before choosing a temporary development head.
 - Then decide whether to improve shape constraints or test 256 versus 512 tracking resolution.
 - Expand Pixel3DMM evaluation to representative multi-photo sets.
 - Run KaoLRM on the best comparable inputs.
@@ -831,8 +835,9 @@ This section absorbs the former standalone mobile MVP and scan documents so the 
 5. The completed bundle is uploaded with `POST /api/scan`.
 6. FastAPI stores the scan under `backend/storage/scans/{scan_id}/`.
 7. The backend creates `selected_3dmm/` and `selected_3dmm_manifest.json` by choosing the best stepwise geometry frames.
-8. The backend creates `base_profile.json` version `0.2`.
-9. The frontend shows representative images, landmark overlays, a hairline guide, selected 3DMM frame count, and summary metrics.
+8. The backend also copies those selected frames to `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\` for local manual handoff.
+9. The backend creates `base_profile.json` version `0.2`.
+10. The frontend shows representative images, landmark overlays, a hairline guide, selected 3DMM frame count, and summary metrics.
 
 Current capture checks include face presence, distance/size, center alignment, brightness, sharpness, yaw, roll, and short-term stability. The exact thresholds are implementation details and must be checked in code when this document and code disagree.
 
@@ -850,13 +855,14 @@ Each accepted sample preserves the camera frame plus raw face-landmark and quali
 
 The six guided steps, automatic samples, and backend 3DMM selected-frame bundle are implemented. Existing-selfie multi-upload, star selection, region-aware photo ranking across uploaded selfies, and persistent style-reference upload remain planned.
 
-For the immediate private-data experiment, the operational handoff is:
+For the completed private-data geometry experiment, the operational handoff was:
 
 1. the user selects selfies manually and stores them outside the repository;
 2. the user completes the app scan;
 3. the backend creates `backend/storage/scans/{scan_id}/selected_3dmm/`;
-4. an offline preparation step combines private selfies and selected app-scan frames into one Pixel3DMM input folder;
-5. no-MICA Pixel3DMM and the mean-shape control are rerun on that combined set.
+4. the backend also exports the selected app-scan frames to `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\`;
+5. an offline preparation step combines private selfies and selected app-scan frames into one Pixel3DMM input folder;
+6. no-MICA Pixel3DMM and the mean-shape control were rerun on that combined set.
 
 The future star behavior should be:
 
@@ -898,6 +904,14 @@ backend/storage/scans/{scan_id}/
   selected representative images
   base_profile.json
   preview assets
+```
+
+The backend also writes a convenience copy of the selected 3DMM input frames to:
+
+```text
+C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\
+  selected frame images
+  manifest.json
 ```
 
 Any `base_profile.json` schema change must increment its version and document migration or backward compatibility. A future 3D artifact tree should not overwrite the `0.2` scan profile; it should reference it as an immutable parent.
@@ -1008,6 +1022,26 @@ Hairline is shared between head reconstruction, UV masking, and hair fitting. St
 ### 19.6 Reuse principle
 
 The personal head is generated once and reused across hairstyle experiments. Changing hair must not require reconstructing the user's face unless new evidence or a new head-model version is intentionally introduced.
+
+### 19.7 Immediate texture experiment
+
+The next engine to implement is the custom observed-photo face texture baker. It should run on the same private photo set and apply identical evidence to three frozen mesh candidates:
+
+1. raw FLAME template, with no photo-derived values;
+2. fitted mean-shape control, where identity shape is mean but camera, pose, expression, jaw, eyes, eyelids, and intrinsics were fit to the user's photos;
+3. personal no-MICA candidate, where identity shape was also fit to the user's photos.
+
+The three PLY files and the private manifest are produced by `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py` inside the private Drive run folder. They must not be committed.
+
+The first texture implementation should be an observed-data baker, not a generative face completion model:
+
+- project visible photo pixels onto the candidate mesh;
+- weight samples by view angle, texel resolution, segmentation label, sharpness, exposure, occlusion, and cross-view consistency;
+- write an observed texture atlas, coverage map, confidence map, source-view index map, and per-texel provenance;
+- render all three textured candidates from the same inspection cameras;
+- only after this layer is reproducible, add completion for missing or low-confidence texture regions.
+
+This visual comparison may show that the personal no-MICA shape is useful even though the current landmark-only gate did not prove it. The adoption decision should consider both geometry diagnostics and textured visual inspection.
 
 ## 20. 3D Hair Reconstruction and Fitting Contract
 

@@ -30,6 +30,7 @@ head + hair
 - 단계별 accepted sample 8~12개와 quality/pose guidance.
 - FastAPI `POST /api/scan`과 file-based scan storage.
 - `selected_3dmm/` reconstruction input bundle과 `selected_3dmm_manifest.json` 자동 생성.
+- 선별된 3DMM 입력 프레임을 `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\`에도 자동 복사.
 - `base_profile.json` version `0.2`.
 - representative image, landmark, hairline-guide preview, 3DMM selected-frame count.
 
@@ -66,13 +67,36 @@ head + hair
 - final GLB builder와 mobile 3D viewer;
 - production auth, encryption, retention, deletion, billing, deployment.
 
+## Current Private Run Status
+
+On 2026-06-24, a stronger private input set was built from selected selfies plus the app scan frames. The offline Pixel3DMM V4 run completed with 19 accepted views, produced a no-MICA `canonical.ply`, and also produced a fully refitted mean-shape control.
+
+The cross-context landmark gate did **not** validate the no-MICA identity shape as clearly better than the refitted mean shape:
+
+```json
+{
+  "views": 19,
+  "no_mica_context_gain_px": 0.19544085823244828,
+  "mean_shape_context_gain_px": -0.6038492081183984,
+  "no_mica_wins_both_contexts": false
+}
+```
+
+The three geometry candidates now used for the next visual experiment are:
+
+1. raw FLAME template, with no photo-derived values;
+2. fitted mean-shape control, where identity shape is mean but camera/pose/expression context is fitted from the private photos;
+3. personal no-MICA candidate, where identity shape is also fitted from the private photos.
+
+Those meshes and their private manifest must be frozen in the private Drive run folder with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`. The generated mesh files and private manifest are biometric runtime artifacts and must not be committed. The next implementation task is a custom observed-photo face texture baker that can apply the same private photo evidence to all three mesh candidates for visual comparison.
+
 ## Current Research Stack
 
 - capture guidance and low-cost quality checks: MediaPipe.
 - first head geometry baseline: Pixel3DMM + FLAME.
 - current geometry choice: Pixel3DMM V4 no-MICA pipeline as the working reconstruction baseline; its optimized identity shape is not yet proven better than a refitted mean FLAME control.
-- next practical experiment: collect the user's selected selfies plus a fresh app scan, build one private Pixel3DMM input set from selfies + `selected_3dmm/`, then rerun no-MICA and the mean-shape control on that better capture set.
-- next diagnostic experiment after that: cross-context no-MICA fitted shape versus fully refitted mean-shape comparison, then decide whether to improve shape evidence before tracker size 256 versus 512.
+- next practical experiment: implement the custom observed-photo face texture/UV baker and apply it to the raw FLAME, fitted mean-shape control, and personal no-MICA candidate.
+- next geometry diagnostic after texture visual review: decide whether to improve capture evidence, tracker resolution, map precision, or identity-shape constraints.
 - optional geometry/camera assistance: VGGT.
 - face appearance: custom multi-photo observed-pixel UV baker.
 - missing UV research baseline: FreeUV versus simpler completion.
@@ -126,7 +150,7 @@ Until selfie upload is implemented, private input preparation is manual:
 2. run the backend and frontend locally;
 3. complete the six-step guided scan in the browser;
 4. copy or record the resulting `scan_id`;
-5. use `backend/storage/scans/{scan_id}/selected_3dmm/` plus the private selfie folder as the next Pixel3DMM input set.
+5. use `backend/storage/scans/{scan_id}/selected_3dmm/` or the exported `C:\Users\User\Desktop\내사진\{scan_id}\selected_3dmm\` plus the private selfie folder as the next Pixel3DMM input set.
 
 The private selfie folder, `backend/storage/`, Colab Drive outputs, meshes, textures, embeddings, and videos are biometric-sensitive runtime data and must not be committed.
 
@@ -144,6 +168,7 @@ hair_app/
   experiments/
     milestone1_geometry_bakeoff/
       pixel3dmm_colab_v4.ipynb
+      freeze_model_trio_for_texture.py
       scoring_sheet.csv
   frontend/
   backend/

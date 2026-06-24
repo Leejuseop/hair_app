@@ -483,7 +483,8 @@ normal_super=2000, sil_super=1000
 현재 완료되지 않은 핵심 단계:
 
 - completed MICA versus no-MICA and MICA init-only A/B, followed by fully refitted mean-shape control;
-- pending cross-context no-MICA fitted shape versus mean-shape validation;
+- completed cross-context no-MICA fitted shape versus mean-shape validation on the private 19-view run, which did not validate no-MICA identity shape over the refitted mean-shape control;
+- pending frozen-model-trio observed-photo texture comparison;
 - 512 tracking resolution 및 float normal/UV precision A/B;
 - 더 많은 identity와 capture condition에서 Pixel3DMM geometry 검증;
 - 실제 multi-photo UV baker;
@@ -535,7 +536,39 @@ Hair App은 처음부터 완성된 3D 설계로 시작하지 않았다. 실제 �
 
 이 과정의 가치는 특정 모델 하나를 사용했다는 데 있지 않다. 문제 정의, 실제 입력 검증, 실패 원인 분석, representation 변경, 문서와 코드의 동기화, privacy와 license 경계까지 포함해 연구 prototype을 제품 구조로 발전시킨 경험에 있다.
 
-## 17. 앞으로 기록을 추가하는 형식
+## 17. 2026-06-24 private 19-view geometry and texture handoff
+
+The private data experiment combined selected selfies with the app scan's selected 3DMM frames and reran the Pixel3DMM V4 no-MICA path plus the fully refitted mean-shape control on 19 clean views.
+
+What succeeded:
+
+- no-MICA Pixel3DMM generated a usable `canonical.ply`;
+- the full no-MICA tracking folder was preserved in private Drive storage;
+- the mean-shape control was rerun and its identity shape was effectively zero;
+- raw FLAME, fitted mean-shape control, and personal no-MICA were visualized side by side, and the three meshes are visibly different.
+
+What did not pass:
+
+```json
+{
+  "views": 19,
+  "no_mica_context_gain_px": 0.19544085823244828,
+  "mean_shape_context_gain_px": -0.6038492081183984,
+  "no_mica_wins_both_contexts": false
+}
+```
+
+The landmark-only gate still does not prove that the personal no-MICA identity shape is better than the refitted mean-shape control. The practical decision was not to discard the personal mesh, because the bare geometry looks different and the final product will be judged with real face appearance applied. The next phase is therefore a controlled texture comparison:
+
+1. freeze raw FLAME template, fitted mean-shape control, and personal no-MICA as a private model trio;
+2. keep those PLY files and their private manifest outside Git;
+3. implement the custom observed-photo face texture baker;
+4. apply the same photo evidence to all three meshes;
+5. decide visually and with coverage/reprojection diagnostics which candidate should become the temporary development head.
+
+The generic helper for freezing the private trio is tracked at `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`. Its generated outputs are biometric runtime artifacts and must never be committed.
+
+## 18. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.
 

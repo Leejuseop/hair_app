@@ -112,6 +112,7 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 - 사용자에게 H100 access가 있으므로 초기 선택에서 VRAM을 과도하게 우선하지 않는다.
 - compute는 missing view, 잘못된 representation, data quality, license를 해결하지 않는다는 점을 유지한다.
 - private photos, scans, textures, embeddings, meshes를 git에 넣지 않는다.
+- private frozen model-trio outputs, texture atlases, coverage maps, renders, and private manifests generated from biometric data must stay in Drive/private storage and must not be committed.
 
 ## Representation and Artifact Rules
 
@@ -122,6 +123,7 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 - raw inputs와 observed texture를 보존하고 AI completion 결과로 덮어쓰지 않는다.
 - generated region과 observed region을 coverage/confidence map으로 구분한다.
 - model, weight, license, code commit, config, input IDs, output parents를 manifest에 기록한다.
+- 현재 private geometry handoff는 raw FLAME template, fitted mean-shape control, personal no-MICA 세 mesh의 texture 비교다. `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`로 private Drive bundle을 만들고, 다음 구현은 그 manifest를 입력으로 받는 observed-photo texture baker부터 시작한다.
 
 ## Implementation Rules
 

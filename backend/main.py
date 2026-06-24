@@ -51,6 +51,7 @@ RECONSTRUCTION_TARGET_YAW = {
 BACKEND_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BACKEND_DIR / "storage"
 SCANS_DIR = STORAGE_DIR / "scans"
+DESKTOP_SELECTED_SCAN_DIR = Path(r"C:\Users\User\Desktop\내사진")
 
 app = FastAPI(title="Hair App API", version="0.1.0")
 
@@ -201,8 +202,11 @@ def _build_reconstruction_bundle(
 ) -> dict[str, Any]:
     selected_dir = scan_dir / "selected_3dmm"
     selected_dir.mkdir(parents=True, exist_ok=True)
+    desktop_selected_dir = DESKTOP_SELECTED_SCAN_DIR / scan_id / "selected_3dmm"
+    desktop_selected_dir.mkdir(parents=True, exist_ok=True)
 
     images: list[dict[str, Any]] = []
+    desktop_images: list[dict[str, Any]] = []
 
     for step in SCAN_STEPS:
         samples = stored_steps.get(step, {}).get("samples", [])
@@ -224,8 +228,18 @@ def _build_reconstruction_bundle(
             output_name = f"{output_index:05d}_{step}_{sample['id']}{output_suffix}"
             output_path = selected_dir / output_name
             shutil.copy2(source_path, output_path)
+            desktop_output_path = desktop_selected_dir / output_name
+            shutil.copy2(source_path, desktop_output_path)
 
             selected_rel = f"scans/{scan_id}/selected_3dmm/{output_name}"
+            desktop_images.append(
+                {
+                    "file_name": output_name,
+                    "local_path": str(desktop_output_path),
+                    "source_sample_id": sample["id"],
+                    "source_step": step,
+                }
+            )
             images.append(
                 {
                     "index": output_index,
@@ -251,14 +265,21 @@ def _build_reconstruction_bundle(
         "scan_id": scan_id,
         "selected_count": len(images),
         "selection_limits": RECONSTRUCTION_SELECTION_LIMITS,
+        "desktop_export": {
+            "selected_count": len(desktop_images),
+            "selected_dir": str(desktop_selected_dir),
+            "images": desktop_images,
+        },
         "created_at": _utc_now(),
         "images": images,
     }
 
     _write_json(scan_dir / "selected_3dmm_manifest.json", manifest)
     _write_json(selected_dir / "manifest.json", manifest)
+    _write_json(desktop_selected_dir / "manifest.json", manifest)
 
     return {
+        "desktop_export_dir": str(desktop_selected_dir),
         "manifest_path": f"scans/{scan_id}/selected_3dmm_manifest.json",
         "manifest_url": f"/storage/scans/{scan_id}/selected_3dmm_manifest.json",
         "selected_count": len(images),

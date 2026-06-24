@@ -2,7 +2,7 @@
 
 Last synchronized: 2026-06-24
 
-Status: **A100 end-to-end V4 baseline complete; MICA rejected, but no-MICA identity-shape benefit is not yet proven against fully refitted mean FLAME**
+Status: **A100 end-to-end V4 baseline complete; MICA rejected; private 19-view run generated geometry, but cross-context landmarks did not validate the no-MICA identity shape over the refitted mean-shape control**
 
 Executable notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 
@@ -578,9 +578,13 @@ The comparison helper is `experiments/milestone1_geometry_bakeoff/validate_mica_
 
 Completed. Rerun tracking with identity shape fixed to zero while allowing camera, pose, expression, jaw, eyes, eyelids, and intrinsics to optimize. The result matched or slightly beat the no-MICA fitted-shape landmark score, so it did not strengthen the personalization claim.
 
-### Priority 2: cross-context no-MICA shape versus mean-shape validation
+### Completed: cross-context no-MICA shape versus mean-shape validation
 
-Compare the no-MICA optimized shape and the refitted mean shape under both runs' fixed camera/pose/expression contexts. Also compare dense overlays, silhouette, normals, and UV evidence, because PIPNet landmarks alone may be absorbable by camera and pose.
+Completed for the private 19-view run. The no-MICA shape won slightly in its own fixed context but lost in the mean-shape context, so the identity-shape claim remains unvalidated by landmarks alone. The next test is not another geometry parameter change; it is a visual texture comparison across the frozen raw FLAME, fitted mean-shape control, and personal no-MICA candidates.
+
+### Priority 2: observed-photo texture baker across the frozen model trio
+
+Apply the same private photo evidence to the raw FLAME, fitted mean-shape control, and personal no-MICA meshes. Record coverage/confidence/provenance and compare textured renders before changing geometry settings.
 
 ### Priority 3: optimization resolution 256 versus 512
 
@@ -630,26 +634,83 @@ Improve the capture protocol with pulled-back-hair front/temple/profile views, v
 
 ## 13. Immediate Next Experiment
 
-The immediate product-data task is to rerun the geometry baseline on a stronger private input set:
+### 13.1 Private 19-view app-scan plus selfie run
 
-1. keep the user's selected selfies outside the repository;
-2. complete the six-step app scan;
-3. collect `backend/storage/scans/{scan_id}/selected_3dmm/`;
-4. combine private selfies and selected scan frames into one Pixel3DMM input folder;
-5. rerun no-MICA Pixel3DMM and the fully refitted mean-shape control on that set.
+Completed on 2026-06-24 in private Drive storage, not in Git:
 
-After the new private-data run, the next diagnostic task is the **cross-context no-MICA shape versus mean-shape validation**.
+- input set: selected user selfies plus app-selected scan frames;
+- accepted clean views: `19`;
+- no-MICA Pixel3DMM tracking completed;
+- full no-MICA tracking folder was preserved;
+- fully refitted mean-shape control completed with identity shape effectively zero;
+- raw FLAME template, fitted mean-shape control, and personal no-MICA were visually compared side by side.
 
-1. Preserve the existing no-MICA, MICA-prior, and MICA-init-only folders and manifests.
-2. Preserve the fully refitted mean-shape control folder and manifest.
-3. Confirm the latest V4 notebook and current Pixel3DMM checkout.
-4. Do not change crop, normals, UVs, iterations, resolution, or unrelated weights.
-5. Compare no-MICA fitted shape and mean shape under both runs' fixed contexts.
-6. Generate landmark metrics and fixed-view comparison sheets.
-7. Inspect dense render/silhouette/normal/UV evidence before deciding whether to proceed to 512 resolution.
-8. Record result, exact command, runtime, and decision here and in `newchat.md`.
+The mean-shape sanity check confirmed that the control was nearly zero identity shape:
 
-Only after that should the project test tracker resolution 512 or high-precision maps. Changing mean-shape control, resolution, precision, and landmarks together would make the cause of an improvement unknowable.
+```json
+{
+  "no_mica_shape_l2": 10.628931045532227,
+  "mean_shape_l2": 4.09764743380947e-06,
+  "shape_difference_l2": 10.62893009185791,
+  "shape_param_count": 300
+}
+```
+
+The cross-context landmark comparison reported:
+
+```json
+{
+  "views": 19,
+  "no_mica_context": {
+    "no_mica_shape_error_px": 4.719309781745137,
+    "mean_shape_error_px": 4.914750639977585,
+    "no_mica_shape_gain_px": 0.19544085823244828
+  },
+  "mean_shape_context": {
+    "no_mica_shape_error_px": 5.123912251678183,
+    "mean_shape_error_px": 4.520063043559785,
+    "no_mica_shape_gain_px": -0.6038492081183984
+  },
+  "no_mica_wins_both_contexts": false
+}
+```
+
+Interpretation:
+
+- the personal no-MICA mesh is visibly different from raw FLAME and from the fitted mean-shape control;
+- the no-MICA candidate is still useful as a temporary development mesh;
+- the landmark gate does not prove that no-MICA identity shape is better than a refitted mean shape;
+- visual texture quality may still separate the three candidates, so the next experiment is to apply observed-photo face texture to all three frozen meshes before making a practical asset decision.
+
+Private artifact rule:
+
+- freeze the three mesh candidates in the private Drive run folder with `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`;
+- keep the generated PLY files, private manifest, source photos, tracking folders, textures, and overlays out of Git;
+- commit only the generic helper, contract, metrics summary, and next-step plan.
+
+### 13.2 Next experiment: observed-photo face texture baker
+
+The next implementation milestone is not another geometry run. Build a custom texture/UV engine that projects the actual private photo pixels onto the three frozen mesh candidates:
+
+1. load the frozen model trio from the private manifest;
+2. load the corresponding preprocessed crops, PIPNet/FaRL masks, UV maps, and tracking cameras;
+3. rasterize or otherwise map each visible mesh surface into each source photo;
+4. accumulate observed pixels into a shared texture atlas with angle, resolution, segmentation, sharpness, exposure, occlusion, and multi-view consistency weights;
+5. store coverage, confidence, source-view support, and observed-versus-completed masks;
+6. apply the same baker to raw FLAME, fitted mean-shape control, and personal no-MICA;
+7. compare textured renders visually and with reprojection/coverage metrics before choosing a temporary head asset.
+
+Do not use a generative completion model as the first texture result. First preserve and inspect the raw observed-photo texture and its coverage map. Completion can fill missing regions only after the observed layer is reproducible.
+
+The previous product-data geometry task is complete for the current private run. The new immediate task is texture:
+
+1. freeze the three mesh candidates and their manifest in the private Drive run folder;
+2. implement the first observed-photo texture baker in this repository;
+3. run it against all three mesh candidates without changing the input photos;
+4. inspect textured front, oblique, profile, and neutral turntable renders;
+5. use the visual result plus coverage/confidence/reprojection diagnostics to decide whether the personal no-MICA candidate is worth carrying forward as the temporary head asset.
+
+Only after that should the project return to geometry changes such as tracker size 512, high-precision maps, regional landmarks, or different identity constraints. Changing geometry and texture at the same time would make it unclear whether a visual improvement came from the mesh or the face appearance layer.
 
 ## 14. Notebook Run and Human Gates
 
@@ -681,6 +742,7 @@ Do not bypass a failed count gate merely because later cells can technically run
 Active executable research file:
 
 - `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
+- `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`
 
 Knowledge files:
 

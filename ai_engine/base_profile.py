@@ -96,6 +96,7 @@ def _build_reconstruction_bundle_summary(bundle: dict[str, Any]) -> dict[str, An
     images = bundle.get("selected_images", [])
 
     return {
+        "desktop_export_dir": bundle.get("desktop_export_dir"),
         "manifest_path": bundle.get("manifest_path"),
         "manifest_url": bundle.get("manifest_url"),
         "selected_count": bundle.get("selected_count", len(images)),
