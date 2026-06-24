@@ -1,9 +1,9 @@
 # Canonical Face Crop Engine
 
-Last synchronized: 2026-06-23
-Status: v1~v3 historical roll experiments; V4 Pixel3DMM-compatible no-roll path implemented, live validation pending
+Last synchronized: 2026-06-24
+Status: archived design record; v1~v3 executable files were removed after V4 superseded them
 
-> **Current decision:** v1~v3의 RetinaFace 5-point roll을 Pixel3DMM 기본 전처리에 연결하지 않는다. 공식 upstream code를 다시 감사한 결과 실제 fitting landmark는 persistent crop 이후 PIPNet이 만드는 WFLW 98점이고, tracker가 camera/head rotation을 직접 최적화한다. 최종 통합 설계는 `docs/12_pixel3dmm_preprocessing_contract.md`가 source of truth다. 이 문서의 v1~v3 내용은 실패 원인과 아이디어 진화를 보존하는 실험 기록이다.
+> **Current decision:** v1~v3의 RetinaFace 5-point roll을 Pixel3DMM 기본 전처리에 연결하지 않는다. 공식 upstream code를 다시 감사한 결과 실제 fitting landmark는 persistent crop 이후 PIPNet이 만드는 WFLW 98점이고, tracker가 camera/head rotation을 직접 최적화한다. 최종 통합 설계는 `docs/12_pixel3dmm_preprocessing_contract.md`가 source of truth다. 이 문서의 v1~v3 내용은 실패 원인과 아이디어 진화를 보존하는 실험 기록이다. 관련 Python/test/crop-only notebook은 2026-06-24 저장소에서 삭제했으며 필요하면 Git history에서만 복원한다.
 
 ## Purpose
 
@@ -22,7 +22,7 @@ yaw와 pitch는 여러 각도의 3D 단서이므로 없애지 않았다. 이후 
 현재 얼굴 검출 AI 자체를 Hair App이 새로 학습한 것은 아니다.
 
 - **Open source / pretrained:** `facer`의 `retinaface/mobilenet` detector. bbox, detection score, 5개 point(두 눈·코·두 입꼬리)를 출력한다.
-- **Hair App code:** 사진별 독립 처리, 다중 얼굴 선택, landmark plausibility 검사, roll 적용/생략 판단, crop 크기와 중심 계산, affine resampling, reflect padding, observed-source validity mask, 원본↔crop 행렬, metadata/manifest, Pixel3DMM용 디렉터리 구성, 단위 테스트와 Colab 실험 notebook.
+- **당시 Hair App 실험 코드:** 사진별 독립 처리, 다중 얼굴 선택, landmark plausibility 검사, roll 적용/생략 판단, crop 크기와 중심 계산, affine resampling, reflect padding, observed-source validity mask, 원본↔crop 행렬, metadata/manifest, Pixel3DMM용 디렉터리 구성, 단위 테스트와 Colab 실험 notebook. 이 별도 v1~v3 파일들은 현재 삭제됐다.
 
 즉, 얼굴을 찾는 pretrained detector는 가져다 쓰고 그 결과를 Hair App과 Pixel3DMM의 입력 계약에 맞추는 crop pipeline은 이 저장소에서 작성했다. Pixel3DMM 공식 crop을 복사해 약간 수정한 것이 아니라, 공식 `static_crop` 경로가 독립 사진에 맞지 않아 별도 모듈로 교체한 것이다. affine crop 수학 자체는 일반적인 영상 기하 방식이며 독점적인 새 학습 모델은 아니다.
 
@@ -42,7 +42,7 @@ Hair App crop은 사진마다 detector를 다시 실행하고 사진마다 별�
 
 ## V1 Result and Problems
 
-파일:
+당시 파일(현재 삭제, Git history에만 존재):
 
 - `experiments/milestone1_geometry_bakeoff/canonical_face_crop.py`
 - `experiments/milestone1_geometry_bakeoff/canonical_crop_test_colab.ipynb`
@@ -58,7 +58,7 @@ Hair App crop은 사진마다 detector를 다시 실행하고 사진마다 별�
 - 여러 얼굴이 검출돼도 detector confidence가 가장 큰 얼굴 하나만 골랐다. 작은 배경 얼굴을 선택할 가능성이 남아 있었다.
 - bbox 기준만 사용해 pose에 따라 얼굴의 체감 크기와 세로 위치가 조금씩 달랐다.
 
-v1 판정은 `bbox/scale PASS`, `frontal/three-quarter roll PASS`, `profile roll/warning gate FAIL`이다. 비교 기준으로 보존하며 삭제하지 않는다.
+v1 판정은 `bbox/scale PASS`, `frontal/three-quarter roll PASS`, `profile roll/warning gate FAIL`이다. 결과와 결론만 이 문서와 Git history에 보존한다.
 
 ## Obstacles Are Not Crop Rejection Reasons
 
@@ -77,7 +77,7 @@ v1 판정은 `bbox/scale PASS`, `frontal/three-quarter roll PASS`, `profile roll
 
 ## V2 Design
 
-파일:
+당시 파일(현재 삭제, Git history에만 존재):
 
 - `experiments/milestone1_geometry_bakeoff/canonical_face_crop_v2.py`
 - `experiments/milestone1_geometry_bakeoff/test_canonical_face_crop_v2.py`
@@ -186,18 +186,9 @@ crop_test_512_v2/
 
 기존 v1 3개와 v2 5개를 합쳐 총 8개 test가 통과했다. 이는 합성 좌표에 대한 코드 계약 검사이며 실제 8장 결과 품질을 증명하지 않는다.
 
-## Immediate A/B Gate
+## Historical A/B Gate
 
-다음 순서로 진행한다.
-
-1. `canonical_crop_v2_test_colab.ipynb`를 같은 8장에 실행한다.
-2. v1과 v2의 원본/crop을 나란히 비교한다.
-3. 특히 기존 `00003`의 큰 roll이 계속 올바르게 보정되는지 확인한다.
-4. 기존 profile `00006`, `00007`에서 roll이 생략되고 얼굴이 더 자연스러운지 확인한다.
-5. 검은 fill이 없어지고 validity mask가 그 부분을 검게 표시하는지 확인한다.
-6. 배경 인물이 있는 사진에서 주 피사체가 선택되는지 확인한다.
-7. 얼굴·턱·이마·필요한 귀 coverage와 체감 크기를 비교한다.
-8. v2가 이 gate를 통과한 뒤에만 Pixel3DMM safe notebook의 기본 crop을 v1에서 v2로 바꾼다.
+당시에는 같은 8장으로 v1/v2의 roll, profile 처리, padding, 주 피사체 선택, 얼굴 coverage를 비교할 계획이었다. 이후 v3 실사진 검사와 Pixel3DMM source audit에서 crop-time sparse-landmark roll 자체를 기본 경로에서 제거하기로 결정했으므로 이 gate는 더 이상 실행하지 않는다.
 
 ## Failure and Revision Conditions
 
@@ -215,7 +206,7 @@ crop_test_512_v2/
 
 ## Decision Status
 
-v2는 production 또는 Pixel3DMM 기본 전처리로 채택하지 않았다. v3 비교를 위해 보존한다.
+v2는 production 또는 Pixel3DMM 기본 전처리로 채택하지 않았다. 실행 파일은 삭제했고 결과만 이 문서에 보존한다.
 
 ## V3: Five-Point Constellation Roll
 
@@ -227,7 +218,7 @@ left eye       right eye
 left mouth     right mouth
 ```
 
-파일:
+당시 파일(현재 삭제, Git history에만 존재):
 
 - `experiments/milestone1_geometry_bakeoff/canonical_face_crop_v3.py`
 - `experiments/milestone1_geometry_bakeoff/test_canonical_face_crop_v3.py`
@@ -290,7 +281,7 @@ v3 합성 단위 test 5개가 통과했다.
 
 ### V3 Visual Gate
 
-다음 즉시 단계는 같은 8장으로 `canonical_crop_v3_test_colab.ipynb`를 실행하는 것이다.
+당시 다음 단계는 같은 8장으로 v3 crop-only notebook을 실행하는 것이었다. 이 검사는 이미 수행됐고 아래 결론으로 종료됐다.
 
 1. title의 `eye`와 `five` roll을 비교한다.
 2. 기존 약 `24.6°` 정면 기울기가 v3에서도 자연스럽게 바로 서는지 확인한다.

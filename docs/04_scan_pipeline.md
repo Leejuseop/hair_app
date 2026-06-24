@@ -1,6 +1,6 @@
 # Scan Pipeline
 
-Last synchronized: 2026-06-23
+Last synchronized: 2026-06-24
 Status: current capture implementation and proposed 3D extension
 
 ## Current Implemented Pipeline
@@ -148,7 +148,7 @@ v1~v3에서는 per-image RetinaFace bbox와 sparse 5-point alignment로 roll을 
 
 per-image bbox/scale은 기존 static crop의 얼굴 잘림을 해결했다. 그러나 실제 v3 결과에서 RetinaFace 5점이 exact pupil/nose-tip/mouth-corner가 아닌 근사 alignment point라 roll 개선이 제한됐다. official source audit에서는 Pixel3DMM의 실제 fitting landmark가 persistent crop 이후 PIPNet이 생성하는 WFLW 98점임을 확인했다.
 
-따라서 v1~v3은 historical로 보존하고 safe notebook 기본값으로 연결하지 않는다. optional roll은 no-roll Pixel3DMM end-to-end 결과에서 실제 normal/UV/tracking 실패가 확인될 때만 two-pass A/B한다.
+따라서 v1~v3은 문서와 Git history에만 historical record로 남기고 실행 파일은 삭제했다. optional roll은 no-roll Pixel3DMM end-to-end 결과에서 실제 normal/UV/tracking 실패가 확인될 때만 새 two-pass A/B로 다시 구현한다.
 
 모자·손·전화·헤드폰·머리카락 같은 장애물은 crop 거절 사유로 사용하지 않는다. crop 이후 segmentation과 regional confidence에서 표시하고 geometry/UV weight를 조절한다. v1~v3 상세는 `docs/11_canonical_crop_engine.md`, 최종 source audit와 계약은 `docs/12_pixel3dmm_preprocessing_contract.md`를 따른다.
 

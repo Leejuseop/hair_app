@@ -1,6 +1,6 @@
 # Pixel3DMM V4 Live Run — Full Record and Resume Guide
 
-Last synchronized: 2026-06-23
+Last synchronized: 2026-06-24
 Status: preprocessing 8/8 complete and saved; normal/UV checkpoint compatibility fix implemented locally but not yet rerun in the live Colab runtime
 Primary notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 Notebook SHA-256: `2d1ff3b87c7423876e496aa8b06d1b6451542a00df9f62f75a504bb7ce301d46`
@@ -397,7 +397,7 @@ The repository V4 notebook already applies this patch automatically in its compa
 
 ## 6. Crop v1–v3 Historical Experiments
 
-The following code and notebooks are preserved to document why roll normalization was removed from the default.
+The following experiments explain why roll normalization was removed from the default. Their standalone code, tests, and crop-only notebooks were deleted from the active repository on 2026-06-24; this table, docs 11–12, and Git history preserve the reasoning.
 
 | Version | Core idea | Result |
 | --- | --- | --- |
@@ -405,15 +405,7 @@ The following code and notebooks are preserved to document why roll normalizatio
 | v2 | five-point plausibility gate, profile roll skip, validity mask | safer warnings, no decisive visual improvement |
 | v3 | nose-anchor five-point least-squares roll | math tests passed, sparse alignment points were not exact pupil/nose-tip/mouth-corner points |
 
-Files:
-
-- `canonical_face_crop.py`
-- `canonical_face_crop_v2.py`
-- `canonical_face_crop_v3.py`
-- matching test files;
-- matching crop-only Colab notebooks.
-
-All synthetic unit tests passed, but these engines are not the V4 Pixel3DMM default. They remain research history and optional future A/B candidates.
+All synthetic unit tests passed at the time, but these engines are not the V4 Pixel3DMM default. Restore them from Git history only if a concrete future A/B experiment needs them.
 
 ## 7. Drive Artifact Bundle
 
@@ -626,25 +618,14 @@ Then:
 4. record scores in `scoring_sheet.csv`;
 5. compare the same input set with KaoLRM before selecting a temporary geometry baseline.
 
-## 12. Repository Files Added or Updated in This Work
+## 12. Active Repository Files After Cleanup
 
 Primary implementation:
 
 - `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
-- `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_safe.ipynb`
 - `experiments/milestone1_geometry_bakeoff/README.md`
 
-Historical crop engines and tests:
-
-- `canonical_face_crop.py`
-- `canonical_face_crop_v2.py`
-- `canonical_face_crop_v3.py`
-- `test_canonical_face_crop.py`
-- `test_canonical_face_crop_v2.py`
-- `test_canonical_face_crop_v3.py`
-- `canonical_crop_test_colab.ipynb`
-- `canonical_crop_v2_test_colab.ipynb`
-- `canonical_crop_v3_test_colab.ipynb`
+Only `pixel3dmm_colab_v4.ipynb` remains as an executable notebook. Earlier Pixel3DMM notebooks, the KaoLRM scaffold, and crop v1~v3 implementation/test notebooks were removed on 2026-06-24 because they were superseded. Their historical conclusions remain in this document, docs 11–12, and Git history.
 
 Documentation:
 

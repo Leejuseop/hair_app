@@ -1,7 +1,7 @@
 # Pixel3DMM-Compatible Preprocessing Contract
 
-Last synchronized: 2026-06-23
-Status: V4 notebook implementation complete; private-photo Colab validation pending
+Last synchronized: 2026-06-24
+Status: V4 preprocessing validated 8/8; normal/UV compatibility rerun pending
 Audited upstream: `SimonGiebenhain/pixel3dmm@fcd1fa973c7715b02a8948dfc679dff53cf85924`
 
 ## Why This Document Exists
@@ -352,7 +352,7 @@ preprocessed/{set_id}/
 
 `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`에 다음이 구현됐다.
 
-1. v1~v3 roll experiment는 historical로 보존하고 V4 기본 경로에서 제외했다.
+1. v1~v3 roll experiment는 문서와 Git history에만 historical record로 남기고 실행 파일은 삭제했으며 V4 기본 경로에서 제외했다.
 2. official FaceBoxes와 1.42 margin을 유지한 per-image no-roll 512 crop을 구현했다.
 3. 모든 face candidate ranking, 선택된 bbox, 양방향 affine, warning을 사진별 JSON과 manifest에 저장한다.
 4. final crop을 덮어쓰지 않고 official PIPNet WFLW 98점을 실행한다.
@@ -397,4 +397,4 @@ preprocessed/{set_id}/
 - FaceBoxes bbox가 현실적인 입력에서 RetinaFace/SCRFD보다 명확히 낮은 성공률을 보임;
 - optional roll branch가 동일 입력에서 Gate D/E error와 최종 3D 품질을 일관되게 개선함.
 
-v1~v3의 RetinaFace 5-point roll은 연구 기록으로 남기지만 기본 후보에서는 제외한다. 이는 아이디어가 잘못돼서가 아니라, 실제 Pixel3DMM pipeline에서 더 정확한 fitting landmark가 뒤 단계에 따로 있고 camera/head roll 자체도 tracker가 추정하기 때문이다.
+v1~v3의 RetinaFace 5-point roll은 문서와 Git history에 연구 기록으로 남기지만 실행 파일과 기본 후보에서는 제외한다. 이는 아이디어가 잘못돼서가 아니라, 실제 Pixel3DMM pipeline에서 더 정확한 fitting landmark가 뒤 단계에 따로 있고 camera/head roll 자체도 tracker가 추정하기 때문이다.
