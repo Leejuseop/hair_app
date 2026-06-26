@@ -2,7 +2,7 @@
 
 Last synchronized: 2026-06-26
 
-Status: **Geometry baseline and three-mesh handoff complete; Texture Baker v1 implemented as a diagnostic but rejected for product quality; next work is camera-aware Texture Baker v2 and front-focused per-user refinement**
+Status: **Geometry baseline and three-mesh handoff complete; Texture Baker v3 implemented as an iterative research baker but still below product quality; next work is eye/mouth materials, feature preservation, and safer fitted-camera texture refinement**
 
 Executable notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 
@@ -754,7 +754,8 @@ layout, model trio entrypoint, observed texture maps, material fallback, eye
 overlay, and comparison-sheet workflow are wired correctly. It also proved that
 the current simple splat/fallback approach is too weak.
 
-The immediate next experiment is Texture Baker v2:
+The next texture experiment at that point was Texture Baker v2, now superseded
+by the v3 update below:
 
 1. keep the frozen three-mesh candidate manifest as the entrypoint;
 2. keep the user input policy unchanged: selfies plus app scan, no stricter
@@ -775,6 +776,41 @@ size 512, high-precision maps, regional landmarks, or different identity
 constraints. Changing geometry and texture at the same time would make it
 unclear whether a visual improvement came from the mesh or the face appearance
 layer.
+
+### 13.3 Texture Baker v3 update
+
+Texture Baker v3 is now the latest texture experiment. It does not change the
+Pixel3DMM geometry; it keeps the frozen mesh candidates fixed and focuses on
+making the photo-derived face texture less broken.
+
+Implemented:
+
+- `experiments/texture_baker/texture_baker_v3.py`;
+- `v3_no_lighting` and `v3_lighting_normalized` variants;
+- stricter frame filtering with default `--min-score 0.62`;
+- weighted multi-frame UV seed texture;
+- optional fitted-camera projection pass, disabled by default because it still
+  adds forehead/mouth noise;
+- whole-face bad/empty texel repair with neighbor fill, mirror fill, material
+  fallback, seam smoothing, and skin coherence cleanup;
+- per-iteration outputs and metrics for `0..5`;
+- fitted-camera comparison sheets and front-to-45 review sheets;
+- final texture selection from the earliest clean-enough iteration, currently
+  `iter_01`, because later iterations over-smooth identity detail.
+
+Current private outputs:
+
+```text
+output/<person>/texture_baker/v3_v3_no_lighting/
+output/<person>/texture_baker/v3_v3_lighting_normalized/
+output/_comparison/v3_주섭_variant_overview.png
+output/_comparison/v3_은채_variant_overview.png
+```
+
+Current decision: v3 is cleaner than v1/v2 but still not product-quality, and
+it is still not enough to select the final base mesh. The next work is proper
+eye/iris/eyelid and mouth materials, better feature preservation for brows and
+lips, and safer fitted-camera texture refinement before any geometry changes.
 
 ## 14. Notebook Run and Human Gates
 

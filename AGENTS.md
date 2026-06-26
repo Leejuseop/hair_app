@@ -77,8 +77,11 @@ FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality bench
 - geometry는 앱 스캔 프레임을 더 안정적인 좌표/카메라 기준으로 보고, 셀카는 texture와 identity detail 증거로 더 많이 활용한다.
 - 제품 체감 품질은 정면부터 약 45도까지를 최우선으로 본다.
 - 뒤통수, 숨은 두피, 낮은 confidence 영역은 generic fallback이나 completion을 허용한다.
-- Texture Baker v1 결과는 diagnostic artifact이며 제품급이 아니다.
-- 다음 핵심 작업은 camera-aware Texture Baker v2와 이후 per-user render-to-selfie optimization이다.
+- Texture Baker v3 is the latest texture experiment. It produces private
+  no-lighting and lighting-normalized iterative outputs, but it is still not
+  product-quality.
+- 다음 핵심 작업은 real eye/mouth materials, better feature preservation,
+  and safer fitted-camera texture refinement이다.
 - base mesh 세 후보(raw FLAME, fitted mean-shape control, personal no-MICA)는 texture quality가 개선될 때까지 유지한다.
 
 ## Current Implementation Boundary

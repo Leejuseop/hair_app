@@ -108,8 +108,8 @@ Implemented:
 - A fully refitted mean-shape control reached `5.7423 px` average landmark error, matching or slightly beating the no-MICA fitted-shape value `5.8803 px`; therefore the current identity-shape personalization claim is weak under the landmark metric.
 - A later private 19-view run from selected selfies plus app scan frames generated the no-MICA mesh and the fitted mean-shape control, but cross-context landmarks still did not validate no-MICA identity shape over the refitted mean-shape control.
 - Raw FLAME, fitted mean-shape control, and personal no-MICA are frozen as three private mesh candidates for texture review.
-- Texture Baker v1 now exists and can generate observed atlases, confidence/source maps, material fallback previews, eye overlays, and comparison sheets. Its visual quality is diagnostic only and not product-usable.
-- The next product-facing research step is Texture Baker v2: camera-aware, front-focused observed texture baking plus later per-user render-to-selfie optimization.
+- Texture Baker v3 now exists as the latest iterative research baker. It is cleaner than v1/v2 and writes no-lighting plus lighting-normalized private outputs, but it is still diagnostic and not product-usable.
+- The next product-facing research step is dedicated eye/mouth material work, better feature preservation, and safer fitted-camera texture refinement before any base-mesh decision.
 
 Not implemented:
 
@@ -1071,6 +1071,33 @@ trusted face regions, and iteratively refine camera, lighting, texture, and
 very small safe geometry/detail terms. This is first an explicit optimization
 loop for one user, not a trained neural network. A learned model may later
 approximate this optimization for speed.
+
+Texture Baker v3 current status:
+
+- `experiments/texture_baker/texture_baker_v3.py` is now the latest research
+  texture baker.
+- It keeps geometry fixed and produces two private variants:
+  `v3_no_lighting` and `v3_lighting_normalized`.
+- It runs per-person iterations `0..5`, writes per-iteration textures,
+  confidence, observed/fill masks, metrics, fitted-camera comparison sheets,
+  and front-to-45 review sheets.
+- It uses frame-quality filtering, weighted multi-frame UV evidence, whole-face
+  bad/empty texel repair, region material fallback, seam smoothing, and skin
+  coherence cleanup.
+- It selects the earliest clean-enough final iteration, currently `iter_01` in
+  the private run, because later iterations reduce numeric error but over-smooth
+  visible identity detail.
+- Current private outputs are under
+  `output/<person>/texture_baker/v3_v3_no_lighting/`,
+  `output/<person>/texture_baker/v3_v3_lighting_normalized/`, and
+  `output/_comparison/v3_<person>_variant_overview.png`.
+
+The v3 decision is still negative for product readiness. It is cleaner than
+v1/v2 and good enough to expose the next bottlenecks, but not good enough for
+users. The next texture milestone is dedicated eye/iris/eyelid and mouth
+materials, better feature preservation for brows/lips, and stronger masked
+fitted-camera texture refinement. Base mesh selection remains blocked by
+texture quality.
 
 ### 19.8 Private research data layout
 

@@ -697,7 +697,83 @@ Follow-up cleanup/completion pass:
   it also makes hidden scalp/neck flatter. Central face color seams, real eye
   assets, and fitted-camera selfie comparison remain unsolved.
 
-## 20. 앞으로 기록을 추가하는 형식
+## 20. 2026-06-26 Texture Baker v3 iterative bake
+
+After the v2 cleanup and fitted-camera selfie comparison, the user rejected the
+texture quality as still far below product standard. The key correction was to
+stop treating the problem as "fill a few black holes" and instead build a more
+controlled avatar-texture loop:
+
+```text
+fixed scan/base geometry
+  + selected selfies and scan crops
+  -> direct UV evidence
+  -> whole-face bad/empty texel repair
+  -> per-iteration review and metrics
+  -> early clean final instead of over-smoothed last pass
+```
+
+Implemented:
+
+- `experiments/texture_baker/texture_baker_v3.py`;
+- two variants: `v3_no_lighting` and `v3_lighting_normalized`;
+- frame filtering with a stricter default `--min-score 0.62`;
+- weighted multi-frame seed texture instead of a single best-photo patchwork;
+- optional fitted-camera projection pass, kept off by default because it still
+  adds forehead/mouth noise;
+- whole-face repair: neighbor fill, mirror fill, material fallback, seam
+  smoothing, and skin coherence cleanup;
+- per-iteration outputs for `0..5`: texture, confidence, observed mask, filled
+  mask, metrics, fitted-camera comparison sheet, and front-to-45 review sheet;
+- final texture selection from the earliest clean-enough iteration, usually
+  `iter_01`, because later iterations reduce numeric error but visibly flatten
+  identity details.
+
+Private outputs from the run:
+
+```text
+output/<person>/texture_baker/v3_v3_no_lighting/
+output/<person>/texture_baker/v3_v3_lighting_normalized/
+output/_comparison/v3_주섭_variant_overview.png
+output/_comparison/v3_은채_variant_overview.png
+```
+
+Selected final metrics from the local private run:
+
+| Person | Variant | Selected final | Mean luma error | Seam score | Observed coverage |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Juseop | no lighting | 1 | 27.48 | 0.640 | 34.2% |
+| Juseop | lighting normalized | 1 | 27.12 | 0.631 | 34.3% |
+| Eunchae | no lighting | 1 | 36.99 | 1.027 | 23.5% |
+| Eunchae | lighting normalized | 1 | 37.16 | 1.114 | 23.6% |
+
+What improved:
+
+- black holes and the worst broken texel patches are mostly removed;
+- front-to-45 sheets are easier to inspect than v1/v2;
+- selected final iteration avoids the worst late-iteration flattening;
+- lighting normalization is slightly better for Juseop by the current metrics.
+
+What still failed:
+
+- output is not product-quality;
+- face identity is too soft and avatar-like;
+- eyes, eyelids, mouth interior, lips, and brows are not handled by proper
+  assets/materials;
+- Eunchae still has lower useful coverage and visible forehead/hair/headwear
+  contamination risk;
+- repeated residual iterations can improve loss while making the image look
+  worse to a human.
+
+Current decision:
+
+- keep all three base mesh candidates active;
+- do not choose a mesh winner from v3;
+- next texture work should improve eye/mouth materials, feature preservation,
+  and stronger but safer fitted-camera texture refinement before any geometry
+  correction.
+
+## 21. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.
 

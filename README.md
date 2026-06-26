@@ -59,7 +59,7 @@ head + hair
 
 - existing-selfie multi-upload와 star UI;
 - production 3D reconstruction job/API;
-- production-grade Texture Baker v2, missing-region completion, and render-to-selfie refinement;
+- production-grade Texture Baker v3+, eye/mouth materials, missing-region completion, and render-to-selfie refinement;
 - hairstyle-reference persistence;
 - strand-hair reconstruction;
 - hairline-aware retargeting과 collision correction;
@@ -96,7 +96,15 @@ The first observed-photo texture baker and comparison renderer now exist, but th
 output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
 ```
 
-This sheet confirmed the main direction problem: the base-model comparison cannot be trusted until the face texture pipeline is much stronger. The three base meshes remain active candidates, but the next work is not more v1 tuning. The next implementation task is Texture Baker v2: a camera-aware, front-focused observed texture and refinement pipeline.
+This sheet confirmed the main direction problem: the base-model comparison cannot be trusted until the face texture pipeline is much stronger. The three base meshes remain active candidates.
+
+2026-06-26 texture status:
+
+- Texture Baker v2 added frame-quality scoring, fitted-camera projection diagnostics, z-buffer visibility, color normalization, confidence/source maps, and front-to-45 review sheets.
+- Cleanup/completion reduced black holes and obvious hair/headwear leakage, but central face seams, eye realism, and low-confidence areas remained weak.
+- Texture Baker v3 now exists as `experiments/texture_baker/texture_baker_v3.py`. It builds `v3_no_lighting` and `v3_lighting_normalized` variants, runs iterations `0..5`, fills bad/empty texels across the whole face/head region, writes per-iteration metrics and review sheets, and selects the earliest clean-enough final iteration to avoid over-smoothing.
+- Current private v3 outputs are under `output/<person>/texture_baker/v3_v3_no_lighting/`, `output/<person>/texture_baker/v3_v3_lighting_normalized/`, plus `output/_comparison/v3_주섭_variant_overview.png` and `output/_comparison/v3_은채_variant_overview.png`.
+- Current selected final iteration is `iter_01` for both people and both variants. v3 is cleaner than v1/v2 but still not product-quality. The next work is real eye/mouth materials, better feature preservation, and stronger fitted-camera texture refinement.
 
 Current storage status:
 
@@ -120,8 +128,8 @@ Private Drive cleanup guidance:
 - capture guidance and low-cost quality checks: MediaPipe.
 - first head geometry baseline: Pixel3DMM + FLAME.
 - current geometry choice: Pixel3DMM V4 no-MICA pipeline as the working reconstruction baseline; its optimized identity shape is not yet proven better than a refitted mean FLAME control.
-- current texture status: Texture Baker v1 is implemented as a diagnostic observed-pixel baker, but its quality is not product-ready.
-- next practical experiment: build Texture Baker v2 with fitted-camera projection, visibility, view-angle weighting, occlusion rejection, color normalization, confidence/provenance maps, and front-focused review.
+- current texture status: Texture Baker v3 is implemented as an iterative research baker. It produces cleaner avatar textures than v1/v2 but is still not product-ready.
+- next practical experiment: replace diagnostic eyes/mouth handling with real materials/assets and improve feature-region preservation.
 - next refinement experiment: render the textured head into each useful selfie camera and optimize camera, lighting, texture, and only small safe geometry/detail corrections against masked selfie losses.
 - optional geometry/camera assistance: VGGT.
 - face appearance: custom multi-photo observed-pixel UV baker.
@@ -152,7 +160,7 @@ subfolders keeping their executable/run-specific notes.
 - [`docs/10_3d_hair_app_master_plan.md`](docs/10_3d_hair_app_master_plan.md): product goal, current app/API/storage contracts, future personal-head asset, UV, hair, service, evaluation, fine-tuning, privacy, and license plan.
 - [`docs/pixel3dmm_v4.md`](docs/pixel3dmm_v4.md): all Pixel3DMM V4 preprocessing, execution, errors, fixes, results, current loss interpretation, and next A/B experiments.
 - [`docs/history.md`](docs/history.md): project chronology from the first 2D attempts through the 3D pivot and current geometry baseline.
-- [`experiments/texture_baker/README.md`](experiments/texture_baker/README.md): texture-baker loader, v1 diagnostic commands/results, and v2 plan.
+- [`experiments/texture_baker/README.md`](experiments/texture_baker/README.md): texture-baker loader, v1/v2/v3 commands, private output paths, results, and next texture plan.
 - [`newchat.md`](newchat.md): compact handoff for the next AI conversation.
 - [`AGENTS.md`](AGENTS.md): repository working rules for coding agents.
 

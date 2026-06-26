@@ -259,12 +259,12 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-Texture Baker v1 is implemented and pushed, but the user rejected the visual
-quality as far below product standard. Treat v1 as a diagnostic milestone only,
-not as the product texture path. Texture Baker v2 hybrid is now implemented:
-it combines frame quality scoring, fitted-camera projection diagnostics,
-z-buffer visibility, confidence/source maps, color normalization, material
-fallback, and Pixel3DMM UV correspondence detail for the central face.
+Texture Baker v1/v2 are implemented diagnostic milestones, and Texture Baker v3
+is now the latest iterative research baker. The user rejected the visual quality
+as still far below product standard, so none of these outputs are product
+textures yet. v3 combines frame quality scoring, weighted UV evidence,
+whole-face repair, two lighting variants, per-iteration review sheets, and
+early clean final selection.
 
 Product target:
 
@@ -315,6 +315,18 @@ texture/shape updates faster and use the explicit optimization as refinement.
 - Cleanup/completion pass now exists at `experiments/texture_baker/texture_cleanup_completion.py`.
 - It writes `base_color_cleanup_completed.png`, `cleanup_removed_mask.png`, `completion_replaced_mask.png`, and `cleanup_completion_manifest.json` beside each private v2 atlas.
 - Current cleanup sheet: `output/_comparison/face_texture_model_comparison_front45_v2_cleanup.png`. It reduces black holes and obvious headwear/hair leakage, but hidden scalp/neck is intentionally flatter material and central face color seams still remain.
+
+2026-06-26 v3 status update:
+
+- `experiments/texture_baker/texture_baker_v3.py` is now implemented.
+- It keeps geometry fixed and builds two variants: `v3_no_lighting` and `v3_lighting_normalized`.
+- It runs iterations `0..5`, writes per-iteration texture/confidence/observed/fill masks, metrics, fitted-camera comparison sheets, and front-to-45 review sheets.
+- It uses weighted multi-frame UV evidence, whole-face bad/empty texel repair, region material fallback, seam smoothing, and skin coherence cleanup.
+- Fitted-camera projection support exists but is disabled by default because the current projection pass still adds forehead/mouth noise.
+- The final texture is selected from the earliest clean-enough iteration instead of always using the last iteration. In the current private run the selected final is `iter_01` for both people and both variants.
+- Current private outputs: `output/<person>/texture_baker/v3_v3_no_lighting/`, `output/<person>/texture_baker/v3_v3_lighting_normalized/`, `output/_comparison/v3_주섭_variant_overview.png`, and `output/_comparison/v3_은채_variant_overview.png`.
+- Current decision: v3 is cleaner than v1/v2 but still not product-quality. Do not pick a base mesh winner from v3 yet.
+- Next concrete work: proper eye/iris/eyelid and mouth materials, better brow/lip feature preservation, and stronger but safer fitted-camera texture refinement.
 
 Current loader and baker scaffold:
 
@@ -408,4 +420,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We have a working app scan foundation, offline Pixel3DMM geometry artifacts, and three frozen mesh candidates: raw FLAME, fitted mean-shape control, and personal no-MICA. Texture Baker v2 hybrid can now score frames, bake observed face texture, and generate a front-to-45-degree comparison sheet for Juseop/Eunchae. It is better for review than v1, but still not product-quality because hair/headwear contamination, color seams, completion, and final eyes remain unsolved. The next move is completion/occlusion cleanup, then fitted-camera selfie comparison.
+> We have a working app scan foundation, offline Pixel3DMM geometry artifacts, and three frozen mesh candidates: raw FLAME, fitted mean-shape control, and personal no-MICA. Texture Baker v3 now runs iterative fixed-geometry texture baking for Juseop/Eunchae, produces no-lighting and lighting-normalized variants, and selects `iter_01` as the current clean-enough final in the private run. It is cleaner than v1/v2 but still not product-quality, so the next move is eye/mouth material work, better feature preservation, and safer fitted-camera texture refinement before any base-mesh decision.

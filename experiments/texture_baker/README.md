@@ -502,3 +502,87 @@ Next recommended work:
   only on reliable skin regions;
 - later add weak camera/lighting/texture optimization per frame, then only
   after that consider low-frequency geometry correction.
+
+## 2026-06-26 Texture Baker v3 Iterative Avatar Bake
+
+Implemented `texture_baker_v3.py` as the next direct texture experiment after
+the v2 cleanup and fitted-camera comparison pass. v3 keeps geometry fixed and
+tries to build a calmer avatar texture from the same private photos instead of
+continuing to tune the first raw UV splat result.
+
+What v3 does:
+
+- scores and filters frames with `evidence_quality_report.py`;
+- uses Pixel3DMM UV correspondence maps as the main direct bake source;
+- optionally supports a low-weight fitted-camera projection pass, but it is
+  disabled by default because it currently reintroduces forehead and mouth
+  noise;
+- writes two variants: `v3_no_lighting` and `v3_lighting_normalized`;
+- runs iterations `0..N`, saving texture, confidence, observed mask, filled
+  mask, metrics, fitted-camera comparison sheet, and front-to-45 review sheet;
+- uses weighted multi-frame color rather than a single best source texel;
+- fills empty/bad texels over the whole skin/scalp/neck/ear region, not only
+  the nose;
+- applies region-aware neighbor fill, mirror fill, material fallback, seam
+  smoothing, and skin coherence cleanup;
+- selects the final texture from the earliest clean-enough iteration, currently
+  usually `iter_01`, to avoid later over-smoothing.
+
+Current command shape:
+
+```powershell
+python experiments\texture_baker\texture_baker_v3.py `
+  --private-root "G:\내 드라이브\hair_app" `
+  --person 주섭 `
+  --person 은채 `
+  --variant v3_no_lighting `
+  --variant v3_lighting_normalized `
+  --output-prefix v3 `
+  --iterations 5 `
+  --min-score 0.62 `
+  --max-abs-yaw 58 `
+  --atlas-size 512 `
+  --image-size 512
+```
+
+Current private outputs:
+
+```text
+output/<person>/texture_baker/v3_v3_no_lighting/
+output/<person>/texture_baker/v3_v3_lighting_normalized/
+output/_comparison/v3_주섭_variant_overview.png
+output/_comparison/v3_은채_variant_overview.png
+```
+
+Current selected final iterations from the local private run:
+
+| Person | Variant | Selected final | Mean luma error | Seam score | Observed coverage |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Juseop | no lighting | 1 | 27.48 | 0.640 | 34.2% |
+| Juseop | lighting normalized | 1 | 27.12 | 0.631 | 34.3% |
+| Eunchae | no lighting | 1 | 36.99 | 1.027 | 23.5% |
+| Eunchae | lighting normalized | 1 | 37.16 | 1.114 | 23.6% |
+
+Observed result:
+
+- v3 is cleaner than the raw v1/v2 sheets because black holes and extreme
+  patching are mostly removed;
+- it is still not product-quality;
+- repeated iterations lower numeric error slightly but flatten identity detail,
+  so the final texture intentionally selects an early stable iteration;
+- lighting normalization helps Juseop slightly in metrics and is close visually;
+- Eunchae remains harder because visible forehead/hair/headwear contamination
+  and lower observed coverage still dominate;
+- eyes, eyelids, mouth interior, lips, and brows need dedicated material or
+  geometry handling instead of relying on baked photo pixels;
+- the base mesh winner still should not be selected from v3 alone.
+
+Next recommended work:
+
+- implement real eye/iris/eyelid and mouth-interior materials;
+- make feature regions preserve stable brows/lips without cartoon material
+  flattening;
+- improve fitted-camera comparison so it can drive stronger masked texture
+  updates without pushing bad forehead/mouth pixels into the atlas;
+- after texture stability improves, revisit render-to-selfie optimization and
+  only then consider weak low-frequency geometry correction.
