@@ -1,6 +1,6 @@
 # Hair App New-Chat Handoff
 
-Last synchronized: 2026-06-24
+Last synchronized: 2026-06-26
 
 Branch expected: `main`
 
@@ -259,23 +259,30 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-The practical next task is the custom observed-photo face texture baker:
+The observed-photo face texture baker now has a reproducible first layer. The
+practical next task is to put these atlases onto the frozen mesh candidates and
+render the same inspection views:
 
 1. use the private frozen model trio manifest as input;
 2. load raw FLAME, fitted mean-shape control, and personal no-MICA meshes;
-3. load the corresponding private preprocessed crops, masks, UV maps, and tracking cameras;
-4. project actual observed photo pixels onto each mesh candidate;
-5. write texture atlas, coverage map, confidence map, source-view map, and provenance;
-6. render all three textured candidates from the same inspection cameras;
-7. decide visually and numerically whether the personal no-MICA mesh is worth carrying forward as the temporary head asset.
+3. resolve compatible FLAME UV coordinates because the current PLY meshes do not
+   store UV properties in their headers;
+4. apply the private observed atlases as material textures;
+5. render all textured candidates from the same inspection cameras;
+6. decide visually and numerically whether the personal no-MICA mesh is worth
+   carrying forward as the temporary head asset.
 
-Current loader scaffold:
+Current loader and baker scaffold:
 
 - `experiments/texture_baker/texture_baker_loader.py` resolves local Windows and Colab private Drive roots.
 - It currently verifies `주섭` as 3 frozen meshes plus 19 crop/UV/segmentation/landmark/crop-meta frames.
 - It currently verifies `은채` as 2 meshes plus 8 crop/UV/segmentation/landmark/crop-meta frames.
 - It only reports private paths and existence checks; it does not copy private biometric artifacts into Git.
-- Next implementation step: consume the loader output to create the first observed texture atlas, coverage map, confidence map, source-view map, and manifest.
+- `experiments/texture_baker/observed_texture_baker.py` now creates the first observed texture atlas, coverage map, confidence map, source-view map, and manifest from crop RGB plus Pixel3DMM UV PNG plus segmentation labels.
+- `observed_v6_primary00000_faceonly_secondary0_preview` for `주섭` uses frame `00000` as central-face primary, weighted mode, face-label whitelist, mask erosion, and conservative preview fill. It is cleaner and less ghosted than `observed_v0_preview`, with lower coverage.
+- `observed_v6_primary00004_centralface_secondary0_preview` for `은채` uses frame `00004` as a cleaner frontal primary and temporarily includes only central face labels `2,6,7,8,9,10,12,13`; this avoids the headband/hair-heavy `00000` primary.
+- These atlas PNGs are still private debug/runtime artifacts under Drive. They are not final skin textures and should be judged on a mesh render, not only as flat atlas images.
+- Remaining baker work before a polished texture: view-angle/pose weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation beyond preview splat, and later completion for missing UV regions.
 
 Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 
