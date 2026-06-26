@@ -1,6 +1,6 @@
 # Hair App 3D Master Plan
 
-Last synchronized: 2026-06-24
+Last synchronized: 2026-06-27
 Status: working architecture and experiment plan; not a frozen specification
 
 > 2026-06-27 update: the long-term product contracts in this document are still
@@ -1321,31 +1321,69 @@ Keep these parts of the old plan:
 
 The model choice changed, but the product contract did not.
 
-### 21.3 New near-term milestones
+### 21.3 Current v1/v2/v3 automation status
 
-1. FaceBuilder automation v1:
-   - load private Juseop/Eunchae photo folders;
-   - score/select images;
-   - create a Blender scene;
-   - add FaceBuilder head and cameras;
-   - auto-align photos;
-   - reject failed images;
-   - bake texture;
-   - save private `.blend`, texture, export, and manifest.
+The first FaceBuilder comparison pipeline now exists in
+`experiments/facebuilder_bridge/`.
 
-2. Review outputs:
-   - 0, +-15, +-30, +-45 degree renders;
-   - source thumbnails or references;
-   - alignment status;
-   - reject/failure reasons;
-   - simple metrics plus human visual review.
+Implemented:
 
-3. Bald-head post-processing:
+- `facebuilder_version_runner.py` runs the local private v1/v2/v3 comparison
+  batch from normal Python.
+- `blender_facebuilder_batch_scene.py` runs inside headless Blender, creates the
+  FaceBuilder head, adds image candidates, auto-aligns, bakes texture, saves a
+  private `.blend`, exports OBJ/GLB, and renders review yaw images.
+- v1 uses all photos and baseline FaceBuilder auto-align.
+- v2 adds photo scoring and selection.
+- v3 adds face-crop alignment candidates and a strict texture gate: frontal,
+  color-clean crops can contribute to texture, while profile/side photos can
+  still help alignment but are disabled for texture baking.
+- Private output folders are created under:
+
+```text
+<drive_root>/output/facebuilder_v1/<person>/
+<drive_root>/output/facebuilder_v2/<person>/
+<drive_root>/output/facebuilder_v3/<person>/
+```
+
+Latest private comparison summary:
+
+| Version | Person | Selected | Rejected | Aligned | Failed | TexCams |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| v1 | Juseop | 11 | 0 | 10 | 1 | 10 |
+| v1 | Eunchae | 8 | 0 | 7 | 1 | 7 |
+| v2 | Juseop | 7 | 4 | 6 | 1 | 6 |
+| v2 | Eunchae | 7 | 1 | 6 | 1 | 6 |
+| v3 | Juseop | 7 | 4 | 7 | 0 | 2 |
+| v3 | Eunchae | 7 | 1 | 7 | 0 | 1 |
+
+The important interpretation is that v3 is currently the best automated
+baseline, but it is still not product quality. It improves alignment reliability
+and reduces some texture contamination, but visible defects remain around
+scalp/hair patches, eyes, mouth/nostrils, neck/ear seams, and occasional
+background or clothing leakage.
+
+### 21.4 New near-term milestones
+
+1. Human review of v1/v2/v3:
+   - inspect private review sheets and GLBs;
+   - decide whether v3 is the right base for the next iteration;
+   - record what fails visually before changing more logic.
+
+2. Semantic bald-head post-processing:
    - remove hair, headwear, glasses, shirt, and background leakage;
    - fill scalp, neck, rear head, and low-confidence skin;
    - improve eyes, iris, eyelids, mouth interior, lips, ears, brows, and skin
      material;
    - preserve confidence/provenance maps.
+
+3. Stronger input analysis before FaceBuilder:
+   - robust landmarks;
+   - pose/yaw;
+   - eye closed / mouth open;
+   - glasses, phone, hand, hair, and headwear occlusion;
+   - segmentation confidence;
+   - lighting and color normalization.
 
 4. Mesh strategy decision:
    - use FaceBuilder mesh directly if it supports hair fitting, scalp mapping,
@@ -1357,7 +1395,7 @@ The model choice changed, but the product contract did not.
    - keep hair reconstruction, scalp retargeting, and collision requirements
      from section 20.
 
-### 21.4 Archived old-engine docs
+### 21.5 Archived old-engine docs
 
 The standalone active docs for Pixel3DMM V4 and Texture Baker have been moved
 into `docs/history.md` as detailed archives. They are no longer active source
@@ -1370,7 +1408,7 @@ Use `docs/history.md` for the full record of:
 - Texture Baker loader/v1/v2/v3 commands, outputs, failures, and lessons;
 - FaceBuilder/KeenTools pivot and automation verification.
 
-### 21.5 Current active implementation references
+### 21.6 Current active implementation references
 
 Current active references:
 

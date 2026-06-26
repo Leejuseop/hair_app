@@ -74,6 +74,19 @@ Verified locally on 2026-06-27:
 - Empty-scene automation v0 succeeded from a private Juseop photo folder with
   two selected photos: one aligned, one failed face detection, texture baking
   succeeded, and a private `.blend` was saved.
+- v1/v2/v3 FaceBuilder batches now run for private Juseop/Eunchae folders.
+  They write manifests, `.blend`, OBJ, GLB, baked textures, cleanup textures,
+  logs, and review sheets under private Drive output folders.
+- Latest private batch summary:
+  - v1 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
+  - v1 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
+  - v2 Juseop: 7 selected, 6 aligned, 1 failed, 6 texture cameras.
+  - v2 Eunchae: 7 selected, 6 aligned, 1 failed, 6 texture cameras.
+  - v3 Juseop: 7 selected, 7 aligned, 0 failed, 2 texture cameras.
+  - v3 Eunchae: 7 selected, 7 aligned, 0 failed, 1 texture camera.
+- v3 uses photo scoring, face-crop candidates, and a texture gate that lets
+  frontal/color-clean crops contribute to texture while profile photos can
+  still help alignment.
 
 Private v0 outputs were written under:
 
@@ -91,30 +104,31 @@ Tracked tools:
 - `experiments/facebuilder_bridge/blender_facebuilder_smoke.py`
 - `experiments/facebuilder_bridge/blender_facebuilder_scene_probe.py`
 - `experiments/facebuilder_bridge/blender_facebuilder_auto_scene_v0.py`
+- `experiments/facebuilder_bridge/facebuilder_version_runner.py`
+- `experiments/facebuilder_bridge/blender_facebuilder_batch_scene.py`
 
-These scripts are not production code yet. They prove that automation is
-possible and give a starting point for v1.
+These scripts are still research/bridge code, not production job orchestration.
+They now prove that the v1/v2/v3 comparison loop can be generated without
+manual Blender clicking.
 
 ## 6. Next Work Plan
 
 Immediate next stage:
 
-1. Build FaceBuilder automation v1.
-   - Run over all accepted Juseop/Eunchae photos.
-   - Score photos before use.
-   - Retry or reject failed alignments.
-   - Save a private `.blend`, texture, and JSON manifest.
+1. Review the private v1/v2/v3 sheets and GLBs with the user.
+   - v3 is the current best automated baseline.
+   - It is still not product quality.
+   - Main remaining issues: hair/scalp patches, eyes, mouth/nostrils, neck/ear
+     seams, and occasional texture leakage.
 
-2. Build review outputs.
-   - Render front, +-15, +-30, +-45 degrees.
-   - Include source-photo thumbnails, alignment status, and simple metrics.
-   - Keep results in `private_outputs/`.
+2. Replace heuristic cleanup with semantic post-processing.
+   - Need face/skin/scalp/hair/background/neck/ear masks.
+   - Need eye, iris, eyelid, mouth, lip, brow, and nostril materials.
+   - Need observed-versus-filled confidence/provenance maps.
 
-3. Define bald-head post-processing.
-   - Remove hair, shirt, background, glasses, and face-occlusion leakage.
-   - Fill scalp/neck/rear-head with plausible skin material.
-   - Separate or improve eyes, mouth, lips, ears, and scalp.
-   - Prepare a clean head for hair fitting.
+3. Improve photo/frame analysis before FaceBuilder.
+   - Add robust landmarks, pose/yaw, eye/mouth state, occlusion, segmentation
+     confidence, and lighting/color normalization.
 
 4. Decide mesh strategy.
    - Option A: use FaceBuilder mesh directly for the hair app.

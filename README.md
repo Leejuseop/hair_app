@@ -57,9 +57,23 @@ machine:
 - A new empty Blender scene can be created from a private photo folder, add
   photos as FaceBuilder cameras, auto-align at least one photo, bake a texture,
   and save a private `.blend`.
+- FaceBuilder v1/v2/v3 comparison batches now run for private Juseop and
+  Eunchae photo folders, write private Drive outputs, export OBJ/GLB, and build
+  review sheets.
+- The latest v3 batch uses photo quality scoring, face-centered alignment
+  candidates, and a conservative texture gate so only frontal/color-clean crops
+  contribute to texture while side/profile photos can still help alignment.
 
 Private test outputs are written under `private_outputs/` and are ignored by
-Git.
+Git. Current FaceBuilder version outputs are written under the private Drive
+layout:
+
+```text
+<drive_root>/output/facebuilder_v1/<person>/
+<drive_root>/output/facebuilder_v2/<person>/
+<drive_root>/output/facebuilder_v3/<person>/
+<drive_root>/output/facebuilder_versions_summary.md
+```
 
 ## Implemented Repository Pieces
 
@@ -80,15 +94,15 @@ Research-side implementation includes:
 - Pixel3DMM V4 research notebook and freeze utilities;
 - Texture Baker v1/v2/v3 experiments and review sheets;
 - FaceBuilder bridge scripts for export inspection, headless smoke testing,
-  scene probing, empty-scene automation, and private review outputs.
+  scene probing, empty-scene automation, v1/v2/v3 batch comparison, private
+  review outputs, and GLB export.
 
 ## Not Implemented Yet
 
 - production selfie upload and automatic photo scoring UI;
 - production FaceBuilder job orchestration;
-- automatic full-photo FaceBuilder solve for all accepted Juseop/Eunchae inputs;
-- post-processed bald-head export contract;
-- eye/mouth/scalp cleanup after FaceBuilder export;
+- semantic scalp/skin/occlusion masks for FaceBuilder post-processing;
+- clean eye/mouth/scalp materials after FaceBuilder export;
 - hair reconstruction or imported hairstyle processing;
 - scalp retargeting and collision correction;
 - production GLB builder/viewer;
@@ -130,13 +144,14 @@ private_outputs/
 
 ## Next Immediate Work
 
-1. Promote `experiments/facebuilder_bridge/blender_facebuilder_auto_scene_v0.py`
-   into a v1 batch runner for all accepted Juseop/Eunchae photos.
-2. Add photo/frame scoring and automatic reject/retry logic before passing
-   frames to FaceBuilder.
-3. Generate private review sheets for FaceBuilder outputs from 0, +-15, +-30,
-   and +-45 degrees.
-4. Define the bald-head post-processing contract: remove hair/shirt/background
-   leakage, prepare scalp, eyes, mouth, neck, and material regions.
-5. Decide whether FaceBuilder exported mesh can be used directly for the hair
+1. Review the private v1/v2/v3 FaceBuilder sheets and GLBs.
+2. Build semantic post-processing around the FaceBuilder output:
+   scalp/hair/skin/neck/ear/eye/mouth/occlusion masks, not only color
+   heuristics.
+3. Improve the bald-head substrate: remove remaining hair/background/shirt
+   leakage, fill scalp and rear head with plausible skin, and add clean
+   eye/mouth materials.
+4. Decide whether FaceBuilder exported mesh can be used directly for the hair
    app, or whether a transfer/retopology step is required.
+5. After the bald head is credible, move to hair asset reconstruction/fitting,
+   collision, and mobile GLB viewer work.

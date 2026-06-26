@@ -117,6 +117,89 @@ Example:
   --output-dir "C:\Users\User\Desktop\hair_app\private_outputs\facebuilder_bridge\auto_scene_v0_juseop"
 ```
 
+### `facebuilder_version_runner.py`
+
+Runs the current private v1/v2/v3 FaceBuilder comparison batch from normal
+Python. It prepares version/person folders, scores photos, writes input
+manifests, launches Blender in background mode, and builds review sheets.
+
+Versions:
+
+- `v1`: all photos, baseline FaceBuilder auto-align, no pre-score rejection.
+- `v2`: v1 plus photo quality scoring and selection.
+- `v3`: v2 plus face-centered alignment candidates and a stricter texture gate.
+
+The v3 texture gate is intentionally conservative: frontal/color-clean crops can
+contribute to texture, while profile or heavily clipped photos can still help
+alignment but are disabled for texture baking. This reduced some background and
+colored-light leakage, but it is not a final semantic cleanup system.
+
+Example:
+
+```powershell
+python experiments\facebuilder_bridge\facebuilder_version_runner.py `
+  --quality-threshold 0.80 `
+  --clean
+```
+
+Path defaults can be overridden with `--drive-root`, `--juseop-dir`,
+`--eunchae-dir`, or the `HAIR_APP_DRIVE_ROOT`, `HAIR_APP_JUSEOP_DIR`, and
+`HAIR_APP_EUNCHAE_DIR` environment variables.
+
+Useful options:
+
+```powershell
+  --version v3 `
+  --person juseop `
+  --max-images 2 `
+  --skip-blender
+```
+
+Private output layout:
+
+```text
+<drive_root>/output/facebuilder_v1/<person>/
+<drive_root>/output/facebuilder_v2/<person>/
+<drive_root>/output/facebuilder_v3/<person>/
+  00_input_manifest/
+  01_working_images/
+  02_alignment/
+  03_facebuilder_scene/
+  04_exports/
+  05_postprocess/
+  06_glb/
+  07_review_sheets/
+  logs/
+```
+
+Batch-level summaries:
+
+```text
+<drive_root>/output/facebuilder_versions_batch_manifest.json
+<drive_root>/output/facebuilder_versions_summary.json
+<drive_root>/output/facebuilder_versions_summary.md
+```
+
+### `blender_facebuilder_batch_scene.py`
+
+Runs inside Blender. It consumes the manifest written by
+`facebuilder_version_runner.py`, creates a FaceBuilder head, adds image
+candidates as cameras, tries auto-align, bakes texture, applies Hair App
+material/post-process preparation, exports OBJ/GLB, renders review yaw images,
+and writes `run_manifest.json`.
+
+The current post-process includes only a heuristic baked-texture cleanup:
+
+- keep the raw FaceBuilder bake;
+- create a separate `facebuilder_texture_bald_cleanup.png`;
+- replace empty texels, large dark blobs, and obvious color leaks with a skin
+  reference;
+- write `bald_texture_cleanup_report.json`;
+- use the cleanup texture for the current GLB and review renders.
+
+This is deliberately not treated as final product quality. The next required
+step is semantic scalp/skin/occlusion cleanup.
+
 ## Local Verification on 2026-06-27
 
 Environment:
@@ -161,38 +244,62 @@ Empty-scene automation v0:
 - a private `.blend`, private texture PNG, and `result.json` were saved under
   `private_outputs/facebuilder_bridge/`.
 
-Conclusion: full app automation is not solved yet, but the important bridge is
-possible. Codex can run Blender headlessly, drive key FaceBuilder operations,
-write diagnostics, and iterate on scripts without the user manually clicking
-every step.
+Version batch run:
+
+| Version | Person | Selected | Rejected | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |
+| v1 | juseop | 11 | 0 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v1 | eunchae | 8 | 0 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+| v2 | juseop | 7 | 4 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
+| v2 | eunchae | 7 | 1 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
+| v3 | juseop | 7 | 4 | 7 | 0 | 2 | yes | yes | yes | yes | yes |
+| v3 | eunchae | 7 | 1 | 7 | 0 | 1 | yes | yes | yes | yes | yes |
+
+Conclusion: the automation bridge is now real enough to generate comparable
+private v1/v2/v3 artifacts without manual clicking. Codex can run Blender
+headlessly, drive key FaceBuilder operations, write diagnostics, export GLB, and
+iterate on scripts.
+
+Quality conclusion: v3 is the best current automated version, but it is still
+not product quality. It improves failure rate and reduces the worst photo
+contamination, yet visible problems remain: hair/scalp patches, eye material,
+mouth/nostril regions, neck/ear seams, and occasional texture leakage from
+photo background or clothing.
 
 ## Current Limitations
 
 - Auto-align quality still affects final geometry/texture heavily.
 - FaceBuilder can fail face detection on occluded/glasses images.
-- The current v0 runner only proves feasibility with a small photo subset.
-- It does not yet implement photo scoring, retry policy, batch solving, export,
-  review sheets, or bald-head cleanup.
+- The current v1/v2/v3 runner is a local research pipeline, not production job
+  orchestration.
+- Photo scoring is still coarse. It uses sharpness, exposure, contrast,
+  clipping, resolution, OpenCV face size/center signals, and simple color-cast
+  scoring, but it does not yet use robust landmarks, eye/mouth state, glasses,
+  hands, phone, hair, or segmentation confidence.
+- The cleanup pass is heuristic color/component replacement, not semantic
+  matting. It can reduce ugly artifacts but cannot reliably know "hair versus
+  eyebrow" or "skin versus background."
 - FaceBuilder mesh topology may or may not be directly suitable for Hair App
   hair fitting; this must be evaluated after better exports.
 - The bridge does not modify KeenTools internals or bypass licensing.
 
 ## Next Work
 
-1. Build automation v1 for all accepted Juseop/Eunchae photos.
-2. Add pre-FaceBuilder photo scoring:
-   - blur;
-   - face detection confidence;
+1. Review v1/v2/v3 private sheets and decide whether v3 is the right base for
+   the next pass.
+2. Replace heuristic cleanup with semantic post-processing:
+   - face/skin/scalp/hair/background/neck/ear masks;
+   - eye, iris, eyelid, mouth, lip, brow, and nostril materials;
+   - confidence and provenance maps for observed versus filled regions.
+3. Add stronger input analysis before FaceBuilder:
+   - robust landmarks;
    - pose/yaw;
-   - lighting;
-   - occlusion from glasses, hands, phone, hair, headwear;
    - eye closed / mouth open;
-   - landmark stability if available.
-3. Add automatic retry/reject logic around failed or weak alignment.
-4. Export private mesh/texture candidates and write manifests.
-5. Generate front-to-45 review sheets for visual comparison.
-6. Design post-processing for a clean bald-head substrate:
-   - remove hair/headwear/shirt leakage;
-   - fill scalp/neck/rear head;
-   - improve eyes, mouth, lips, ears, and skin material;
-   - prepare GLB-ready regions for hair fitting.
+   - glasses, phone, hand, hair, and headwear occlusion;
+   - segmentation confidence;
+   - lighting and color normalization.
+4. Evaluate mesh strategy:
+   - use FaceBuilder mesh directly if scalp mapping and hair collision work;
+   - otherwise transfer/retopologize to a controlled app head mesh.
+5. After the bald-head substrate is credible, move to hair reconstruction,
+   hairline-aware fitting, collision correction, and mobile GLB/viewer work.

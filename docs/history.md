@@ -1873,3 +1873,170 @@ Final historical interpretation:
 - repeated iteration could improve metrics while damaging visible identity;
 - the current project should reuse its scoring, confidence, and review-sheet
   ideas, but not continue it as the main head-generation path.
+
+## 26. 2026-06-27 FaceBuilder v1/v2/v3 Batch Automation
+
+### 26.1 User Request
+
+The user asked for three comparable FaceBuilder versions for Juseop and Eunchae:
+
+- `v1`: use all photos, plus post-processing, bald-head preparation, hair-app
+  GLB conversion logic, and automatic review sheets.
+- `v2`: v1 plus photo quality scoring.
+- `v3`: v2 plus auto-align improvement.
+
+The user also requested that all private generated data be organized under
+Google Drive in clean `facebuilder_v1`, `facebuilder_v2`, and `facebuilder_v3`
+folders, while source code and documentation are pushed to GitHub. Private
+photos, meshes, textures, renders, and GLBs must remain out of Git.
+
+### 26.2 Implemented Scripts
+
+New tracked scripts:
+
+```text
+experiments/facebuilder_bridge/facebuilder_version_runner.py
+experiments/facebuilder_bridge/blender_facebuilder_batch_scene.py
+```
+
+`facebuilder_version_runner.py` runs from normal Python. It:
+
+- reads private Juseop and Eunchae photo folders;
+- scores images;
+- prepares Drive output folders;
+- writes input manifests and quality reports;
+- creates normalized working images and v3 alignment candidates;
+- launches Blender in background mode;
+- captures Blender stdout/stderr logs as bytes;
+- creates review sheets from source thumbnails and yaw renders;
+- writes batch summaries.
+
+`blender_facebuilder_batch_scene.py` runs inside Blender. It:
+
+- creates a FaceBuilder head;
+- adds image candidates as FaceBuilder cameras;
+- runs code-only detect-face, detect-pose, preset-pin solve, and mesh update;
+- disables texture baking for failed or gated cameras;
+- saves FaceBuilder state;
+- bakes a texture;
+- writes a cleanup texture and cleanup report;
+- applies a Hair App material placeholder;
+- exports OBJ and GLB;
+- renders review images at `0, 15, 30, 45, -15, -30, -45` degrees;
+- writes `run_manifest.json` and alignment reports.
+
+### 26.3 Version Definitions
+
+`v1`:
+
+- all readable photos are attempted;
+- no pre-score rejection;
+- original photos are used as FaceBuilder cameras;
+- all successful original cameras can contribute to texture.
+
+`v2`:
+
+- adds photo quality scoring and selection;
+- scoring includes blur, exposure, contrast, clipping, resolution, OpenCV face
+  size/center signals, and simple color-cast scoring;
+- the current threshold was `0.80`.
+
+`v3`:
+
+- uses v2 selection;
+- adds face-centered and wide face-crop alignment candidates;
+- uses original/autocontrast/brightness-sharpness candidates as retry helpers;
+- adds a texture gate:
+  - frontal and color-clean crops can contribute to texture;
+  - profile/side/heavily clipped candidates can still help alignment;
+  - gated candidates are disabled for texture baking.
+
+### 26.4 Private Output Layout
+
+Output layout per version/person:
+
+```text
+<drive_root>/output/facebuilder_v1/<person>/
+<drive_root>/output/facebuilder_v2/<person>/
+<drive_root>/output/facebuilder_v3/<person>/
+  00_input_manifest/
+  01_working_images/
+  02_alignment/
+  03_facebuilder_scene/
+  04_exports/
+  05_postprocess/
+  06_glb/
+  07_review_sheets/
+  logs/
+```
+
+Batch summaries:
+
+```text
+<drive_root>/output/facebuilder_versions_batch_manifest.json
+<drive_root>/output/facebuilder_versions_summary.json
+<drive_root>/output/facebuilder_versions_summary.md
+```
+
+These outputs are private and must not be committed.
+
+### 26.5 Latest Private Batch Summary
+
+Latest run summary:
+
+| Version | Person | Selected | Rejected | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |
+| v1 | Juseop | 11 | 0 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v1 | Eunchae | 8 | 0 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+| v2 | Juseop | 7 | 4 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
+| v2 | Eunchae | 7 | 1 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
+| v3 | Juseop | 7 | 4 | 7 | 0 | 2 | yes | yes | yes | yes | yes |
+| v3 | Eunchae | 7 | 1 | 7 | 0 | 1 | yes | yes | yes | yes | yes |
+
+Important interpretation:
+
+- v1 proves the baseline all-photo path but includes too much noisy texture
+  evidence.
+- v2 proves photo scoring and rejection reduce inputs, but original profile
+  photos still contaminate texture.
+- v3 is the best current automated baseline because all selected photos align,
+  and profile/side photos can be used for alignment without necessarily entering
+  texture baking.
+- v3 still is not product quality.
+
+### 26.6 Visual Quality Findings
+
+Observed improvements:
+
+- v3 reduced alignment failures to zero for both private people in the latest
+  run.
+- v3 reduced severe colored-light contamination by rejecting/gating bad texture
+  sources.
+- review sheets and GLBs are generated consistently for all six
+  version/person combinations.
+
+Remaining visible failures:
+
+- hair/scalp patches remain on the bald head;
+- heuristic cleanup can leave gray/white replacement islands;
+- eyes are still not proper eye assets/materials;
+- mouth, nostril, brow, and lip regions need semantic treatment;
+- neck, ear, and shoulder boundaries can leak clothing/background texture;
+- side/profile photos are useful for alignment but risky as texture sources;
+- automatic FaceBuilder alignment is not yet as clean as careful manual pinning.
+
+### 26.7 Next Technical Direction
+
+The next improvement should not be another global color-threshold pass. The
+needed step is semantic bald-head post-processing:
+
+- face/skin/scalp/hair/background/neck/ear masks;
+- eye, iris, eyelid, mouth, lip, brow, nostril materials;
+- confidence/provenance maps for observed versus filled regions;
+- better occlusion detection before a photo is allowed into texture baking;
+- explicit scalp fallback material instead of trying to keep photographed hair;
+- mesh strategy evaluation for FaceBuilder direct use versus transfer or
+  retopology.
+
+After the bald-head substrate is credible, continue to hair reconstruction,
+hairline-aware fitting, collision correction, and mobile GLB viewer work.
