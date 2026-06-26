@@ -157,7 +157,10 @@ def rotate_vertices(vertices: np.ndarray, view: str) -> np.ndarray:
         "left_35": np.deg2rad(35.0),
         "right_35": np.deg2rad(-35.0),
     }
-    angle = angles[view]
+    if view.startswith("yaw_"):
+        angle = np.deg2rad(float(view.removeprefix("yaw_")))
+    else:
+        angle = angles[view]
     cos_a = float(np.cos(angle))
     sin_a = float(np.sin(angle))
     rotation = np.asarray(
@@ -456,7 +459,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--padding", type=int, default=60)
     parser.add_argument("--uv-mode", action="append", choices=UV_MODES, default=None)
     parser.add_argument("--depth-mode", action="append", choices=DEPTH_MODES, default=None)
-    parser.add_argument("--view", action="append", choices=["front", "left_35", "right_35"], default=None)
+    parser.add_argument(
+        "--view",
+        action="append",
+        default=None,
+        help='View name. Supports front, left_35, right_35, or yaw degrees such as "yaw_045".',
+    )
     parser.add_argument("--write-obj", action="store_true")
     return parser.parse_args()
 

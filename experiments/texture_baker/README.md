@@ -183,3 +183,26 @@ comparison shape: a shared raw FLAME template baseline, the existing
 `base_flame2023` candidate, and the no-MICA canonical candidate. The generated
 PLY copies and `model_trio_manifest.json` are private Drive artifacts, not Git
 files.
+
+## One-File 8-View Comparison Sheet
+
+For manual model selection, generate one large private PNG with rows as model
+candidates and columns as 45-degree yaw views:
+
+```python
+!python experiments/texture_baker/make_texture_comparison_sheet.py \
+  --private-root /content/drive/MyDrive/hair_app \
+  --texture-kind preview_filled \
+  --image-size 512 \
+  --padding 42 \
+  --uv-mode flip_y \
+  --depth-mode max \
+  --mask-mode none
+```
+
+Local output:
+
+```text
+output/_comparison/face_texture_model_comparison_8view.png
+output/_comparison/face_texture_model_comparison_8view.json
+```

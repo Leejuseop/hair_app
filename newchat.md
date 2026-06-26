@@ -283,8 +283,10 @@ Current loader and baker scaffold:
 - `observed_v6_primary00004_centralface_secondary0_preview` for `은채` uses frame `00004` as a cleaner frontal primary and temporarily includes only central face labels `2,6,7,8,9,10,12,13`; this avoids the headband/hair-heavy `00000` primary.
 - `experiments/texture_baker/textured_mesh_preview.py` renders private quick previews by combining the observed atlas, Pixel3DMM `flame_uv_coords.npy`, and the frozen PLY meshes. Current correct orientation is `--uv-mode flip_y --depth-mode max`.
 - Local private Drive mesh previews were generated for all current candidates under `mesh_texture_preview/<mesh-key>/contact_sheet.png`: `주섭` raw FLAME, mean-shape control, personal no-MICA; `은채` raw FLAME, base FLAME2023, personal no-MICA.
+- `experiments/texture_baker/make_texture_comparison_sheet.py` creates a single manual review PNG with rows as model candidates and columns as 45-degree yaw views.
+- Current private review sheet: `output/_comparison/face_texture_model_comparison_8view.png` at 4496x3296, plus JSON manifest beside it. It contains 6 rows: Juseop 3 candidates and Eunchae 3 candidates, each at yaw `0,45,90,135,180,225,270,315`.
 - These atlas PNGs and mesh renders are still private debug/runtime artifacts under Drive. They are not final skin textures.
-- Remaining baker work before a polished texture: fitted-camera/perspective rendering, view-angle/pose weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation beyond preview splat, and later completion for missing UV regions.
+- Await user visual selection from the one-file review sheet. After selection, the next technical step is fitted-camera/perspective comparison rendering, then texture quality improvements such as view-angle weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation, and later completion for missing UV regions.
 
 Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 
