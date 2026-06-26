@@ -59,7 +59,7 @@ head + hair
 
 - existing-selfie multi-upload와 star UI;
 - production 3D reconstruction job/API;
-- 실제 사진 픽셀 기반 UV baker와 missing-region completion;
+- production-grade Texture Baker v2, missing-region completion, and render-to-selfie refinement;
 - hairstyle-reference persistence;
 - strand-hair reconstruction;
 - hairline-aware retargeting과 collision correction;
@@ -88,7 +88,15 @@ The three geometry candidates now used for the next visual experiment are:
 2. fitted mean-shape control, where identity shape is mean but camera/pose/expression context is fitted from the private photos;
 3. personal no-MICA candidate, where identity shape is also fitted from the private photos.
 
-Those meshes and their private manifest have been frozen into the private Drive model-trio handoff folder. The generic helper that created the handoff is tracked at `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`, but the generated mesh files and private manifest are biometric runtime artifacts and must not be committed. The next implementation task is a custom observed-photo face texture baker that can apply the same private photo evidence to all three mesh candidates for visual comparison.
+Those meshes and their private manifest have been frozen into the private Drive model-trio handoff folder. The generic helper that created the handoff is tracked at `experiments/milestone1_geometry_bakeoff/freeze_model_trio_for_texture.py`, but the generated mesh files and private manifest are biometric runtime artifacts and must not be committed.
+
+The first observed-photo texture baker and comparison renderer now exist, but the result is diagnostic only. It can produce observed atlases, coverage/confidence/source maps, material fallback renders, eye overlays, and a six-row comparison sheet for Juseop and Eunchae, but the visual quality is not product-usable. The current best private sheet is:
+
+```text
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
+```
+
+This sheet confirmed the main direction problem: the base-model comparison cannot be trusted until the face texture pipeline is much stronger. The three base meshes remain active candidates, but the next work is not more v1 tuning. The next implementation task is Texture Baker v2: a camera-aware, front-focused observed texture and refinement pipeline.
 
 Current storage status:
 
@@ -112,8 +120,9 @@ Private Drive cleanup guidance:
 - capture guidance and low-cost quality checks: MediaPipe.
 - first head geometry baseline: Pixel3DMM + FLAME.
 - current geometry choice: Pixel3DMM V4 no-MICA pipeline as the working reconstruction baseline; its optimized identity shape is not yet proven better than a refitted mean FLAME control.
-- next practical experiment: implement the custom observed-photo face texture/UV baker and apply it to the raw FLAME, fitted mean-shape control, and personal no-MICA candidate.
-- next geometry diagnostic after texture visual review: decide whether to improve capture evidence, tracker resolution, map precision, or identity-shape constraints.
+- current texture status: Texture Baker v1 is implemented as a diagnostic observed-pixel baker, but its quality is not product-ready.
+- next practical experiment: build Texture Baker v2 with fitted-camera projection, visibility, view-angle weighting, occlusion rejection, color normalization, confidence/provenance maps, and front-focused review.
+- next refinement experiment: render the textured head into each useful selfie camera and optimize camera, lighting, texture, and only small safe geometry/detail corrections against masked selfie losses.
 - optional geometry/camera assistance: VGGT.
 - face appearance: custom multi-photo observed-pixel UV baker.
 - missing UV research baseline: FreeUV versus simpler completion.
@@ -137,15 +146,17 @@ The notebook is executable code and intentionally stays under `experiments/`. Th
 
 ## Documentation
 
-Detailed Markdown has been consolidated into three documents.
+Core long-lived Markdown is consolidated into the docs below, with experiment
+subfolders keeping their executable/run-specific notes.
 
 - [`docs/10_3d_hair_app_master_plan.md`](docs/10_3d_hair_app_master_plan.md): product goal, current app/API/storage contracts, future personal-head asset, UV, hair, service, evaluation, fine-tuning, privacy, and license plan.
 - [`docs/pixel3dmm_v4.md`](docs/pixel3dmm_v4.md): all Pixel3DMM V4 preprocessing, execution, errors, fixes, results, current loss interpretation, and next A/B experiments.
 - [`docs/history.md`](docs/history.md): project chronology from the first 2D attempts through the 3D pivot and current geometry baseline.
+- [`experiments/texture_baker/README.md`](experiments/texture_baker/README.md): texture-baker loader, v1 diagnostic commands/results, and v2 plan.
 - [`newchat.md`](newchat.md): compact handoff for the next AI conversation.
 - [`AGENTS.md`](AGENTS.md): repository working rules for coding agents.
 
-Root `README.md`, `AGENTS.md`, and `newchat.md` remain at the repository root because GitHub and agents discover them there. Detailed project knowledge is centralized under `docs/`.
+Root `README.md`, `AGENTS.md`, and `newchat.md` remain at the repository root because GitHub and agents discover them there. Project strategy is centralized under `docs/`; experiment folders keep local run instructions close to code.
 
 ## Implemented API
 
@@ -207,6 +218,12 @@ hair_app/
       pixel3dmm_colab_v4.ipynb
       freeze_model_trio_for_texture.py
       scoring_sheet.csv
+    texture_baker/
+      texture_baker_loader.py
+      observed_texture_baker.py
+      textured_mesh_preview.py
+      make_texture_comparison_sheet.py
+      README.md
   frontend/
   backend/
   ai_engine/

@@ -69,6 +69,18 @@ FastAvatar는 현재 core가 아니다. 이유는 compute가 아니라 Gaussian 
 
 FLUX.2와 일반 image editor 연구는 폐기하지 않는다. 2D quality benchmark, auxiliary hairstyle views, render refinement, 빠른 fallback에 활용할 수 있지만 interactive 3D geometry의 source of truth는 아니다.
 
+## Current 3D Quality Target
+
+현재 개인 head 목표는 완벽한 360도 실측 스캔이 아니다.
+
+- 사용자 입력은 평범한 셀카 여러 장과 앱 스캔으로 제한한다. 더 엄격한 촬영 가이드를 전제로 계획하지 않는다.
+- geometry는 앱 스캔 프레임을 더 안정적인 좌표/카메라 기준으로 보고, 셀카는 texture와 identity detail 증거로 더 많이 활용한다.
+- 제품 체감 품질은 정면부터 약 45도까지를 최우선으로 본다.
+- 뒤통수, 숨은 두피, 낮은 confidence 영역은 generic fallback이나 completion을 허용한다.
+- Texture Baker v1 결과는 diagnostic artifact이며 제품급이 아니다.
+- 다음 핵심 작업은 camera-aware Texture Baker v2와 이후 per-user render-to-selfie optimization이다.
+- base mesh 세 후보(raw FLAME, fitted mean-shape control, personal no-MICA)는 texture quality가 개선될 때까지 유지한다.
+
 ## Current Implementation Boundary
 
 현재 실제 구현:

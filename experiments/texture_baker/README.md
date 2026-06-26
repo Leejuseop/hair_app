@@ -238,3 +238,64 @@ For an explicit UV hole-fill A/B, first create private visual completions:
 
 Then pass `--texture-kind visual_completed` to the sheet generator. Treat that
 output as a rough review artifact, not a production texture.
+
+## 2026-06-26 Review Result
+
+The v1 baker proved the private data layout, loader, observed atlas outputs,
+mesh preview renderer, fallback materials, eye overlay, and comparison-sheet
+workflow. It did not produce product-usable face quality.
+
+Key private outputs from the current review round:
+
+```text
+output/은채/texture_baker/observed_v15_primary00004_wideface_strict_occlusion_preview/
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.json
+```
+
+Observed problems:
+
+- the raw UV splat baker still leaks hair, headwear, and low-confidence pixels;
+- orthographic debug renders do not match actual selfie cameras;
+- material fallback reduces black holes but does not make the texture realistic;
+- eye overlays are diagnostic markers, not final eye rendering;
+- full UV visual completion created misleading rear-head streaks;
+- the three base meshes cannot be fairly judged while the texture layer is this weak.
+
+Keep the three mesh candidates active for now. The current front-facing quality
+is the limiting factor, not a proven base-mesh winner.
+
+## Texture Baker v2 Plan
+
+The next baker should be camera-aware and front-focused. The product target is
+not a perfect 360-degree scan; it is a personal bald head substrate that looks
+credible from front through roughly 45 degrees and supports later hair fitting.
+Back-of-head and hidden scalp regions may use generic fallback or completion.
+
+Inputs remain unchanged:
+
+- unconstrained user selfies;
+- the app scan frame bundle.
+
+Planned v2 stages:
+
+1. score each selfie and scan frame for face size, blur, pose, exposure, eye and
+   mouth state, landmark stability, segmentation quality, and occlusion from
+   hair, hands, phones, glasses, or headphones;
+2. use the app scan as the stable geometry/camera coordinate source;
+3. use selfies mainly as high-detail texture evidence;
+4. fit or load per-image camera/expression/lighting before comparing photos;
+5. project mesh triangles into each source image with z-buffer visibility;
+6. weight samples by view angle, texel resolution, sharpness, exposure,
+   segmentation confidence, occlusion, and cross-view consistency;
+7. maintain observed texture, confidence, source-photo provenance, and
+   observed-versus-fallback masks separately;
+8. render a front-focused review sheet at `0`, `±15`, `±30`, and `±45` degrees;
+9. after the observed layer is stable, add per-user optimization that renders
+   the textured model into the selfie camera and minimizes masked losses for
+   landmarks, silhouette, skin color, perceptual identity, smoothness, and safe
+   low-frequency geometry/detail corrections.
+
+This is initially per-user optimization logic, not training a neural network.
+Later, accumulated optimization results can train a network that predicts a
+better initial texture/shape update and reduces runtime.

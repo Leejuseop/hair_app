@@ -580,7 +580,61 @@ MyDrive/hair_app/
 
 The current user data now includes selfies, scan frames, the clean 19-image Pixel3DMM input set, preprocessing outputs, tracking outputs, validation artifacts, and the three-mesh texture handoff. The legacy girl experiment is preserved under the same style of `input/<person>/` and `output/<person>/` folders. Old staging, trash-review, and crop-test folders are no longer the source of truth and can be removed after manual verification of the cleaned layout.
 
-## 18. 앞으로 기록을 추가하는 형식
+## 18. 2026-06-26 Texture Baker v1 review and strategy reset
+
+After the model-trio handoff, the first observed-photo texture baker was built
+and pushed. It loads the private Drive layout, creates observed atlases from
+crop RGB plus Pixel3DMM UV maps and segmentation labels, writes coverage,
+confidence, and source-view maps, and renders all Juseop/Eunchae mesh
+candidates with material fallback and diagnostic eye overlays.
+
+What succeeded:
+
+- the cleaned private Drive entrypoint works for both people;
+- the same observed texture can be attached to all three frozen mesh candidates;
+- black texture holes can be reduced with material fallback;
+- low-confidence texture samples can be hidden in diagnostic renders;
+- a one-file comparison sheet can show Juseop and Eunchae candidates across yaw views.
+
+Representative private output:
+
+```text
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
+```
+
+What failed:
+
+- the result is visually far below product quality;
+- UV splatting still leaks hair/headwear/occlusion and low-confidence artifacts;
+- orthographic review cameras are not enough to compare against real selfies;
+- fallback materials make the render easier to inspect but do not solve texture realism;
+- eye overlays are only diagnostic, not final eye assets;
+- the three base meshes cannot yet be judged fairly because texture quality is the bottleneck.
+
+The strategic decision changed from "tune the v1 baker" to "build Texture Baker
+v2." The product target was also clarified: not a perfect 360-degree personal
+scan, but a front-to-45-degree personal bald head substrate that supports
+realistic hair fitting. Rear head, hidden scalp, and low-confidence regions may
+use generic fallback or completion.
+
+Texture Baker v2 direction:
+
+1. keep the user input UX unchanged: unconstrained selfies plus app scan;
+2. use app scan frames for stable geometry/camera coordinates;
+3. use selfies mainly as high-detail texture evidence;
+4. score frames and selfies for quality, pose, expression, segmentation,
+   landmarks, and occlusion;
+5. use fitted cameras, z-buffer visibility, view-angle weighting, color
+   normalization, confidence maps, and source-photo provenance;
+6. evaluate with a front-focused sheet at `0`, `±15`, `±30`, and `±45` degrees;
+7. add per-user render-to-selfie optimization after observed baking is stable.
+
+That optimization is initially explicit per-user logic, not neural network
+training. Later, if enough examples exist, a network can learn to predict good
+texture/shape updates faster and use the explicit optimization only as a final
+refinement.
+
+## 19. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.
 

@@ -259,18 +259,48 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-The observed-photo face texture baker now has a reproducible first layer, and
-the diagnostic mesh preview can attach it to FLAME-topology PLY candidates. The
-practical next task is to replace the diagnostic orthographic preview with
-camera-matched inspection renders:
+Texture Baker v1 is implemented and pushed, but the user rejected the visual
+quality as far below product standard. Treat v1 as a diagnostic milestone only,
+not as the product texture path. The next task is Texture Baker v2: a
+camera-aware, front-focused texture pipeline plus later per-user
+render-to-selfie optimization.
 
-1. use the private frozen model trio manifest as input;
-2. load raw FLAME, fitted mean-shape control, and personal no-MICA meshes;
-3. apply the private observed atlases as material textures using Pixel3DMM
-   `flame_uv_coords.npy`;
-4. render all textured candidates from the same fitted tracking cameras;
-5. decide visually and numerically whether the personal no-MICA mesh is worth
-   carrying forward as the temporary head asset.
+Product target:
+
+- not a perfect 360-degree personal scan;
+- a personal bald head substrate that looks credible from front through about
+  45 degrees;
+- good enough geometry/texture for later hair fitting and realistic user
+  experience;
+- rear head, hidden scalp, and low-confidence regions may use plausible generic
+  fallback or completion.
+
+Input policy stays unchanged:
+
+- unconstrained user selfies;
+- app scan frames;
+- no stricter photo guide, because that would hurt app adoption.
+
+Immediate implementation order:
+
+1. keep the three base mesh candidates active: raw FLAME, fitted mean-shape
+   control, and personal no-MICA;
+2. build photo/frame quality scoring for blur, face size, pose, exposure, eye
+   and mouth state, landmark stability, segmentation reliability, and occlusion
+   from hair, hands, phones, glasses, or headphones;
+3. use app scan frames as the stable geometry/camera coordinate source and
+   selfies mainly as high-detail texture evidence;
+4. replace v1 UV splatting with fitted-camera triangle projection,
+   z-buffer visibility, view-angle weighting, confidence, occlusion rejection,
+   source-photo provenance, and color normalization;
+5. add a front-focused review sheet at `0`, `±15`, `±30`, and `±45` degrees;
+6. only after observed baking is stable, add per-user optimization that renders
+   the head into useful selfie cameras and refines camera, lighting, texture,
+   and very small safe geometry/detail terms against masked losses.
+
+This is initially explicit optimization logic for one user at a time, not
+training a neural network. A network can later learn to predict better
+texture/shape updates faster and use the explicit optimization as refinement.
 
 Current loader and baker scaffold:
 
@@ -284,10 +314,11 @@ Current loader and baker scaffold:
 - `experiments/texture_baker/textured_mesh_preview.py` renders private quick previews by combining the observed atlas, Pixel3DMM `flame_uv_coords.npy`, and the frozen PLY meshes. Current correct orientation is `--uv-mode flip_y --depth-mode max`. It supports review-only FLAME-mask material fallback, low-confidence texture fallback, and diagnostic iris/pupil eye overlays.
 - Local private Drive mesh previews were generated for all current candidates under `mesh_texture_preview/<mesh-key>/contact_sheet.png`: `주섭` raw FLAME, mean-shape control, personal no-MICA; `은채` raw FLAME, base FLAME2023, personal no-MICA.
 - `experiments/texture_baker/make_texture_comparison_sheet.py` creates a single manual review PNG with rows as model candidates and columns as 45-degree yaw views.
-- Current recommended private review sheet: `output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png` plus JSON manifest beside it. It contains 6 rows: Juseop 3 candidates and Eunchae 3 candidates, each at yaw `0,45,90,135,180,225,270,315`, with material fallback, low-confidence fallback threshold `5`, and eye overlays enabled.
+- Last diagnostic private review sheet: `output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png` plus JSON manifest beside it. It contains 6 rows: Juseop 3 candidates and Eunchae 3 candidates, each at yaw `0,45,90,135,180,225,270,315`, with material fallback, low-confidence fallback threshold `5`, and eye overlays enabled. It is not product-quality and should not be used to choose a final base mesh.
 - `experiments/texture_baker/complete_texture_for_review.py` can create `base_color_visual_completed.png` for UV hole-fill A/B, but current visual inspection found it creates misleading rear-head streaks; prefer the material-fallback sheet for model choice.
 - These atlas PNGs and mesh renders are still private debug/runtime artifacts under Drive. They are not final skin textures.
-- Await user visual selection from the one-file review sheet. After selection, the next technical step is fitted-camera/perspective comparison rendering, then texture quality improvements such as view-angle weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation, and later completion for missing UV regions.
+- Do not ask the user for stricter photo capture. The app must work with ordinary selfies plus the app scan.
+- Do not choose a base mesh winner from v1 texture renders. Texture quality is currently the bottleneck.
 
 Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 
@@ -363,4 +394,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We have a working app scan foundation and offline Pixel3DMM geometry artifacts. The private 19-view run produced and froze raw FLAME, fitted mean-shape control, and personal no-MICA candidates in the cleaned private Drive layout. They look different, but cross-context landmarks still did not prove the personal no-MICA identity shape over the refitted mean-shape control. The immediate next move is to implement the custom observed-photo face texture baker so all three candidates can be compared with the user's real face appearance applied.
+> We have a working app scan foundation, offline Pixel3DMM geometry artifacts, and three frozen mesh candidates: raw FLAME, fitted mean-shape control, and personal no-MICA. Texture Baker v1 can attach observed photo texture and generate comparison sheets, but the quality is diagnostic only and not usable. The immediate next move is Texture Baker v2: camera-aware, front-focused texture baking from ordinary selfies plus app scan frames, followed by per-user render-to-selfie refinement.

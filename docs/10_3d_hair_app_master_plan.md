@@ -107,15 +107,16 @@ Implemented:
 - Same-input MICA prior and MICA init-only A/B runs were completed; neither passed the fixed-context adoption gate, so no-MICA remains the active Pixel3DMM V4 baseline.
 - A fully refitted mean-shape control reached `5.7423 px` average landmark error, matching or slightly beating the no-MICA fitted-shape value `5.8803 px`; therefore the current identity-shape personalization claim is weak under the landmark metric.
 - A later private 19-view run from selected selfies plus app scan frames generated the no-MICA mesh and the fitted mean-shape control, but cross-context landmarks still did not validate no-MICA identity shape over the refitted mean-shape control.
-- The next practical asset experiment is now to freeze raw FLAME, fitted mean-shape control, and personal no-MICA as three private mesh candidates, then apply the same observed-photo face texture baker to all three for visual comparison.
-- A product-facing scan update now creates a six-step geometry-oriented app scan and a backend-selected `selected_3dmm/` frame bundle. The current private-data rerun is complete; the next product-facing research step is the observed-photo face texture baker.
+- Raw FLAME, fitted mean-shape control, and personal no-MICA are frozen as three private mesh candidates for texture review.
+- Texture Baker v1 now exists and can generate observed atlases, confidence/source maps, material fallback previews, eye overlays, and comparison sheets. Its visual quality is diagnostic only and not product-usable.
+- The next product-facing research step is Texture Baker v2: camera-aware, front-focused observed texture baking plus later per-user render-to-selfie optimization.
 
 Not implemented:
 
 - Manual upload of several existing selfies with one or two starred images. Until this exists, selected selfies are kept in a private folder outside the repository and joined with app-scan frames offline.
 - A dedicated pulled-back-hair head scan beyond the current hairline capture step.
 - Any 3D reconstruction backend connected to the product API or storage model.
-- UV texture projection and completion.
+- production-quality UV texture projection, confidence-aware completion, and render-to-selfie refinement.
 - 3D hairstyle reconstruction.
 - Hair-to-scalp retargeting and collision handling.
 - GLB generation and interactive 3D viewer.
@@ -1023,9 +1024,11 @@ Hairline is shared between head reconstruction, UV masking, and hair fitting. St
 
 The personal head is generated once and reused across hairstyle experiments. Changing hair must not require reconstructing the user's face unless new evidence or a new head-model version is intentionally introduced.
 
-### 19.7 Immediate texture experiment
+### 19.7 Texture baker status and next experiment
 
-The next engine to implement is the custom observed-photo face texture baker. It should run on the same private photo set and apply identical evidence to three frozen mesh candidates:
+The custom observed-photo texture baker has a first diagnostic implementation.
+It runs on the same private photo set and applies identical evidence to three
+frozen mesh candidates:
 
 1. raw FLAME template, with no photo-derived values;
 2. fitted mean-shape control, where identity shape is mean but camera, pose, expression, jaw, eyes, eyelids, and intrinsics were fit to the user's photos;
@@ -1033,15 +1036,41 @@ The next engine to implement is the custom observed-photo face texture baker. It
 
 The personal no-MICA mesh, fitted mean-shape control, and raw FLAME template have been frozen in the private Drive data layout. The texture baker should start from the private `output/<person>/models/model_trio_for_texture/model_trio_manifest.json` entrypoint, not from ad hoc Colab runtime files. The generated PLY files, private manifests, crops, segmentations, landmarks, textures, and renders must not be committed.
 
-The first texture implementation should be an observed-data baker, not a generative face completion model:
+Texture Baker v1 result:
 
-- project visible photo pixels onto the candidate mesh;
-- weight samples by view angle, texel resolution, segmentation label, sharpness, exposure, occlusion, and cross-view consistency;
-- write an observed texture atlas, coverage map, confidence map, source-view index map, and per-texel provenance;
-- render all three textured candidates from the same inspection cameras;
-- only after this layer is reproducible, add completion for missing or low-confidence texture regions.
+- implemented loader, observed UV splat atlas, coverage map, confidence map,
+  source-view map, simple preview fill, material fallback, low-confidence
+  fallback, diagnostic eye overlays, and a six-row comparison sheet;
+- current representative private sheet:
+  `output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png`;
+- visual quality is not product-usable, so no base mesh should be selected from
+  this v1 comparison alone.
 
-This visual comparison may show that the personal no-MICA shape is useful even though the current landmark-only gate did not prove it. The adoption decision should consider both geometry diagnostics and textured visual inspection.
+Texture Baker v2 should be camera-aware and front-focused:
+
+- preserve the input UX: unconstrained selfies plus app scan only;
+- use app scan frames as the stable geometry/camera coordinate source and
+  selfies as high-detail texture evidence;
+- score each photo/frame for blur, face size, pose, exposure, expression,
+  segmentation reliability, landmarks, and occlusion;
+- fit or load per-image camera, expression, and lighting before comparing a
+  render to a photo;
+- project mesh triangles into source photos with z-buffer visibility;
+- weight samples by view angle, texel resolution, sharpness, exposure,
+  segmentation confidence, occlusion, and cross-view consistency;
+- preserve observed texture, confidence, source-photo provenance, and
+  observed-versus-fallback masks separately;
+- focus review on `0`, `±15`, `±30`, and `±45` degrees because this is the
+  product-critical range for hair try-on;
+- treat rear head and hidden scalp as plausible fallback/completion regions
+  rather than pretending they are observed.
+
+After v2 observed baking is stable, add per-user render-to-selfie optimization:
+render the current textured head into the useful selfie cameras, compare only
+trusted face regions, and iteratively refine camera, lighting, texture, and
+very small safe geometry/detail terms. This is first an explicit optimization
+loop for one user, not a trained neural network. A learned model may later
+approximate this optimization for speed.
 
 ### 19.8 Private research data layout
 

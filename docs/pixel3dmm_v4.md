@@ -1,8 +1,8 @@
 # Pixel3DMM V4 Baseline: Contract, Live Results, and Next Experiments
 
-Last synchronized: 2026-06-24
+Last synchronized: 2026-06-26
 
-Status: **A100 end-to-end V4 baseline complete; MICA rejected; private 19-view run generated geometry, but cross-context landmarks did not validate the no-MICA identity shape over the refitted mean-shape control**
+Status: **Geometry baseline and three-mesh handoff complete; Texture Baker v1 implemented as a diagnostic but rejected for product quality; next work is camera-aware Texture Baker v2 and front-focused per-user refinement**
 
 Executable notebook: `experiments/milestone1_geometry_bakeoff/pixel3dmm_colab_v4.ipynb`
 
@@ -591,9 +591,56 @@ Completed. Rerun tracking with identity shape fixed to zero while allowing camer
 
 Completed for the private 19-view run. The no-MICA shape won slightly in its own fixed context but lost in the mean-shape context, so the identity-shape claim remains unvalidated by landmarks alone. The next test is not another geometry parameter change; it is a visual texture comparison across the frozen raw FLAME, fitted mean-shape control, and personal no-MICA candidates.
 
-### Priority 2: observed-photo texture baker across the frozen model trio
+### Completed Diagnostic: observed-photo Texture Baker v1 across the frozen model trio
 
-Apply the same private photo evidence to the raw FLAME, fitted mean-shape control, and personal no-MICA meshes. Record coverage/confidence/provenance and compare textured renders before changing geometry settings.
+The first baker now loads the cleaned private Drive layout, reads the frozen
+model trio, creates observed texture atlases, writes coverage/confidence/source
+maps, renders diagnostic mesh previews, fills black areas with simple material
+fallback colors, overlays diagnostic eyes, and generates one-file comparison
+sheets for the three Juseop and three Eunchae mesh candidates.
+
+Current representative private output:
+
+```text
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
+```
+
+Result: the workflow is reproducible, but the visual quality is not usable for
+product decisions. The v1 UV splat approach still leaks occluders, depends on
+orthographic debug cameras, has weak lighting/color handling, and cannot fairly
+separate the three base mesh candidates. Keep the three mesh candidates active;
+do not choose a winner from v1 texture renders.
+
+### Priority 2: Texture Baker v2, camera-aware and front-focused
+
+Build a stronger baker before changing geometry settings. The goal is not a
+perfect 360-degree scan. The product target is a personal bald head substrate
+that looks credible from the front through about 45 degrees and supports later
+hair fitting. Back-of-head and hidden scalp can use generic fallback or
+completion when evidence is weak.
+
+Requirements:
+
+1. keep the same user input policy: unconstrained selfies plus app scan frames;
+2. score frames/photos for blur, face size, pose, exposure, eye/mouth state,
+   landmarks, segmentation reliability, and occlusion;
+3. use app scan frames as the more stable geometry/camera coordinate source;
+4. use selfies primarily as higher-detail texture evidence;
+5. fit or load per-image camera, expression, and lighting before photo/render
+   comparison;
+6. rasterize mesh triangles into each source photo with z-buffer visibility;
+7. weight samples by view angle, texel resolution, sharpness, exposure,
+   segmentation confidence, occlusion, and multi-view consistency;
+8. preserve observed texture, confidence, source-photo provenance, and
+   observed-versus-fallback masks separately;
+9. add a front-focused review sheet at `0`, `±15`, `±30`, and `±45` degrees;
+10. after the observed layer is stable, add per-user render-to-photo
+    optimization for camera, lighting, texture, and only safe small
+    geometry/detail corrections.
+
+The per-user optimization stage is not training a network. It is an explicit
+optimization loop for one person at a time. A learned network may come later to
+predict better initial texture/shape updates and reduce runtime.
 
 ### Priority 3: optimization resolution 256 versus 512
 
@@ -699,29 +746,35 @@ Private artifact rule:
 - keep the generated PLY files, private manifest, source photos, tracking folders, textures, and overlays out of Git;
 - commit only the generic helper, contract, metrics summary, and next-step plan.
 
-### 13.2 Next experiment: observed-photo face texture baker
+### 13.2 Current texture result and next experiment
 
-The next implementation milestone is not another geometry run. Build a custom texture/UV engine that projects the actual private photo pixels onto the three frozen mesh candidates:
+Texture Baker v1 is implemented and pushed. It should be treated as a diagnostic
+artifact, not as the product texture path. It proved that the cleaned private
+layout, model trio entrypoint, observed texture maps, material fallback, eye
+overlay, and comparison-sheet workflow are wired correctly. It also proved that
+the current simple splat/fallback approach is too weak.
 
-1. load the frozen model trio from the private manifest;
-2. load the corresponding preprocessed crops, PIPNet/FaRL masks, UV maps, and tracking cameras;
-3. rasterize or otherwise map each visible mesh surface into each source photo;
-4. accumulate observed pixels into a shared texture atlas with angle, resolution, segmentation, sharpness, exposure, occlusion, and multi-view consistency weights;
-5. store coverage, confidence, source-view support, and observed-versus-completed masks;
-6. apply the same baker to raw FLAME, fitted mean-shape control, and personal no-MICA;
-7. compare textured renders visually and with reprojection/coverage metrics before choosing a temporary head asset.
+The immediate next experiment is Texture Baker v2:
 
-Do not use a generative completion model as the first texture result. First preserve and inspect the raw observed-photo texture and its coverage map. Completion can fill missing regions only after the observed layer is reproducible.
+1. keep the frozen three-mesh candidate manifest as the entrypoint;
+2. keep the user input policy unchanged: selfies plus app scan, no stricter
+   capture requirements;
+3. build a frame/photo scoring report and reject or downweight weak evidence;
+4. use fitted cameras and z-buffer visibility instead of orthographic-only
+   texture placement;
+5. produce observed texture, confidence, source-photo provenance, and
+   observed/fallback masks as separate outputs;
+6. generate a front-focused review sheet at `0`, `±15`, `±30`, and `±45`
+   degrees, because that is the product-critical viewing range;
+7. add per-user render-to-selfie optimization only after the observed layer is
+   stable, starting with camera/expression/lighting and texture before any
+   geometry/detail corrections.
 
-The previous product-data geometry task is complete for the current private run. The new immediate task is texture:
-
-1. load the frozen three-mesh candidate manifest from the cleaned private Drive layout;
-2. implement the first observed-photo texture baker in this repository;
-3. run it against all three mesh candidates without changing the input photos;
-4. inspect textured front, oblique, profile, and neutral turntable renders;
-5. use the visual result plus coverage/confidence/reprojection diagnostics to decide whether the personal no-MICA candidate is worth carrying forward as the temporary head asset.
-
-Only after that should the project return to geometry changes such as tracker size 512, high-precision maps, regional landmarks, or different identity constraints. Changing geometry and texture at the same time would make it unclear whether a visual improvement came from the mesh or the face appearance layer.
+Only after this should the project return to geometry changes such as tracker
+size 512, high-precision maps, regional landmarks, or different identity
+constraints. Changing geometry and texture at the same time would make it
+unclear whether a visual improvement came from the mesh or the face appearance
+layer.
 
 ## 14. Notebook Run and Human Gates
 
