@@ -259,17 +259,17 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 ## 8. Immediate Next Task
 
-The observed-photo face texture baker now has a reproducible first layer. The
-practical next task is to put these atlases onto the frozen mesh candidates and
-render the same inspection views:
+The observed-photo face texture baker now has a reproducible first layer, and
+the diagnostic mesh preview can attach it to FLAME-topology PLY candidates. The
+practical next task is to replace the diagnostic orthographic preview with
+camera-matched inspection renders:
 
 1. use the private frozen model trio manifest as input;
 2. load raw FLAME, fitted mean-shape control, and personal no-MICA meshes;
-3. resolve compatible FLAME UV coordinates because the current PLY meshes do not
-   store UV properties in their headers;
-4. apply the private observed atlases as material textures;
-5. render all textured candidates from the same inspection cameras;
-6. decide visually and numerically whether the personal no-MICA mesh is worth
+3. apply the private observed atlases as material textures using Pixel3DMM
+   `flame_uv_coords.npy`;
+4. render all textured candidates from the same fitted tracking cameras;
+5. decide visually and numerically whether the personal no-MICA mesh is worth
    carrying forward as the temporary head asset.
 
 Current loader and baker scaffold:
@@ -281,8 +281,10 @@ Current loader and baker scaffold:
 - `experiments/texture_baker/observed_texture_baker.py` now creates the first observed texture atlas, coverage map, confidence map, source-view map, and manifest from crop RGB plus Pixel3DMM UV PNG plus segmentation labels.
 - `observed_v6_primary00000_faceonly_secondary0_preview` for `주섭` uses frame `00000` as central-face primary, weighted mode, face-label whitelist, mask erosion, and conservative preview fill. It is cleaner and less ghosted than `observed_v0_preview`, with lower coverage.
 - `observed_v6_primary00004_centralface_secondary0_preview` for `은채` uses frame `00004` as a cleaner frontal primary and temporarily includes only central face labels `2,6,7,8,9,10,12,13`; this avoids the headband/hair-heavy `00000` primary.
-- These atlas PNGs are still private debug/runtime artifacts under Drive. They are not final skin textures and should be judged on a mesh render, not only as flat atlas images.
-- Remaining baker work before a polished texture: view-angle/pose weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation beyond preview splat, and later completion for missing UV regions.
+- `experiments/texture_baker/textured_mesh_preview.py` renders private quick previews by combining the observed atlas, Pixel3DMM `flame_uv_coords.npy`, and the frozen PLY meshes. Current correct orientation is `--uv-mode flip_y --depth-mode max`.
+- Local private Drive mesh previews were generated for all current candidates under `mesh_texture_preview/<mesh-key>/contact_sheet.png`: `주섭` raw FLAME, mean-shape control, personal no-MICA; `은채` base FLAME2023 and canonical.
+- These atlas PNGs and mesh renders are still private debug/runtime artifacts under Drive. They are not final skin textures.
+- Remaining baker work before a polished texture: fitted-camera/perspective rendering, view-angle/pose weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation beyond preview splat, and later completion for missing UV regions.
 
 Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 

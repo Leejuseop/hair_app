@@ -131,3 +131,47 @@ output/<person>/texture_baker/<output-name>/
   base_color_preview_filled.png  # only when preview fill is requested
   texture_manifest.json
 ```
+
+## Mesh Texture Preview
+
+The flat atlas is a debug artifact. Use the mesh preview script to attach the
+observed atlas to FLAME-topology PLY candidates and render quick orthographic
+front/oblique checks:
+
+```python
+!python experiments/texture_baker/textured_mesh_preview.py \
+  --private-root /content/drive/MyDrive/hair_app \
+  --person 주섭 \
+  --person 은채 \
+  --texture-kind preview_filled \
+  --uv-mode flip_y \
+  --depth-mode max \
+  --view front \
+  --view left_35 \
+  --view right_35 \
+  --write-obj
+```
+
+This expects the Pixel3DMM FLAME UV asset at:
+
+```text
+shared/models/pixel3dmm_assets/flame_uv_coords.npy
+```
+
+Current local Drive preview outputs:
+
+```text
+output/<person>/texture_baker/<texture-name>/mesh_texture_preview/<mesh-key>/
+  front_flip_y_depth_max.png
+  left_35_flip_y_depth_max.png
+  right_35_flip_y_depth_max.png
+  contact_sheet.png
+  <mesh-key>_uv_direct.obj
+  <mesh-key>_uv_direct.mtl
+  mesh_texture_preview_manifest.json
+```
+
+The preview renderer is intentionally simple: CPU orthographic rasterization,
+no lighting model, no fitted tracking cameras, and no perspective intrinsics.
+For the current Pixel3DMM UV atlas, `--uv-mode flip_y --depth-mode max` is the
+visually correct orientation.
