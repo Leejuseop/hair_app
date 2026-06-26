@@ -28,7 +28,7 @@ from texture_baker_loader import MeshCandidate, default_private_root, load_perso
 
 DEFAULT_TEXTURE_RUNS = {
     "\uc8fc\uc12d": "observed_v6_primary00000_faceonly_secondary0_preview",
-    "\uc740\ucc44": "observed_v6_primary00004_centralface_secondary0_preview",
+    "\uc740\ucc44": "observed_v15_primary00004_wideface_strict_occlusion_preview",
 }
 DEFAULT_UV_ASSET = "shared/models/pixel3dmm_assets/flame_uv_coords.npy"
 DEFAULT_VALID_VERTS_ASSET = (
@@ -200,6 +200,83 @@ def build_material_vertex_colors(
     return np.clip(colors, 0, 255).astype(np.uint8)
 
 
+def draw_disk(
+    image: np.ndarray,
+    center: tuple[float, float],
+    radius: float,
+    color: tuple[int, int, int],
+) -> None:
+    height, width = image.shape[:2]
+    cx, cy = center
+    min_x = max(int(np.floor(cx - radius)), 0)
+    max_x = min(int(np.ceil(cx + radius)), width - 1)
+    min_y = max(int(np.floor(cy - radius)), 0)
+    max_y = min(int(np.ceil(cy + radius)), height - 1)
+    if max_x < min_x or max_y < min_y:
+        return
+
+    yy, xx = np.mgrid[min_y : max_y + 1, min_x : max_x + 1]
+    mask = ((xx - cx) ** 2) + ((yy - cy) ** 2) <= radius * radius
+    patch = image[min_y : max_y + 1, min_x : max_x + 1]
+    patch[mask] = np.asarray(color, dtype=np.uint8)
+
+
+def draw_eye_overlays(
+    image: np.ndarray,
+    zbuffer: np.ndarray,
+    points: np.ndarray,
+    depth: np.ndarray,
+    masks: dict[str, np.ndarray],
+    depth_mode: str,
+) -> None:
+    if not masks:
+        return
+
+    height, width = zbuffer.shape
+    for mask_name in ("left_eyeball", "right_eyeball"):
+        indices = masks.get(mask_name)
+        if indices is None:
+            continue
+        valid_indices = indices[(indices >= 0) & (indices < points.shape[0])]
+        if valid_indices.size == 0:
+            continue
+
+        eye_points = points[valid_indices]
+        eye_depth = depth[valid_indices]
+        x = np.rint(eye_points[:, 0]).astype(np.int32)
+        y = np.rint(eye_points[:, 1]).astype(np.int32)
+        in_bounds = (x >= 0) & (x < width) & (y >= 0) & (y < height)
+        if not np.any(in_bounds):
+            continue
+
+        x = x[in_bounds]
+        y = y[in_bounds]
+        eye_points = eye_points[in_bounds]
+        eye_depth = eye_depth[in_bounds]
+        surface_depth = zbuffer[y, x]
+        finite = np.isfinite(surface_depth)
+        if depth_mode == "max":
+            visible = finite & (eye_depth >= surface_depth - 0.003)
+        else:
+            visible = finite & (eye_depth <= surface_depth + 0.003)
+        if int(visible.sum()) < 12:
+            continue
+
+        visible_points = eye_points[visible]
+        center = np.median(visible_points, axis=0)
+        span = np.ptp(visible_points, axis=0)
+        iris_radius = float(np.clip(max(span) * 0.18, 2.5, 8.0))
+        pupil_radius = max(iris_radius * 0.45, 1.5)
+        draw_disk(image, (float(center[0]), float(center[1])), iris_radius, (52, 36, 28))
+        draw_disk(image, (float(center[0]), float(center[1])), pupil_radius, (8, 6, 5))
+        draw_disk(
+            image,
+            (float(center[0] - iris_radius * 0.32), float(center[1] - iris_radius * 0.32)),
+            max(iris_radius * 0.16, 1.0),
+            (235, 230, 218),
+        )
+
+
 def texture_path_for_run(texture_dir: Path, texture_kind: str) -> Path:
     preferred = {
         "preview_filled": "base_color_preview_filled.png",
@@ -280,6 +357,8 @@ def rasterize_triangle(
     depth_mode: str,
     fallback_color: np.ndarray | None = None,
     fallback_dark_threshold: int = 30,
+    confidence: np.ndarray | None = None,
+    fallback_confidence_threshold: int = 0,
 ) -> None:
     height, width = zbuffer.shape
     min_x = max(int(np.floor(points[:, 0].min())), 0)
@@ -322,8 +401,12 @@ def rasterize_triangle(
     colors = sample_texture(texture, uv_grid.reshape(-1, 2)).reshape(uv_grid.shape[0], uv_grid.shape[1], 3)
     if fallback_color is not None:
         dark = np.sum(colors, axis=2) < fallback_dark_threshold
-        if np.any(dark):
-            colors[dark] = fallback_color
+        fallback_mask = dark
+        if confidence is not None and fallback_confidence_threshold > 0:
+            sampled_confidence = sample_texture(confidence, uv_grid.reshape(-1, 2)).reshape(uv_grid.shape[:2])
+            fallback_mask |= sampled_confidence <= fallback_confidence_threshold
+        if np.any(fallback_mask):
+            colors[fallback_mask] = fallback_color
     patch = image[min_y : max_y + 1, min_x : max_x + 1]
     patch[update] = colors[update]
     current[update] = interpolated_depth[update]
@@ -343,6 +426,10 @@ def render_mesh(
     mask_mode: str,
     material_vertex_colors: np.ndarray | None = None,
     fallback_dark_threshold: int = 30,
+    confidence: np.ndarray | None = None,
+    fallback_confidence_threshold: int = 0,
+    flame_masks: dict[str, np.ndarray] | None = None,
+    eye_overlay: bool = False,
 ) -> np.ndarray:
     vertices = rotate_vertices(mesh.vertices, view)
     points, depth = project_orthographic(vertices, image_size, padding)
@@ -376,7 +463,12 @@ def render_mesh(
             depth_mode=depth_mode,
             fallback_color=fallback_color,
             fallback_dark_threshold=fallback_dark_threshold,
+            confidence=confidence,
+            fallback_confidence_threshold=fallback_confidence_threshold,
         )
+
+    if eye_overlay:
+        draw_eye_overlays(image, zbuffer, points, depth, flame_masks or {}, depth_mode)
 
     return image
 
@@ -457,6 +549,8 @@ def render_candidate(
     mask_mode: str,
     material_fallback: bool,
     fallback_dark_threshold: int,
+    fallback_confidence_threshold: int,
+    eye_overlay: bool,
     write_obj: bool,
 ) -> dict[str, Any]:
     texture_dir = private_root / "output" / person / "texture_baker" / texture_name
@@ -472,6 +566,10 @@ def render_candidate(
 
     texture_path = texture_path_for_run(texture_dir, texture_kind)
     texture = np.asarray(Image.open(texture_path).convert("RGB"), dtype=np.uint8)
+    confidence_path = texture_dir / "confidence.png"
+    confidence = None
+    if fallback_confidence_threshold > 0 and confidence_path.exists():
+        confidence = np.asarray(Image.open(confidence_path).convert("L"), dtype=np.uint8)
     material_vertex_colors = None
     if material_fallback:
         skin_color = estimate_skin_color(texture)
@@ -498,6 +596,10 @@ def render_candidate(
                     mask_mode=mask_mode,
                     material_vertex_colors=material_vertex_colors,
                     fallback_dark_threshold=fallback_dark_threshold,
+                    confidence=confidence,
+                    fallback_confidence_threshold=fallback_confidence_threshold,
+                    flame_masks=flame_masks,
+                    eye_overlay=eye_overlay,
                 )
                 output_path = output_dir / f"{view}_{uv_mode}_depth_{depth_mode}.png"
                 Image.fromarray(image, mode="RGB").save(output_path)
@@ -531,6 +633,9 @@ def render_candidate(
         "mask_mode": mask_mode,
         "material_fallback": material_fallback,
         "fallback_dark_threshold": fallback_dark_threshold,
+        "fallback_confidence_threshold": fallback_confidence_threshold,
+        "confidence_path": str(confidence_path) if confidence is not None else None,
+        "eye_overlay": eye_overlay,
         "valid_vertices_count": int(valid_vertices.shape[0]) if valid_vertices is not None else None,
         "outputs": [str(path) for path in image_paths],
         "contact_sheet": str(contact_sheet),
@@ -560,6 +665,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mask-mode", choices=["none", "any-valid", "all-valid"], default="none")
     parser.add_argument("--material-fallback", action="store_true")
     parser.add_argument("--fallback-dark-threshold", type=int, default=30)
+    parser.add_argument("--fallback-confidence-threshold", type=int, default=0)
+    parser.add_argument("--eye-overlay", action="store_true")
     parser.add_argument("--image-size", type=int, default=768)
     parser.add_argument("--padding", type=int, default=60)
     parser.add_argument("--uv-mode", action="append", choices=UV_MODES, default=None)
@@ -622,6 +729,8 @@ def main() -> None:
                     mask_mode=args.mask_mode,
                     material_fallback=args.material_fallback,
                     fallback_dark_threshold=args.fallback_dark_threshold,
+                    fallback_confidence_threshold=args.fallback_confidence_threshold,
+                    eye_overlay=args.eye_overlay,
                     write_obj=args.write_obj,
                 )
             )

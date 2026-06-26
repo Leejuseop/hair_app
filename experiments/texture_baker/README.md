@@ -78,28 +78,29 @@ Juseop current preview:
   --preview-fill-min-neighbors 5
 ```
 
-Eunchae current preview uses frame `00004` as the cleaner front primary and
-temporarily drops side/ear labels:
+Eunchae current preview uses frame `00004` as the cleaner front primary, keeps
+side/ear labels available, and removes likely hair/headwear occlusion before
+baking:
 
 ```python
 !python experiments/texture_baker/observed_texture_baker.py \
   --private-root /content/drive/MyDrive/hair_app \
   --person 은채 \
   --atlas-size 512 \
-  --output-name observed_v6_primary00004_centralface_secondary0_preview \
+  --output-name observed_v15_primary00004_wideface_strict_occlusion_preview \
   --splat-radius 1 \
   --blend-mode weighted \
   --primary-frame-id 00004 \
-  --secondary-central-weight 0 \
-  --mask-erode-iterations 3 \
-  --include-seg-label 2 \
-  --include-seg-label 6 \
-  --include-seg-label 7 \
-  --include-seg-label 8 \
-  --include-seg-label 9 \
-  --include-seg-label 10 \
-  --include-seg-label 12 \
-  --include-seg-label 13 \
+  --secondary-central-weight 0.02 \
+  --primary-side-weight 1.0 \
+  --secondary-side-weight 0.0 \
+  --mask-erode-iterations 2 \
+  --occlusion-margin-iterations 10 \
+  --skin-occlusion-filter \
+  --skin-occlusion-chroma-threshold 30 \
+  --skin-occlusion-luma-threshold 52 \
+  --secondary-central-crop-radius-x 0.52 \
+  --secondary-central-crop-radius-y 0.78 \
   --preview-fill-iterations 8 \
   --preview-fill-min-neighbors 5
 ```
@@ -116,6 +117,12 @@ Current MVP assumptions:
 - `--blend-mode weighted` uses segmentation, center, exposure, and primary
   frame heuristics. It is still a preview policy, not a validated photometric
   model.
+- `--occlusion-margin-iterations` removes pixels near configured hair/headwear
+  labels, and `--skin-occlusion-filter` removes skin-label pixels that are too
+  far from the frame's skin reference color. These are review heuristics for
+  reducing hair/headband leaks, not semantic matting.
+- `--secondary-central-crop-radius-x/y` lets non-primary frames contribute only
+  from the crop center when a primary frame is selected.
 - `base_color_observed.png` is the real observed-photo layer. Optional
   `base_color_preview_filled.png` is only a conservative visualization and
   should not be treated as evidence.
@@ -151,6 +158,9 @@ front/oblique checks:
   --view front \
   --view left_35 \
   --view right_35 \
+  --material-fallback \
+  --fallback-confidence-threshold 5 \
+  --eye-overlay \
   --write-obj
 ```
 
@@ -198,20 +208,26 @@ candidates and columns as 45-degree yaw views:
   --uv-mode flip_y \
   --depth-mode max \
   --mask-mode none \
-  --material-fallback
+  --material-fallback \
+  --fallback-confidence-threshold 5 \
+  --eye-overlay
 ```
 
 Local output:
 
 ```text
-output/_comparison/face_texture_model_comparison_8view_material_fallback.png
-output/_comparison/face_texture_model_comparison_8view_material_fallback.json
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.png
+output/_comparison/face_texture_model_comparison_8view_wideface_eyes_conf5_v4.json
 ```
 
 `--material-fallback` fills texture-black sampled areas with simple FLAME-mask
 review colors for scalp, neck, ears, lips, and eyeballs. This is currently
 better for model choice than full UV diffusion because it reduces black holes
 without creating large misleading rear-head streaks.
+`--eye-overlay` adds diagnostic iris/pupil markers over the FLAME eyeball
+masks, and `--fallback-confidence-threshold 5` replaces only very
+low-confidence texture samples with the same material fallback so neck/jaw
+speckles are less visually distracting.
 
 For an explicit UV hole-fill A/B, first create private visual completions:
 

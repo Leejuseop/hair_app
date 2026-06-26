@@ -53,6 +53,9 @@ def render_cell(
     flame_masks: dict[str, np.ndarray],
     material_fallback: bool,
     fallback_dark_threshold: int,
+    confidence: np.ndarray | None,
+    fallback_confidence_threshold: int,
+    eye_overlay: bool,
 ) -> Image.Image:
     mesh_data = read_ply(Path(mesh.path))
     if mesh_data.vertices.shape[0] != uv_coords.shape[0]:
@@ -82,6 +85,10 @@ def render_cell(
         mask_mode=mask_mode,
         material_vertex_colors=material_vertex_colors,
         fallback_dark_threshold=fallback_dark_threshold,
+        confidence=confidence,
+        fallback_confidence_threshold=fallback_confidence_threshold,
+        flame_masks=flame_masks,
+        eye_overlay=eye_overlay,
     )
     return Image.fromarray(image, mode="RGB")
 
@@ -101,6 +108,8 @@ def make_sheet(
     flame_masks: dict[str, np.ndarray],
     material_fallback: bool,
     fallback_dark_threshold: int,
+    fallback_confidence_threshold: int,
+    eye_overlay: bool,
     yaw_degrees: tuple[int, ...],
     output_path: Path,
 ) -> dict[str, Any]:
@@ -147,6 +156,10 @@ def make_sheet(
         draw_label(draw, (18, y + 80), texture_name[:38], (150, 150, 150))
 
         texture = np.asarray(Image.open(texture_path).convert("RGB"), dtype=np.uint8)
+        confidence_path = texture_path.parent / "confidence.png"
+        confidence = None
+        if fallback_confidence_threshold > 0 and confidence_path.exists():
+            confidence = np.asarray(Image.open(confidence_path).convert("L"), dtype=np.uint8)
         mesh_outputs: list[str] = []
         for col, yaw in enumerate(yaw_degrees):
             cell_image = render_cell(
@@ -163,6 +176,9 @@ def make_sheet(
                 flame_masks=flame_masks,
                 material_fallback=material_fallback,
                 fallback_dark_threshold=fallback_dark_threshold,
+                confidence=confidence,
+                fallback_confidence_threshold=fallback_confidence_threshold,
+                eye_overlay=eye_overlay,
             )
             x = left_width + col * (cell + col_gap)
             sheet.paste(cell_image, (x, y))
@@ -175,6 +191,7 @@ def make_sheet(
                 "mesh": asdict(mesh),
                 "texture_name": texture_name,
                 "texture_path": str(texture_path),
+                "confidence_path": str(confidence_path) if confidence is not None else None,
                 "outputs": mesh_outputs,
             }
         )
@@ -201,6 +218,8 @@ def make_sheet(
         "mask_mode": mask_mode,
         "material_fallback": material_fallback,
         "fallback_dark_threshold": fallback_dark_threshold,
+        "fallback_confidence_threshold": fallback_confidence_threshold,
+        "eye_overlay": eye_overlay,
         "yaw_degrees": list(yaw_degrees),
         "rendered": rendered,
         "limitations": [
@@ -227,6 +246,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mask-mode", choices=["none", "any-valid", "all-valid"], default="none")
     parser.add_argument("--material-fallback", action="store_true")
     parser.add_argument("--fallback-dark-threshold", type=int, default=30)
+    parser.add_argument("--fallback-confidence-threshold", type=int, default=0)
+    parser.add_argument("--eye-overlay", action="store_true")
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--padding", type=int, default=42)
     parser.add_argument("--uv-mode", default="flip_y")
@@ -271,6 +292,8 @@ def main() -> None:
         flame_masks=flame_masks,
         material_fallback=args.material_fallback,
         fallback_dark_threshold=args.fallback_dark_threshold,
+        fallback_confidence_threshold=args.fallback_confidence_threshold,
+        eye_overlay=args.eye_overlay,
         yaw_degrees=yaw_degrees,
         output_path=output_path,
     )

@@ -44,6 +44,9 @@ DEFAULT_SEGMENT_WEIGHTS = {
 }
 CENTRAL_FACE_LABELS = {2, 6, 7, 8, 9, 10, 12, 13}
 SIDE_FACE_LABELS = {4, 5}
+SKIN_REFERENCE_LABELS = {2, 10}
+SKIN_OCCLUSION_FILTER_LABELS = {2, 4, 5}
+OCCLUSION_MARGIN_LABELS = {1, 16, 17, 18}
 
 
 def load_rgb(path: Path) -> np.ndarray:
@@ -81,6 +84,23 @@ def erode_binary_mask(mask: np.ndarray, iterations: int) -> np.ndarray:
     return result
 
 
+def dilate_binary_mask(mask: np.ndarray, iterations: int) -> np.ndarray:
+    if iterations <= 0:
+        return mask
+
+    result = mask.astype(bool, copy=True)
+    height, width = result.shape
+    for _ in range(iterations):
+        padded = np.pad(result, ((1, 1), (1, 1)), mode="constant", constant_values=False)
+        neighbors = [
+            padded[dy : dy + height, dx : dx + width]
+            for dy in range(3)
+            for dx in range(3)
+        ]
+        result = np.logical_or.reduce(neighbors)
+    return result
+
+
 def valid_pixel_mask(
     uv: np.ndarray,
     segmentation: np.ndarray | None,
@@ -102,6 +122,146 @@ def valid_pixel_mask(
     return valid
 
 
+def occlusion_margin_keep_mask(
+    segmentation: np.ndarray | None,
+    valid: np.ndarray,
+    *,
+    labels: set[int],
+    iterations: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    stats: dict[str, Any] = {
+        "enabled": iterations > 0,
+        "labels": sorted(labels),
+        "iterations": iterations,
+        "removed_pixels": 0,
+    }
+    if segmentation is None or iterations <= 0 or not labels:
+        return np.ones_like(valid, dtype=bool), stats
+
+    margin = dilate_binary_mask(np.isin(segmentation, list(labels)), iterations)
+    removed = valid & margin
+    keep = np.ones_like(valid, dtype=bool)
+    keep[removed] = False
+    stats["removed_pixels"] = int(removed.sum())
+    if int(removed.sum()) > 0:
+        removed_labels, counts = np.unique(segmentation[removed], return_counts=True)
+        stats["removed_seg_label_counts"] = {
+            str(int(label)): int(count) for label, count in zip(removed_labels, counts)
+        }
+    return keep, stats
+
+
+def ycbcr_like(crop: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    y = (0.299 * crop[..., 0]) + (0.587 * crop[..., 1]) + (0.114 * crop[..., 2])
+    cb = crop[..., 2] - y
+    cr = crop[..., 0] - y
+    return y, cb, cr
+
+
+def skin_occlusion_keep_mask(
+    crop: np.ndarray,
+    segmentation: np.ndarray | None,
+    valid: np.ndarray,
+    *,
+    enabled: bool,
+    reference_labels: set[int],
+    filter_labels: set[int],
+    chroma_threshold: float,
+    luma_threshold: float,
+    min_reference_pixels: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    stats: dict[str, Any] = {"enabled": enabled, "removed_pixels": 0}
+    if not enabled or segmentation is None or not reference_labels or not filter_labels:
+        return np.ones_like(valid, dtype=bool), stats
+
+    height, width = valid.shape
+    yy, xx = np.mgrid[0:height, 0:width]
+    center_x = (width - 1) / 2.0
+    center_y = (height - 1) / 2.0
+    norm_x = np.abs((xx - center_x) / max(center_x, 1.0))
+    norm_y = np.abs((yy - center_y) / max(center_y, 1.0))
+    central_crop = (norm_x <= 0.48) & (norm_y <= 0.58)
+
+    reference = valid & np.isin(segmentation, list(reference_labels))
+    central_reference = reference & central_crop
+    if int(central_reference.sum()) >= min_reference_pixels:
+        reference = central_reference
+
+    reference_count = int(reference.sum())
+    stats["reference_pixels"] = reference_count
+    if reference_count < min_reference_pixels:
+        stats["skipped_reason"] = "not_enough_reference_pixels"
+        return np.ones_like(valid, dtype=bool), stats
+
+    y, cb, cr = ycbcr_like(crop)
+    reference_y = float(np.median(y[reference]))
+    reference_cb = float(np.median(cb[reference]))
+    reference_cr = float(np.median(cr[reference]))
+
+    chroma_distance = np.sqrt((cb - reference_cb) ** 2 + (cr - reference_cr) ** 2)
+    luma_distance = np.abs(y - reference_y)
+    filtered = valid & np.isin(segmentation, list(filter_labels))
+    occluded = filtered & (
+        (chroma_distance > chroma_threshold) | (luma_distance > luma_threshold)
+    )
+
+    keep = np.ones_like(valid, dtype=bool)
+    keep[occluded] = False
+    stats.update(
+        {
+            "reference_ycbcr_like": [reference_y, reference_cb, reference_cr],
+            "filter_labels": sorted(filter_labels),
+            "chroma_threshold": chroma_threshold,
+            "luma_threshold": luma_threshold,
+            "removed_pixels": int(occluded.sum()),
+        }
+    )
+    if int(occluded.sum()) > 0:
+        labels, counts = np.unique(segmentation[occluded], return_counts=True)
+        stats["removed_seg_label_counts"] = {
+            str(int(label)): int(count) for label, count in zip(labels, counts)
+        }
+    return keep, stats
+
+
+def secondary_central_keep_mask(
+    segmentation: np.ndarray | None,
+    valid: np.ndarray,
+    *,
+    enabled: bool,
+    radius_x: float,
+    radius_y: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    stats: dict[str, Any] = {
+        "enabled": enabled,
+        "radius_x": radius_x,
+        "radius_y": radius_y,
+        "removed_pixels": 0,
+    }
+    if not enabled or segmentation is None or (radius_x >= 1.0 and radius_y >= 1.0):
+        return np.ones_like(valid, dtype=bool), stats
+
+    height, width = valid.shape
+    yy, xx = np.mgrid[0:height, 0:width]
+    center_x = (width - 1) / 2.0
+    center_y = (height - 1) / 2.0
+    norm_x = np.abs((xx - center_x) / max(center_x, 1.0))
+    norm_y = np.abs((yy - center_y) / max(center_y, 1.0))
+    central_crop = (norm_x <= radius_x) & (norm_y <= radius_y)
+    gated = valid & np.isin(segmentation, list(CENTRAL_FACE_LABELS))
+    removed = gated & ~central_crop
+
+    keep = np.ones_like(valid, dtype=bool)
+    keep[removed] = False
+    stats["removed_pixels"] = int(removed.sum())
+    if int(removed.sum()) > 0:
+        labels, counts = np.unique(segmentation[removed], return_counts=True)
+        stats["removed_seg_label_counts"] = {
+            str(int(label)): int(count) for label, count in zip(labels, counts)
+        }
+    return keep, stats
+
+
 def pixel_scores(
     crop: np.ndarray,
     segmentation: np.ndarray | None,
@@ -111,6 +271,8 @@ def pixel_scores(
     has_primary_frames: bool,
     primary_central_weight: float,
     secondary_central_weight: float,
+    primary_side_weight: float,
+    secondary_side_weight: float,
 ) -> np.ndarray:
     height, width = valid.shape
     yy, xx = np.mgrid[0:height, 0:width]
@@ -140,9 +302,10 @@ def pixel_scores(
             side_mask = np.isin(segmentation, list(SIDE_FACE_LABELS))
             if is_primary_frame:
                 score[central_mask] *= primary_central_weight
+                score[side_mask] *= primary_side_weight
             else:
                 score[central_mask] *= secondary_central_weight
-            score[side_mask] *= 1.0
+                score[side_mask] *= secondary_side_weight
 
     score[~valid] = -1.0
     return score.astype(np.float32)
@@ -167,6 +330,16 @@ def accumulate_frame(
     primary_frame_ids: set[str],
     primary_central_weight: float,
     secondary_central_weight: float,
+    primary_side_weight: float,
+    secondary_side_weight: float,
+    occlusion_margin_labels: set[int],
+    occlusion_margin_iterations: int,
+    skin_occlusion_filter: bool,
+    skin_occlusion_chroma_threshold: float,
+    skin_occlusion_luma_threshold: float,
+    skin_occlusion_min_reference_pixels: int,
+    secondary_central_crop_radius_x: float,
+    secondary_central_crop_radius_y: float,
 ) -> dict[str, Any]:
     crop_path = Path(frame.crop)
     uv_path = Path(frame.uv_map) if frame.uv_map is not None else None
@@ -192,8 +365,44 @@ def accumulate_frame(
         excluded_seg_labels,
         mask_erode_iterations,
     )
+    margin_keep, margin_stats = occlusion_margin_keep_mask(
+        segmentation,
+        valid,
+        labels=occlusion_margin_labels,
+        iterations=occlusion_margin_iterations,
+    )
+    valid &= margin_keep
+    occlusion_keep, occlusion_stats = skin_occlusion_keep_mask(
+        crop,
+        segmentation,
+        valid,
+        enabled=skin_occlusion_filter,
+        reference_labels=SKIN_REFERENCE_LABELS,
+        filter_labels=SKIN_OCCLUSION_FILTER_LABELS,
+        chroma_threshold=skin_occlusion_chroma_threshold,
+        luma_threshold=skin_occlusion_luma_threshold,
+        min_reference_pixels=skin_occlusion_min_reference_pixels,
+    )
+    valid &= occlusion_keep
+    secondary_gate_stats: dict[str, Any] = {"enabled": False, "removed_pixels": 0}
+    if primary_frame_ids and frame.frame_id not in primary_frame_ids:
+        secondary_keep, secondary_gate_stats = secondary_central_keep_mask(
+            segmentation,
+            valid,
+            enabled=True,
+            radius_x=secondary_central_crop_radius_x,
+            radius_y=secondary_central_crop_radius_y,
+        )
+        valid &= secondary_keep
     if not np.any(valid):
-        return {"frame_id": frame.frame_id, "used": False, "reason": "no_valid_pixels"}
+        return {
+            "frame_id": frame.frame_id,
+            "used": False,
+            "reason": "no_valid_pixels",
+            "occlusion_margin": margin_stats,
+            "occlusion_filter": occlusion_stats,
+            "secondary_central_crop_gate": secondary_gate_stats,
+        }
     scores = pixel_scores(
         crop,
         segmentation,
@@ -202,6 +411,8 @@ def accumulate_frame(
         has_primary_frames=bool(primary_frame_ids),
         primary_central_weight=primary_central_weight,
         secondary_central_weight=secondary_central_weight,
+        primary_side_weight=primary_side_weight,
+        secondary_side_weight=secondary_side_weight,
     )
 
     atlas_size = atlas_weight_sum.shape[0]
@@ -283,6 +494,9 @@ def accumulate_frame(
         "uv_min": [int(uv[..., 0][valid].min()), int(uv[..., 1][valid].min())],
         "uv_max": [int(uv[..., 0][valid].max()), int(uv[..., 1][valid].max())],
         "seg_label_counts": label_counts,
+        "occlusion_margin": margin_stats,
+        "occlusion_filter": occlusion_stats,
+        "secondary_central_crop_gate": secondary_gate_stats,
     }
 
 
@@ -403,6 +617,16 @@ def bake_person(
     primary_frame_ids: set[str],
     primary_central_weight: float,
     secondary_central_weight: float,
+    primary_side_weight: float,
+    secondary_side_weight: float,
+    occlusion_margin_labels: set[int],
+    occlusion_margin_iterations: int,
+    skin_occlusion_filter: bool,
+    skin_occlusion_chroma_threshold: float,
+    skin_occlusion_luma_threshold: float,
+    skin_occlusion_min_reference_pixels: int,
+    secondary_central_crop_radius_x: float,
+    secondary_central_crop_radius_y: float,
     preview_fill_iterations: int,
     preview_fill_min_neighbors: int,
 ) -> dict[str, Any]:
@@ -435,6 +659,16 @@ def bake_person(
             primary_frame_ids=primary_frame_ids,
             primary_central_weight=primary_central_weight,
             secondary_central_weight=secondary_central_weight,
+            primary_side_weight=primary_side_weight,
+            secondary_side_weight=secondary_side_weight,
+            occlusion_margin_labels=occlusion_margin_labels,
+            occlusion_margin_iterations=occlusion_margin_iterations,
+            skin_occlusion_filter=skin_occlusion_filter,
+            skin_occlusion_chroma_threshold=skin_occlusion_chroma_threshold,
+            skin_occlusion_luma_threshold=skin_occlusion_luma_threshold,
+            skin_occlusion_min_reference_pixels=skin_occlusion_min_reference_pixels,
+            secondary_central_crop_radius_x=secondary_central_crop_radius_x,
+            secondary_central_crop_radius_y=secondary_central_crop_radius_y,
         )
         for index, frame in enumerate(frames)
     ]
@@ -458,6 +692,18 @@ def bake_person(
         "primary_frame_ids": sorted(primary_frame_ids),
         "primary_central_weight": primary_central_weight,
         "secondary_central_weight": secondary_central_weight,
+        "primary_side_weight": primary_side_weight,
+        "secondary_side_weight": secondary_side_weight,
+        "occlusion_margin_labels": sorted(occlusion_margin_labels),
+        "occlusion_margin_iterations": occlusion_margin_iterations,
+        "skin_occlusion_filter": skin_occlusion_filter,
+        "skin_occlusion_reference_labels": sorted(SKIN_REFERENCE_LABELS),
+        "skin_occlusion_filter_labels": sorted(SKIN_OCCLUSION_FILTER_LABELS),
+        "skin_occlusion_chroma_threshold": skin_occlusion_chroma_threshold,
+        "skin_occlusion_luma_threshold": skin_occlusion_luma_threshold,
+        "skin_occlusion_min_reference_pixels": skin_occlusion_min_reference_pixels,
+        "secondary_central_crop_radius_x": secondary_central_crop_radius_x,
+        "secondary_central_crop_radius_y": secondary_central_crop_radius_y,
         "included_seg_labels": sorted(included_seg_labels) if included_seg_labels else None,
         "excluded_seg_labels": sorted(excluded_seg_labels),
         "mask_erode_iterations": mask_erode_iterations,
@@ -482,6 +728,8 @@ def bake_person(
             "Average mode uses equal per-pixel weights; weighted and best modes use heuristic preview scores.",
             "Weighted and best blend modes use heuristic segmentation, center, and exposure scores; they are preview policies, not validated photometric models.",
             "Primary frame mode strongly prefers selected frame IDs for central face labels and keeps side labels available from all frames.",
+            "Occlusion margin removes pixels near configured hair/headwear labels before baking.",
+            "Skin occlusion filtering is a color-distance heuristic that removes likely hair/headband pixels from skin and side labels before baking.",
             "Preview hole fill is saved as a separate visualization and is not treated as observed photo evidence.",
             "MVP splat radius is a nearest-neighbor preview fill, not true triangle rasterization.",
             "MVP excludes only configured segmentation labels and does not yet score view angle, exposure, sharpness, or occlusion.",
@@ -538,6 +786,66 @@ def parse_args() -> argparse.Namespace:
         help="Central-face score multiplier for non-primary frames when primary frames are selected.",
     )
     parser.add_argument(
+        "--primary-side-weight",
+        type=float,
+        default=1.0,
+        help="Side/ear score multiplier for selected primary frames.",
+    )
+    parser.add_argument(
+        "--secondary-side-weight",
+        type=float,
+        default=1.0,
+        help="Side/ear score multiplier for non-primary frames when primary frames are selected.",
+    )
+    parser.add_argument(
+        "--occlusion-margin-label",
+        type=int,
+        action="append",
+        default=None,
+        help="Segmentation label whose dilated margin should be removed as likely hair/headwear occlusion.",
+    )
+    parser.add_argument(
+        "--occlusion-margin-iterations",
+        type=int,
+        default=0,
+        help="Dilate occlusion-margin labels by this many crop pixels before removing valid pixels.",
+    )
+    parser.add_argument(
+        "--skin-occlusion-filter",
+        action="store_true",
+        help="Remove likely hair/headband occluders from skin and side segmentation labels.",
+    )
+    parser.add_argument(
+        "--skin-occlusion-chroma-threshold",
+        type=float,
+        default=42.0,
+        help="Maximum skin-reference chroma distance for labels filtered by --skin-occlusion-filter.",
+    )
+    parser.add_argument(
+        "--skin-occlusion-luma-threshold",
+        type=float,
+        default=68.0,
+        help="Maximum skin-reference luma distance for labels filtered by --skin-occlusion-filter.",
+    )
+    parser.add_argument(
+        "--skin-occlusion-min-reference-pixels",
+        type=int,
+        default=400,
+        help="Minimum skin-reference pixels needed before the occlusion filter is applied.",
+    )
+    parser.add_argument(
+        "--secondary-central-crop-radius-x",
+        type=float,
+        default=1.0,
+        help="For non-primary frames, keep central-face labels only within this normalized crop X radius.",
+    )
+    parser.add_argument(
+        "--secondary-central-crop-radius-y",
+        type=float,
+        default=1.0,
+        help="For non-primary frames, keep central-face labels only within this normalized crop Y radius.",
+    )
+    parser.add_argument(
         "--preview-fill-iterations",
         type=int,
         default=0,
@@ -569,6 +877,11 @@ def main() -> None:
     else:
         included_seg_labels = set(DEFAULT_INCLUDED_SEG_LABELS)
     excluded_seg_labels = set(args.exclude_seg_label or [])
+    occlusion_margin_labels = (
+        set(args.occlusion_margin_label)
+        if args.occlusion_margin_label is not None
+        else set(OCCLUSION_MARGIN_LABELS)
+    )
 
     reports = [
         bake_person(
@@ -586,6 +899,16 @@ def main() -> None:
             primary_frame_ids=set(args.primary_frame_id or []),
             primary_central_weight=args.primary_central_weight,
             secondary_central_weight=args.secondary_central_weight,
+            primary_side_weight=args.primary_side_weight,
+            secondary_side_weight=args.secondary_side_weight,
+            occlusion_margin_labels=occlusion_margin_labels,
+            occlusion_margin_iterations=args.occlusion_margin_iterations,
+            skin_occlusion_filter=args.skin_occlusion_filter,
+            skin_occlusion_chroma_threshold=args.skin_occlusion_chroma_threshold,
+            skin_occlusion_luma_threshold=args.skin_occlusion_luma_threshold,
+            skin_occlusion_min_reference_pixels=args.skin_occlusion_min_reference_pixels,
+            secondary_central_crop_radius_x=args.secondary_central_crop_radius_x,
+            secondary_central_crop_radius_y=args.secondary_central_crop_radius_y,
             preview_fill_iterations=args.preview_fill_iterations,
             preview_fill_min_neighbors=args.preview_fill_min_neighbors,
         )
