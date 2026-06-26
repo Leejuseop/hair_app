@@ -243,7 +243,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person", action="append", default=None)
     parser.add_argument(
         "--texture-kind",
-        choices=["preview_filled", "visual_completed", "cleanup_completed", "observed"],
+        choices=["preview_filled", "visual_completed", "cleanup_completed", "selfie_optimized", "observed"],
         default="preview_filled",
     )
     parser.add_argument("--texture-name", default=None)

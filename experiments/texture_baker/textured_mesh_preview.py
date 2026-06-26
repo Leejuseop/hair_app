@@ -221,6 +221,35 @@ def draw_disk(
     patch[mask] = np.asarray(color, dtype=np.uint8)
 
 
+def draw_ellipse(
+    image: np.ndarray,
+    center: tuple[float, float],
+    radius_x: float,
+    radius_y: float,
+    color: tuple[int, int, int],
+    *,
+    alpha: float = 1.0,
+) -> None:
+    height, width = image.shape[:2]
+    cx, cy = center
+    min_x = max(int(np.floor(cx - radius_x)), 0)
+    max_x = min(int(np.ceil(cx + radius_x)), width - 1)
+    min_y = max(int(np.floor(cy - radius_y)), 0)
+    max_y = min(int(np.ceil(cy + radius_y)), height - 1)
+    if max_x < min_x or max_y < min_y:
+        return
+
+    yy, xx = np.mgrid[min_y : max_y + 1, min_x : max_x + 1]
+    mask = (((xx - cx) / max(radius_x, 1e-6)) ** 2) + (((yy - cy) / max(radius_y, 1e-6)) ** 2) <= 1.0
+    patch = image[min_y : max_y + 1, min_x : max_x + 1]
+    color_array = np.asarray(color, dtype=np.float32)
+    if alpha >= 1.0:
+        patch[mask] = color_array.astype(np.uint8)
+    else:
+        patch_values = patch[mask].astype(np.float32)
+        patch[mask] = np.clip((patch_values * (1.0 - alpha)) + (color_array * alpha), 0, 255).astype(np.uint8)
+
+
 def draw_eye_overlays(
     image: np.ndarray,
     zbuffer: np.ndarray,
@@ -265,14 +294,26 @@ def draw_eye_overlays(
         visible_points = eye_points[visible]
         center = np.median(visible_points, axis=0)
         span = np.ptp(visible_points, axis=0)
-        iris_radius = float(np.clip(max(span) * 0.18, 2.5, 8.0))
-        pupil_radius = max(iris_radius * 0.45, 1.5)
-        draw_disk(image, (float(center[0]), float(center[1])), iris_radius, (52, 36, 28))
-        draw_disk(image, (float(center[0]), float(center[1])), pupil_radius, (8, 6, 5))
+        radius_x = float(np.clip(span[0] * 0.26, 3.0, 10.0))
+        radius_y = float(np.clip(span[1] * 0.18, 1.6, 5.2))
+        center_xy = (float(center[0]), float(center[1]))
+        draw_ellipse(image, center_xy, radius_x * 0.92, radius_y * 0.95, (198, 190, 178), alpha=0.42)
+        draw_ellipse(
+            image,
+            (center_xy[0], center_xy[1] - radius_y * 0.42),
+            radius_x * 0.9,
+            radius_y * 0.42,
+            (116, 86, 76),
+            alpha=0.34,
+        )
+        iris_radius = float(np.clip(max(radius_y * 1.45, radius_x * 0.58), 3.2, 7.0))
+        pupil_radius = max(iris_radius * 0.52, 1.25)
+        draw_disk(image, center_xy, iris_radius, (67, 47, 36))
+        draw_disk(image, center_xy, pupil_radius, (9, 7, 6))
         draw_disk(
             image,
-            (float(center[0] - iris_radius * 0.32), float(center[1] - iris_radius * 0.32)),
-            max(iris_radius * 0.16, 1.0),
+            (center_xy[0] - iris_radius * 0.30, center_xy[1] - iris_radius * 0.30),
+            max(iris_radius * 0.15, 0.65),
             (235, 230, 218),
         )
 
@@ -282,6 +323,7 @@ def texture_path_for_run(texture_dir: Path, texture_kind: str) -> Path:
         "preview_filled": "base_color_preview_filled.png",
         "visual_completed": "base_color_visual_completed.png",
         "cleanup_completed": "base_color_cleanup_completed.png",
+        "selfie_optimized": "base_color_selfie_optimized_preview.png",
         "observed": "base_color_observed.png",
     }[texture_kind]
     preferred_path = texture_dir / preferred
@@ -661,7 +703,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--texture-name", default=None)
     parser.add_argument(
         "--texture-kind",
-        choices=["preview_filled", "visual_completed", "cleanup_completed", "observed"],
+        choices=["preview_filled", "visual_completed", "cleanup_completed", "selfie_optimized", "observed"],
         default="preview_filled",
     )
     parser.add_argument("--uv-coords", type=Path, default=None)

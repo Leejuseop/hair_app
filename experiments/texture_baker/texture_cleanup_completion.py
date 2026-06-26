@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from observed_texture_baker import fill_preview_holes
 from texture_baker_loader import default_private_root, load_person
@@ -187,6 +187,22 @@ def material_canvas(
     return np.clip(canvas, 0, 255).astype(np.uint8)
 
 
+def blurred_mask(mask: np.ndarray, radius: float) -> np.ndarray:
+    if radius <= 0:
+        return mask.astype(np.float32)
+    image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
+    return np.asarray(image.filter(ImageFilter.GaussianBlur(radius)), dtype=np.float32) / 255.0
+
+
+def blurred_rgb(image: np.ndarray, radius: float) -> np.ndarray:
+    if radius <= 0:
+        return image.astype(np.float32)
+    return np.asarray(
+        Image.fromarray(image.astype(np.uint8), mode="RGB").filter(ImageFilter.GaussianBlur(radius)),
+        dtype=np.float32,
+    )
+
+
 def load_manifest(texture_dir: Path) -> dict[str, Any]:
     path = texture_dir / "texture_manifest.json"
     if not path.exists():
@@ -291,6 +307,67 @@ def complete_texture(
     return completed
 
 
+def refine_features_and_seams(
+    *,
+    completed: np.ndarray,
+    observed: np.ndarray,
+    confidence: np.ndarray,
+    material: np.ndarray,
+    masks: dict[str, np.ndarray],
+    region_masks: dict[str, np.ndarray],
+    reference_skin: np.ndarray,
+    seam_blur_radius: float,
+) -> tuple[np.ndarray, dict[str, int]]:
+    output = completed.astype(np.float32, copy=True)
+    stats: dict[str, int] = {}
+
+    lips = region_masks.get("lips")
+    if lips is not None and np.any(lips):
+        lip_color = blend_color(reference_skin, (142, 54, 68), 0.58)
+        lip_alpha = blurred_mask(lips, 1.5)[..., None] * 0.38
+        output = (output * (1.0 - lip_alpha)) + (lip_color[None, None, :] * lip_alpha)
+
+        lip_luma = (0.299 * observed[..., 0]) + (0.587 * observed[..., 1]) + (0.114 * observed[..., 2])
+        mouth_dark = lips & ((confidence < 18) | (lip_luma < 66))
+        if np.any(mouth_dark):
+            mouth_alpha = blurred_mask(mouth_dark, 1.2)[..., None] * 0.48
+            mouth_color = blend_color(reference_skin, (48, 24, 27), 0.82)
+            output = (output * (1.0 - mouth_alpha)) + (mouth_color[None, None, :] * mouth_alpha)
+        stats["lip_texels"] = int(lips.sum())
+        stats["mouth_dark_texels"] = int(mouth_dark.sum())
+
+    eye_regions = union_masks(
+        region_masks,
+        ("eye_region", "left_eye_region", "right_eye_region"),
+        completed.shape[:2],
+    )
+    if np.any(eye_regions):
+        eye_alpha = blurred_mask(eye_regions, 1.3)[..., None] * 0.26
+        eye_shadow = blend_color(reference_skin, (86, 62, 58), 0.30)
+        output = (output * (1.0 - eye_alpha)) + (eye_shadow[None, None, :] * eye_alpha)
+        stats["eye_region_texels"] = int(eye_regions.sum())
+
+    eyeballs = union_masks(region_masks, ("left_eyeball", "right_eyeball"), completed.shape[:2])
+    if np.any(eyeballs):
+        eyeball_alpha = blurred_mask(eyeballs, 0.7)[..., None] * 0.9
+        eyeball_color = np.asarray([221, 216, 204], dtype=np.float32)
+        output = (output * (1.0 - eyeball_alpha)) + (eyeball_color[None, None, :] * eyeball_alpha)
+        stats["eyeball_texels"] = int(eyeballs.sum())
+
+    seam_source = masks["remove"] | masks["material_only"]
+    seam_band = dilate_binary_mask(seam_source, 5) & masks["cleanup_region"] & ~masks["features"]
+    if np.any(seam_band):
+        smooth = blurred_rgb(np.clip(output, 0, 255).astype(np.uint8), seam_blur_radius)
+        seam_alpha = blurred_mask(seam_band, 2.2)[..., None] * 0.52
+        output = (output * (1.0 - seam_alpha)) + (smooth * seam_alpha)
+
+        material_alpha = blurred_mask(masks["material_only"] & masks["cleanup_region"], 3.0)[..., None] * 0.18
+        output = (output * (1.0 - material_alpha)) + (material.astype(np.float32) * material_alpha)
+        stats["seam_band_texels"] = int(seam_band.sum())
+
+    return np.clip(output, 0, 255).astype(np.uint8), stats
+
+
 def pick_mesh_faces(private_root: Path, person: str) -> tuple[np.ndarray, dict[str, Any]]:
     bundle = load_person(person, private_root=private_root)
     for mesh in bundle.meshes:
@@ -312,6 +389,7 @@ def process_person(
     forehead_luma_threshold: float,
     fill_iterations: int,
     blend_low_confidence: bool,
+    seam_blur_radius: float,
     save_debug_masks: bool,
 ) -> dict[str, Any]:
     texture_dir = private_root / "output" / person / "texture_baker" / texture_name
@@ -358,6 +436,16 @@ def process_person(
         fill_iterations=fill_iterations,
         blend_low_confidence=blend_low_confidence,
     )
+    completed, refinement_stats = refine_features_and_seams(
+        completed=completed,
+        observed=observed,
+        confidence=confidence,
+        material=material,
+        masks=cleanup_masks,
+        region_masks=region_masks,
+        reference_skin=reference_skin,
+        seam_blur_radius=seam_blur_radius,
+    )
 
     output_path = texture_dir / "base_color_cleanup_completed.png"
     Image.fromarray(completed, mode="RGB").save(output_path)
@@ -392,6 +480,7 @@ def process_person(
             "forehead_luma_threshold": forehead_luma_threshold,
             "fill_iterations": fill_iterations,
             "blend_low_confidence": blend_low_confidence,
+            "seam_blur_radius": seam_blur_radius,
             "save_debug_masks": save_debug_masks,
         },
         "counts": {
@@ -404,6 +493,7 @@ def process_person(
             "skin_outlier_texels": int(cleanup_masks["skin_outlier"].sum()),
             "forehead_outlier_texels": int(cleanup_masks["forehead_outlier"].sum()),
             "extreme_texels": int(cleanup_masks["extreme"].sum()),
+            **refinement_stats,
         },
         "region_mask_names": sorted(region_masks.keys()),
         "debug_outputs": debug_outputs,
@@ -427,6 +517,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--forehead-chroma-threshold", type=float, default=24.0)
     parser.add_argument("--forehead-luma-threshold", type=float, default=44.0)
     parser.add_argument("--fill-iterations", type=int, default=96)
+    parser.add_argument("--seam-blur-radius", type=float, default=1.2)
     parser.add_argument("--no-blend-low-confidence", action="store_true")
     parser.add_argument("--save-debug-masks", action="store_true")
     return parser.parse_args()
@@ -448,6 +539,7 @@ def main() -> None:
             forehead_luma_threshold=args.forehead_luma_threshold,
             fill_iterations=args.fill_iterations,
             blend_low_confidence=not args.no_blend_low_confidence,
+            seam_blur_radius=args.seam_blur_radius,
             save_debug_masks=args.save_debug_masks,
         )
         for person in people
