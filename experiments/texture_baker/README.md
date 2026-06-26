@@ -197,12 +197,28 @@ candidates and columns as 45-degree yaw views:
   --padding 42 \
   --uv-mode flip_y \
   --depth-mode max \
-  --mask-mode none
+  --mask-mode none \
+  --material-fallback
 ```
 
 Local output:
 
 ```text
-output/_comparison/face_texture_model_comparison_8view.png
-output/_comparison/face_texture_model_comparison_8view.json
+output/_comparison/face_texture_model_comparison_8view_material_fallback.png
+output/_comparison/face_texture_model_comparison_8view_material_fallback.json
 ```
+
+`--material-fallback` fills texture-black sampled areas with simple FLAME-mask
+review colors for scalp, neck, ears, lips, and eyeballs. This is currently
+better for model choice than full UV diffusion because it reduces black holes
+without creating large misleading rear-head streaks.
+
+For an explicit UV hole-fill A/B, first create private visual completions:
+
+```python
+!python experiments/texture_baker/complete_texture_for_review.py \
+  --private-root /content/drive/MyDrive/hair_app
+```
+
+Then pass `--texture-kind visual_completed` to the sheet generator. Treat that
+output as a rough review artifact, not a production texture.

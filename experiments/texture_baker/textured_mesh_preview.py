@@ -9,9 +9,12 @@ into the Git repository.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
+import pickle
 import struct
+from zipfile import ZipFile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +34,7 @@ DEFAULT_UV_ASSET = "shared/models/pixel3dmm_assets/flame_uv_coords.npy"
 DEFAULT_VALID_VERTS_ASSET = (
     "shared/models/pixel3dmm_assets/uv_valid_verty_noEyes_noEyeRegion_debug_wEars.npy"
 )
+DEFAULT_FLAME_MASKS_ASSET = "shared/models/FLAME_masks.zip"
 UV_MODES = ("direct", "flip_y", "flip_x", "flip_xy")
 DEPTH_MODES = ("max", "min")
 
@@ -127,9 +131,79 @@ def resolve_valid_vertices(private_root: Path, explicit_path: Path | None) -> Pa
     return None
 
 
+def resolve_flame_masks(private_root: Path, explicit_path: Path | None) -> Path | None:
+    candidates = []
+    if explicit_path is not None:
+        candidates.append(explicit_path)
+    candidates.append(private_root / DEFAULT_FLAME_MASKS_ASSET)
+
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def load_flame_masks(path: Path | None) -> dict[str, np.ndarray]:
+    if path is None:
+        return {}
+
+    if path.suffix.lower() == ".zip":
+        with ZipFile(path) as archive:
+            data = archive.read("FLAME_masks.pkl")
+        masks = pickle.load(io.BytesIO(data), encoding="latin1")
+    else:
+        with path.open("rb") as file:
+            masks = pickle.load(file, encoding="latin1")
+
+    return {str(key): np.asarray(value, dtype=np.int64) for key, value in masks.items()}
+
+
+def estimate_skin_color(texture: np.ndarray) -> np.ndarray:
+    nonblack = texture[np.sum(texture, axis=2) > 30]
+    if nonblack.size == 0:
+        return np.asarray([168, 132, 118], dtype=np.float32)
+    color = np.median(nonblack.astype(np.float32), axis=0)
+    return np.clip(color, 45, 235).astype(np.float32)
+
+
+def blend_color(a: np.ndarray, b: tuple[int, int, int], alpha: float) -> np.ndarray:
+    return np.clip((a * (1.0 - alpha)) + (np.asarray(b, dtype=np.float32) * alpha), 0, 255)
+
+
+def build_material_vertex_colors(
+    vertex_count: int,
+    masks: dict[str, np.ndarray],
+    skin_color: np.ndarray,
+) -> np.ndarray:
+    colors = np.tile(skin_color[None, :], (vertex_count, 1)).astype(np.float32)
+
+    def paint(mask_name: str, color: np.ndarray | tuple[int, int, int]) -> None:
+        indices = masks.get(mask_name)
+        if indices is None:
+            return
+        valid = indices[(indices >= 0) & (indices < vertex_count)]
+        colors[valid] = np.asarray(color, dtype=np.float32)
+
+    scalp_color = blend_color(skin_color, (72, 56, 46), 0.78)
+    neck_color = blend_color(skin_color, (150, 118, 104), 0.18)
+    ear_color = blend_color(skin_color, (196, 118, 104), 0.24)
+    lip_color = blend_color(skin_color, (154, 68, 78), 0.55)
+    eyeball_color = np.asarray([226, 220, 208], dtype=np.float32)
+
+    paint("scalp", scalp_color)
+    paint("neck", neck_color)
+    paint("left_ear", ear_color)
+    paint("right_ear", ear_color)
+    paint("lips", lip_color)
+    paint("left_eyeball", eyeball_color)
+    paint("right_eyeball", eyeball_color)
+    return np.clip(colors, 0, 255).astype(np.uint8)
+
+
 def texture_path_for_run(texture_dir: Path, texture_kind: str) -> Path:
     preferred = {
         "preview_filled": "base_color_preview_filled.png",
+        "visual_completed": "base_color_visual_completed.png",
         "observed": "base_color_observed.png",
     }[texture_kind]
     preferred_path = texture_dir / preferred
@@ -204,6 +278,8 @@ def rasterize_triangle(
     depth: np.ndarray,
     uv: np.ndarray,
     depth_mode: str,
+    fallback_color: np.ndarray | None = None,
+    fallback_dark_threshold: int = 30,
 ) -> None:
     height, width = zbuffer.shape
     min_x = max(int(np.floor(points[:, 0].min())), 0)
@@ -244,6 +320,10 @@ def rasterize_triangle(
         + (w2[..., None] * uv[2])
     )
     colors = sample_texture(texture, uv_grid.reshape(-1, 2)).reshape(uv_grid.shape[0], uv_grid.shape[1], 3)
+    if fallback_color is not None:
+        dark = np.sum(colors, axis=2) < fallback_dark_threshold
+        if np.any(dark):
+            colors[dark] = fallback_color
     patch = image[min_y : max_y + 1, min_x : max_x + 1]
     patch[update] = colors[update]
     current[update] = interpolated_depth[update]
@@ -261,6 +341,8 @@ def render_mesh(
     view: str,
     valid_vertices: np.ndarray | None,
     mask_mode: str,
+    material_vertex_colors: np.ndarray | None = None,
+    fallback_dark_threshold: int = 30,
 ) -> np.ndarray:
     vertices = rotate_vertices(mesh.vertices, view)
     points, depth = project_orthographic(vertices, image_size, padding)
@@ -281,6 +363,9 @@ def render_mesh(
             faces = faces[np.any(face_valid, axis=1)]
 
     for face in faces:
+        fallback_color = None
+        if material_vertex_colors is not None:
+            fallback_color = np.rint(material_vertex_colors[face].mean(axis=0)).astype(np.uint8)
         rasterize_triangle(
             image=image,
             zbuffer=zbuffer,
@@ -289,6 +374,8 @@ def render_mesh(
             depth=depth[face],
             uv=uv[face],
             depth_mode=depth_mode,
+            fallback_color=fallback_color,
+            fallback_dark_threshold=fallback_dark_threshold,
         )
 
     return image
@@ -361,12 +448,15 @@ def render_candidate(
     texture_kind: str,
     uv_coords: np.ndarray,
     valid_vertices: np.ndarray | None,
+    flame_masks: dict[str, np.ndarray],
     image_size: int,
     padding: int,
     uv_modes: list[str],
     depth_modes: list[str],
     views: list[str],
     mask_mode: str,
+    material_fallback: bool,
+    fallback_dark_threshold: int,
     write_obj: bool,
 ) -> dict[str, Any]:
     texture_dir = private_root / "output" / person / "texture_baker" / texture_name
@@ -382,6 +472,14 @@ def render_candidate(
 
     texture_path = texture_path_for_run(texture_dir, texture_kind)
     texture = np.asarray(Image.open(texture_path).convert("RGB"), dtype=np.uint8)
+    material_vertex_colors = None
+    if material_fallback:
+        skin_color = estimate_skin_color(texture)
+        material_vertex_colors = build_material_vertex_colors(
+            mesh_data.vertices.shape[0],
+            flame_masks,
+            skin_color,
+        )
 
     image_paths: list[Path] = []
     for view in views:
@@ -398,6 +496,8 @@ def render_candidate(
                     view=view,
                     valid_vertices=valid_vertices,
                     mask_mode=mask_mode,
+                    material_vertex_colors=material_vertex_colors,
+                    fallback_dark_threshold=fallback_dark_threshold,
                 )
                 output_path = output_dir / f"{view}_{uv_mode}_depth_{depth_mode}.png"
                 Image.fromarray(image, mode="RGB").save(output_path)
@@ -429,6 +529,8 @@ def render_candidate(
         "depth_modes": depth_modes,
         "views": views,
         "mask_mode": mask_mode,
+        "material_fallback": material_fallback,
+        "fallback_dark_threshold": fallback_dark_threshold,
         "valid_vertices_count": int(valid_vertices.shape[0]) if valid_vertices is not None else None,
         "outputs": [str(path) for path in image_paths],
         "contact_sheet": str(contact_sheet),
@@ -451,10 +553,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person", action="append", default=None)
     parser.add_argument("--mesh-key", action="append", default=None)
     parser.add_argument("--texture-name", default=None)
-    parser.add_argument("--texture-kind", choices=["preview_filled", "observed"], default="preview_filled")
+    parser.add_argument("--texture-kind", choices=["preview_filled", "visual_completed", "observed"], default="preview_filled")
     parser.add_argument("--uv-coords", type=Path, default=None)
     parser.add_argument("--valid-vertices", type=Path, default=None)
+    parser.add_argument("--flame-masks", type=Path, default=None)
     parser.add_argument("--mask-mode", choices=["none", "any-valid", "all-valid"], default="none")
+    parser.add_argument("--material-fallback", action="store_true")
+    parser.add_argument("--fallback-dark-threshold", type=int, default=30)
     parser.add_argument("--image-size", type=int, default=768)
     parser.add_argument("--padding", type=int, default=60)
     parser.add_argument("--uv-mode", action="append", choices=UV_MODES, default=None)
@@ -475,8 +580,10 @@ def main() -> None:
     people = args.person or list(DEFAULT_TEXTURE_RUNS)
     uv_path = resolve_uv_coords(private_root, args.uv_coords)
     valid_path = resolve_valid_vertices(private_root, args.valid_vertices)
+    flame_masks_path = resolve_flame_masks(private_root, args.flame_masks)
     uv_coords = np.load(uv_path)
     valid_vertices = np.load(valid_path) if valid_path is not None else None
+    flame_masks = load_flame_masks(flame_masks_path)
 
     uv_modes = args.uv_mode or ["direct", "flip_y"]
     depth_modes = args.depth_mode or ["max", "min"]
@@ -506,12 +613,15 @@ def main() -> None:
                     texture_kind=args.texture_kind,
                     uv_coords=uv_coords,
                     valid_vertices=valid_vertices,
+                    flame_masks=flame_masks,
                     image_size=args.image_size,
                     padding=args.padding,
                     uv_modes=uv_modes,
                     depth_modes=depth_modes,
                     views=views,
                     mask_mode=args.mask_mode,
+                    material_fallback=args.material_fallback,
+                    fallback_dark_threshold=args.fallback_dark_threshold,
                     write_obj=args.write_obj,
                 )
             )
@@ -522,6 +632,7 @@ def main() -> None:
                 "private_root": str(private_root),
                 "uv_coords": str(uv_path),
                 "valid_vertices": str(valid_path) if valid_path is not None else None,
+                "flame_masks": str(flame_masks_path) if flame_masks_path is not None else None,
                 "renders": [
                     {
                         "person": report["person"],

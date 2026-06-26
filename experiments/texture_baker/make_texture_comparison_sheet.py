@@ -15,9 +15,12 @@ from PIL import Image, ImageDraw
 from texture_baker_loader import MeshCandidate, default_private_root, load_person
 from textured_mesh_preview import (
     DEFAULT_TEXTURE_RUNS,
-    apply_uv_mode,
+    build_material_vertex_colors,
+    estimate_skin_color,
+    load_flame_masks,
     read_ply,
     render_mesh,
+    resolve_flame_masks,
     resolve_uv_coords,
     resolve_valid_vertices,
     texture_path_for_run,
@@ -47,12 +50,23 @@ def render_cell(
     uv_mode: str,
     depth_mode: str,
     mask_mode: str,
+    flame_masks: dict[str, np.ndarray],
+    material_fallback: bool,
+    fallback_dark_threshold: int,
 ) -> Image.Image:
     mesh_data = read_ply(Path(mesh.path))
     if mesh_data.vertices.shape[0] != uv_coords.shape[0]:
         raise ValueError(
             f"UV coordinate count does not match mesh vertices for {mesh.key}: "
             f"mesh={mesh_data.vertices.shape[0]}, uv={uv_coords.shape[0]}"
+        )
+
+    material_vertex_colors = None
+    if material_fallback:
+        material_vertex_colors = build_material_vertex_colors(
+            mesh_data.vertices.shape[0],
+            flame_masks,
+            estimate_skin_color(texture),
         )
 
     image = render_mesh(
@@ -66,6 +80,8 @@ def render_cell(
         view=f"yaw_{yaw_degree:03d}",
         valid_vertices=valid_vertices,
         mask_mode=mask_mode,
+        material_vertex_colors=material_vertex_colors,
+        fallback_dark_threshold=fallback_dark_threshold,
     )
     return Image.fromarray(image, mode="RGB")
 
@@ -82,6 +98,9 @@ def make_sheet(
     uv_mode: str,
     depth_mode: str,
     mask_mode: str,
+    flame_masks: dict[str, np.ndarray],
+    material_fallback: bool,
+    fallback_dark_threshold: int,
     yaw_degrees: tuple[int, ...],
     output_path: Path,
 ) -> dict[str, Any]:
@@ -141,6 +160,9 @@ def make_sheet(
                 uv_mode=uv_mode,
                 depth_mode=depth_mode,
                 mask_mode=mask_mode,
+                flame_masks=flame_masks,
+                material_fallback=material_fallback,
+                fallback_dark_threshold=fallback_dark_threshold,
             )
             x = left_width + col * (cell + col_gap)
             sheet.paste(cell_image, (x, y))
@@ -177,12 +199,14 @@ def make_sheet(
         "uv_mode": uv_mode,
         "depth_mode": depth_mode,
         "mask_mode": mask_mode,
+        "material_fallback": material_fallback,
+        "fallback_dark_threshold": fallback_dark_threshold,
         "yaw_degrees": list(yaw_degrees),
         "rendered": rendered,
         "limitations": [
             "One-file visual comparison sheet for manual model selection.",
             "Diagnostic orthographic CPU rendering only.",
-            "Does not use fitted tracking cameras, perspective intrinsics, lighting, eye materials, or texture completion.",
+            "Does not use fitted tracking cameras, perspective intrinsics, production lighting, or validated texture completion.",
         ],
     }
     output_path.with_suffix(".json").write_text(
@@ -196,10 +220,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create one private 8-view texture/model comparison sheet.")
     parser.add_argument("--private-root", type=Path, default=None)
     parser.add_argument("--person", action="append", default=None)
-    parser.add_argument("--texture-kind", choices=["preview_filled", "observed"], default="preview_filled")
+    parser.add_argument("--texture-kind", choices=["preview_filled", "visual_completed", "observed"], default="preview_filled")
     parser.add_argument("--uv-coords", type=Path, default=None)
     parser.add_argument("--valid-vertices", type=Path, default=None)
+    parser.add_argument("--flame-masks", type=Path, default=None)
     parser.add_argument("--mask-mode", choices=["none", "any-valid", "all-valid"], default="none")
+    parser.add_argument("--material-fallback", action="store_true")
+    parser.add_argument("--fallback-dark-threshold", type=int, default=30)
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--padding", type=int, default=42)
     parser.add_argument("--uv-mode", default="flip_y")
@@ -216,8 +243,10 @@ def main() -> None:
     yaw_degrees = tuple(args.yaw_degree or DEFAULT_YAW_DEGREES)
     uv_path = resolve_uv_coords(private_root, args.uv_coords)
     valid_path = resolve_valid_vertices(private_root, args.valid_vertices)
+    flame_masks_path = resolve_flame_masks(private_root, args.flame_masks)
     uv_coords = np.load(uv_path)
     valid_vertices = np.load(valid_path) if valid_path is not None else None
+    flame_masks = load_flame_masks(flame_masks_path)
 
     output_path = args.output_path
     if output_path is None:
@@ -239,6 +268,9 @@ def main() -> None:
         uv_mode=args.uv_mode,
         depth_mode=args.depth_mode,
         mask_mode=args.mask_mode,
+        flame_masks=flame_masks,
+        material_fallback=args.material_fallback,
+        fallback_dark_threshold=args.fallback_dark_threshold,
         yaw_degrees=yaw_degrees,
         output_path=output_path,
     )
