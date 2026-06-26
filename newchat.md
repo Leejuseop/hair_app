@@ -269,6 +269,14 @@ The practical next task is the custom observed-photo face texture baker:
 6. render all three textured candidates from the same inspection cameras;
 7. decide visually and numerically whether the personal no-MICA mesh is worth carrying forward as the temporary head asset.
 
+Current loader scaffold:
+
+- `experiments/texture_baker/texture_baker_loader.py` resolves local Windows and Colab private Drive roots.
+- It currently verifies `주섭` as 3 frozen meshes plus 19 crop/UV/segmentation/landmark/crop-meta frames.
+- It currently verifies `은채` as 2 meshes plus 8 crop/UV/segmentation/landmark/crop-meta frames.
+- It only reports private paths and existence checks; it does not copy private biometric artifacts into Git.
+- Next implementation step: consume the loader output to create the first observed texture atlas, coverage map, confidence map, source-view map, and manifest.
+
 Do not start by using a generative completion model. First make the observed-photo layer reproducible. Completion for missing UV regions comes after coverage/confidence exists.
 
 Product scan update now implemented:
@@ -323,6 +331,9 @@ experiments/
     pixel3dmm_colab_v4.ipynb           # executable output-free notebook
     freeze_model_trio_for_texture.py   # private Drive model-trio freeze helper
     scoring_sheet.csv                  # experiment score template
+  texture_baker/
+    texture_baker_loader.py            # private Drive path resolver and input bundle checker
+    README.md                          # local and Colab loader smoke-test commands
 ```
 
 Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-run, and experiment README files were merged into the three detailed documents above and removed. Git history preserves the originals.
