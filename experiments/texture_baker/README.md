@@ -32,7 +32,9 @@ Expected current bundles:
 
 - `주섭`: three frozen mesh candidates from
   `output/주섭/models/model_trio_for_texture/model_trio_manifest.json`.
-- `은채`: two mesh candidates from `output/은채/models/models_manifest.json`.
+- `은채`: three frozen mesh candidates from
+  `output/은채/models/model_trio_for_texture/model_trio_manifest.json`:
+  `raw_flame_template`, `base_flame2023`, and `personal_no_mica`.
 
 The loader accepts both Colab paths such as
 `/content/drive/MyDrive/hair_app/...` and local Windows paths such as
@@ -175,3 +177,9 @@ The preview renderer is intentionally simple: CPU orthographic rasterization,
 no lighting model, no fitted tracking cameras, and no perspective intrinsics.
 For the current Pixel3DMM UV atlas, `--uv-mode flip_y --depth-mode max` is the
 visually correct orientation.
+
+Eunchae's current private model trio was normalized to match the Juseop
+comparison shape: a shared raw FLAME template baseline, the existing
+`base_flame2023` candidate, and the no-MICA canonical candidate. The generated
+PLY copies and `model_trio_manifest.json` are private Drive artifacts, not Git
+files.

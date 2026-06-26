@@ -276,13 +276,13 @@ Current loader and baker scaffold:
 
 - `experiments/texture_baker/texture_baker_loader.py` resolves local Windows and Colab private Drive roots.
 - It currently verifies `주섭` as 3 frozen meshes plus 19 crop/UV/segmentation/landmark/crop-meta frames.
-- It currently verifies `은채` as 2 meshes plus 8 crop/UV/segmentation/landmark/crop-meta frames.
+- It currently verifies `은채` as 3 frozen meshes plus 8 crop/UV/segmentation/landmark/crop-meta frames after adding a private `model_trio_for_texture`: shared raw FLAME template, existing `base_flame2023`, and `personal_no_mica`.
 - It only reports private paths and existence checks; it does not copy private biometric artifacts into Git.
 - `experiments/texture_baker/observed_texture_baker.py` now creates the first observed texture atlas, coverage map, confidence map, source-view map, and manifest from crop RGB plus Pixel3DMM UV PNG plus segmentation labels.
 - `observed_v6_primary00000_faceonly_secondary0_preview` for `주섭` uses frame `00000` as central-face primary, weighted mode, face-label whitelist, mask erosion, and conservative preview fill. It is cleaner and less ghosted than `observed_v0_preview`, with lower coverage.
 - `observed_v6_primary00004_centralface_secondary0_preview` for `은채` uses frame `00004` as a cleaner frontal primary and temporarily includes only central face labels `2,6,7,8,9,10,12,13`; this avoids the headband/hair-heavy `00000` primary.
 - `experiments/texture_baker/textured_mesh_preview.py` renders private quick previews by combining the observed atlas, Pixel3DMM `flame_uv_coords.npy`, and the frozen PLY meshes. Current correct orientation is `--uv-mode flip_y --depth-mode max`.
-- Local private Drive mesh previews were generated for all current candidates under `mesh_texture_preview/<mesh-key>/contact_sheet.png`: `주섭` raw FLAME, mean-shape control, personal no-MICA; `은채` base FLAME2023 and canonical.
+- Local private Drive mesh previews were generated for all current candidates under `mesh_texture_preview/<mesh-key>/contact_sheet.png`: `주섭` raw FLAME, mean-shape control, personal no-MICA; `은채` raw FLAME, base FLAME2023, personal no-MICA.
 - These atlas PNGs and mesh renders are still private debug/runtime artifacts under Drive. They are not final skin textures.
 - Remaining baker work before a polished texture: fitted-camera/perspective rendering, view-angle/pose weighting, eye/mouth handling, occluder cleanup, true triangle rasterization, seam/texel dilation beyond preview splat, and later completion for missing UV regions.
 

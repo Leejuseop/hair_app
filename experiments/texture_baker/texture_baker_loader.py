@@ -152,7 +152,7 @@ def existing_path_or_sibling(path: Path | None, manifest_dir: Path) -> Path | No
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as file:
+    with path.open("r", encoding="utf-8-sig") as file:
         return json.load(file)
 
 
