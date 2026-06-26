@@ -111,11 +111,12 @@ def make_sheet(
     fallback_confidence_threshold: int,
     eye_overlay: bool,
     yaw_degrees: tuple[int, ...],
+    texture_name_override: str | None,
     output_path: Path,
 ) -> dict[str, Any]:
     rows: list[tuple[str, MeshCandidate, str, Path]] = []
     for person in people:
-        texture_name = DEFAULT_TEXTURE_RUNS[person]
+        texture_name = texture_name_override or DEFAULT_TEXTURE_RUNS[person]
         texture_dir = private_root / "output" / person / "texture_baker" / texture_name
         texture_path = texture_path_for_run(texture_dir, texture_kind)
         bundle = load_person(person, private_root=private_root)
@@ -221,6 +222,7 @@ def make_sheet(
         "fallback_confidence_threshold": fallback_confidence_threshold,
         "eye_overlay": eye_overlay,
         "yaw_degrees": list(yaw_degrees),
+        "texture_name_override": texture_name_override,
         "rendered": rendered,
         "limitations": [
             "One-file visual comparison sheet for manual model selection.",
@@ -240,6 +242,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--private-root", type=Path, default=None)
     parser.add_argument("--person", action="append", default=None)
     parser.add_argument("--texture-kind", choices=["preview_filled", "visual_completed", "observed"], default="preview_filled")
+    parser.add_argument("--texture-name", default=None)
     parser.add_argument("--uv-coords", type=Path, default=None)
     parser.add_argument("--valid-vertices", type=Path, default=None)
     parser.add_argument("--flame-masks", type=Path, default=None)
@@ -295,6 +298,7 @@ def main() -> None:
         fallback_confidence_threshold=args.fallback_confidence_threshold,
         eye_overlay=args.eye_overlay,
         yaw_degrees=yaw_degrees,
+        texture_name_override=args.texture_name,
         output_path=output_path,
     )
 

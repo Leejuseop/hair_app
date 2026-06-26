@@ -261,9 +261,10 @@ Do not resurrect crop v1/v2/v3 or old notebooks unless a named A/B test requires
 
 Texture Baker v1 is implemented and pushed, but the user rejected the visual
 quality as far below product standard. Treat v1 as a diagnostic milestone only,
-not as the product texture path. The next task is Texture Baker v2: a
-camera-aware, front-focused texture pipeline plus later per-user
-render-to-selfie optimization.
+not as the product texture path. Texture Baker v2 hybrid is now implemented:
+it combines frame quality scoring, fitted-camera projection diagnostics,
+z-buffer visibility, confidence/source maps, color normalization, material
+fallback, and Pixel3DMM UV correspondence detail for the central face.
 
 Product target:
 
@@ -301,6 +302,16 @@ Immediate implementation order:
 This is initially explicit optimization logic for one user at a time, not
 training a neural network. A network can later learn to predict better
 texture/shape updates faster and use the explicit optimization as refinement.
+
+2026-06-26 v2 status update:
+
+- `experiments/texture_baker/evidence_quality_report.py` scores frames for v2 bake decisions and writes private `quality_v2` reports.
+- `experiments/texture_baker/texture_baker_v2.py` creates the current hybrid v2 atlas under `observed_v2_camera_visibility_front45_preview`.
+- Latest local coverage was about `33.5%` for Juseop and `30.3%` for Eunchae.
+- Current v2 private review sheet: `output/_comparison/face_texture_model_comparison_front45_v2.png` plus JSON manifest beside it.
+- It contains 6 model-candidate rows at yaw `-45,-30,-15,0,15,30,45`.
+- v2 is easier to inspect than v1 because black holes are reduced, but it still shows forehead/hair/headwear contamination, color seams, and non-final diagnostic eyes.
+- Do not choose a final base mesh winner from v2 yet. The next concrete task is completion/occlusion cleanup: remove hair/headwear leakage, fill low-confidence forehead/scalp/neck with plausible skin material, improve eyes, then return to fitted-camera selfie comparison.
 
 Current loader and baker scaffold:
 
@@ -394,4 +405,4 @@ Former standalone mobile, scan, base-asset, hair, preprocessing-contract, live-r
 
 Short answer:
 
-> We have a working app scan foundation, offline Pixel3DMM geometry artifacts, and three frozen mesh candidates: raw FLAME, fitted mean-shape control, and personal no-MICA. Texture Baker v1 can attach observed photo texture and generate comparison sheets, but the quality is diagnostic only and not usable. The immediate next move is Texture Baker v2: camera-aware, front-focused texture baking from ordinary selfies plus app scan frames, followed by per-user render-to-selfie refinement.
+> We have a working app scan foundation, offline Pixel3DMM geometry artifacts, and three frozen mesh candidates: raw FLAME, fitted mean-shape control, and personal no-MICA. Texture Baker v2 hybrid can now score frames, bake observed face texture, and generate a front-to-45-degree comparison sheet for Juseop/Eunchae. It is better for review than v1, but still not product-quality because hair/headwear contamination, color seams, completion, and final eyes remain unsolved. The next move is completion/occlusion cleanup, then fitted-camera selfie comparison.

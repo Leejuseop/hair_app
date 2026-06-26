@@ -634,7 +634,55 @@ training. Later, if enough examples exist, a network can learn to predict good
 texture/shape updates faster and use the explicit optimization only as a final
 refinement.
 
-## 19. 앞으로 기록을 추가하는 형식
+## 19. 2026-06-26 Texture Baker v2 hybrid front45 run
+
+Texture Baker v2 was implemented after the v1 visual quality reset. It keeps
+the input policy unchanged: ordinary selfies plus app scan frames, with no
+stricter user capture requirements.
+
+What changed:
+
+- added `experiments/texture_baker/evidence_quality_report.py` for blur, face
+  size, pose, exposure, eye/mouth state, landmark, segmentation, occlusion, and
+  skin-reference scoring;
+- added `experiments/texture_baker/texture_baker_v2.py` for a hybrid observed
+  atlas with fitted-camera projection diagnostics, z-buffer visibility,
+  confidence/source maps, color normalization, material fallback compatibility,
+  and Pixel3DMM UV correspondence detail for the central face;
+- added `--texture-name` to `make_texture_comparison_sheet.py` so review sheets
+  can point at a specific private texture run;
+- changed preview defaults to `observed_v2_camera_visibility_front45_preview`.
+
+Private outputs from the current local run:
+
+```text
+output/<person>/texture_baker/observed_v2_camera_visibility_front45_preview/
+output/_comparison/face_texture_model_comparison_front45_v2.png
+output/_comparison/face_texture_model_comparison_front45_v2.json
+```
+
+Observed result:
+
+- coverage improved versus the first pure camera-projection attempt: roughly
+  `33.5%` for Juseop and `30.3%` for Eunchae in the latest local run;
+- front-to-45-degree review renders are easier to inspect because black holes
+  are largely hidden by material/confidence fallback;
+- central face identity is more readable than v1/v2-camera-only, but still far
+  below product quality;
+- Juseop still shows strong lighting/color seams and forehead artifacts;
+- Eunchae still shows forehead/headband or hair contamination;
+- diagnostic eye overlay is visible but not final-quality eye rendering.
+
+Decision:
+
+- keep all three base mesh candidates active;
+- do not choose a mesh winner from this sheet yet;
+- next work should focus on completion/occlusion cleanup: remove hair/headwear
+  leakage from observed skin, fill low-confidence forehead/scalp/neck with
+  plausible skin material, improve eyes, then revisit fitted-camera
+  selfie-render comparison.
+
+## 20. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.
 

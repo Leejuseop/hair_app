@@ -27,8 +27,8 @@ from texture_baker_loader import MeshCandidate, default_private_root, load_perso
 
 
 DEFAULT_TEXTURE_RUNS = {
-    "\uc8fc\uc12d": "observed_v6_primary00000_faceonly_secondary0_preview",
-    "\uc740\ucc44": "observed_v15_primary00004_wideface_strict_occlusion_preview",
+    "\uc8fc\uc12d": "observed_v2_camera_visibility_front45_preview",
+    "\uc740\ucc44": "observed_v2_camera_visibility_front45_preview",
 }
 DEFAULT_UV_ASSET = "shared/models/pixel3dmm_assets/flame_uv_coords.npy"
 DEFAULT_VALID_VERTS_ASSET = (

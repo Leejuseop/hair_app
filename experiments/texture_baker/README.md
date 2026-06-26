@@ -299,3 +299,66 @@ Planned v2 stages:
 This is initially per-user optimization logic, not training a neural network.
 Later, accumulated optimization results can train a network that predicts a
 better initial texture/shape update and reduces runtime.
+
+## 2026-06-26 Texture Baker v2 Hybrid Run
+
+Implemented v2 code:
+
+- `evidence_quality_report.py`: scores each private frame for blur, face size,
+  pose, exposure, eye/mouth state, landmark stability, segmentation quality,
+  occlusion, and skin-color reference.
+- `texture_baker_v2.py`: writes a camera-aware/hybrid observed atlas. It keeps
+  fitted-camera projection and z-buffer visibility as a diagnostic/fill source,
+  but also uses Pixel3DMM UV correspondence maps for central face detail because
+  the current checkpoint camera crop calibration is still too rough for a pure
+  mesh-projection bake.
+- `make_texture_comparison_sheet.py --texture-name`: allows explicit texture
+  run selection for one-file review sheets.
+- `textured_mesh_preview.py`: defaults now point both people to
+  `observed_v2_camera_visibility_front45_preview`.
+
+Current private v2 outputs:
+
+```text
+output/Juseop-or-Korean-person-name/texture_baker/observed_v2_camera_visibility_front45_preview/
+output/Eunchae-or-Korean-person-name/texture_baker/observed_v2_camera_visibility_front45_preview/
+output/_comparison/face_texture_model_comparison_front45_v2.png
+output/_comparison/face_texture_model_comparison_front45_v2.json
+```
+
+Local command used for the current front-focused sheet:
+
+```powershell
+python experiments\texture_baker\make_texture_comparison_sheet.py `
+  --private-root "G:\내 드라이브\hair_app" `
+  --texture-name observed_v2_camera_visibility_front45_preview `
+  --texture-kind preview_filled `
+  --image-size 512 `
+  --padding 58 `
+  --uv-mode flip_y `
+  --depth-mode max `
+  --mask-mode none `
+  --material-fallback `
+  --fallback-confidence-threshold 5 `
+  --eye-overlay `
+  --yaw-degree -45 --yaw-degree -30 --yaw-degree -15 `
+  --yaw-degree 0 `
+  --yaw-degree 15 --yaw-degree 30 --yaw-degree 45 `
+  --output-path "G:\내 드라이브\hair_app\output\_comparison\face_texture_model_comparison_front45_v2.png"
+```
+
+Observed result:
+
+- black holes are much less distracting in review renders because material
+  fallback and confidence fallback cover low-observation regions;
+- front/near-front face identity is more readable than the first pure camera
+  v2 attempt;
+- Juseop still has strong lighting/color seams on forehead and face;
+- Eunchae still has forehead/headband or hair contamination;
+- diagnostic eye overlay makes eyes visible but is not product-quality;
+- the base mesh winner still should not be chosen purely from this sheet.
+
+Next texture work should focus on completion/occlusion cleanup, not simply more
+v1-style UV splat tuning: remove hair/headwear from observed skin regions,
+replace low-confidence forehead/scalp/neck with plausible skin material, improve
+eye assets, and then return to fitted-camera selfie comparison.
