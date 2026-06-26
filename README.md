@@ -123,9 +123,8 @@ private_outputs/
 - `newchat.md`: compact handoff for the next chat.
 - `AGENTS.md`: working rules for coding agents.
 - `docs/10_3d_hair_app_master_plan.md`: full product/system plan.
-- `docs/history.md`: chronological decisions and experiment log.
-- `docs/pixel3dmm_v4.md`: Pixel3DMM/FLAME research baseline.
-- `experiments/texture_baker/README.md`: Texture Baker experiment history.
+- `docs/history.md`: chronological decisions, detailed experiment log, and
+  archived old-engine docs for Pixel3DMM/FLAME and Texture Baker.
 - `experiments/facebuilder_bridge/README.md`: current FaceBuilder automation
   bridge and commands.
 

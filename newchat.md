@@ -9,8 +9,7 @@ Current source of truth:
 - product/system plan: `docs/10_3d_hair_app_master_plan.md`
 - chronological log: `docs/history.md`
 - current head-engine bridge: `experiments/facebuilder_bridge/README.md`
-- older Pixel3DMM baseline: `docs/pixel3dmm_v4.md`
-- older Texture Baker experiments: `experiments/texture_baker/README.md`
+- older Pixel3DMM and Texture Baker details: archived inside `docs/history.md`
 
 ## 1. Resume Checklist
 
