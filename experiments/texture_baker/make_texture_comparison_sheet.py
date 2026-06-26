@@ -241,7 +241,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create one private 8-view texture/model comparison sheet.")
     parser.add_argument("--private-root", type=Path, default=None)
     parser.add_argument("--person", action="append", default=None)
-    parser.add_argument("--texture-kind", choices=["preview_filled", "visual_completed", "observed"], default="preview_filled")
+    parser.add_argument(
+        "--texture-kind",
+        choices=["preview_filled", "visual_completed", "cleanup_completed", "observed"],
+        default="preview_filled",
+    )
     parser.add_argument("--texture-name", default=None)
     parser.add_argument("--uv-coords", type=Path, default=None)
     parser.add_argument("--valid-vertices", type=Path, default=None)

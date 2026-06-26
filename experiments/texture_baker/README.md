@@ -362,3 +362,53 @@ Next texture work should focus on completion/occlusion cleanup, not simply more
 v1-style UV splat tuning: remove hair/headwear from observed skin regions,
 replace low-confidence forehead/scalp/neck with plausible skin material, improve
 eye assets, and then return to fitted-camera selfie comparison.
+
+## 2026-06-26 Cleanup/Completion Pass
+
+Implemented `texture_cleanup_completion.py` as a post-process over the v2 atlas.
+It keeps the raw observed texture and confidence map intact, then writes a
+separate review texture:
+
+```text
+base_color_cleanup_completed.png
+cleanup_removed_mask.png
+completion_replaced_mask.png
+base_color_material_reference.png
+cleanup_completion_manifest.json
+```
+
+Current local command:
+
+```powershell
+python experiments\texture_baker\texture_cleanup_completion.py `
+  --private-root "G:\내 드라이브\hair_app" `
+  --person 주섭 `
+  --person 은채 `
+  --texture-name observed_v2_camera_visibility_front45_preview `
+  --save-debug-masks
+```
+
+Current cleanup review sheet:
+
+```text
+output/_comparison/face_texture_model_comparison_front45_v2_cleanup.png
+output/_comparison/face_texture_model_comparison_front45_v2_cleanup.json
+```
+
+What this pass does:
+
+- removes low-confidence or skin-color-outlier texels from skin/scalp/neck
+  review use;
+- replaces unobserved or unreliable forehead, scalp, neck, boundary, and ear
+  areas with simple skin-region materials;
+- preserves central observed face detail where confidence/color checks allow it;
+- keeps lips/eye regions separate so they can be handled by dedicated assets.
+
+Current result:
+
+- black holes and obvious headwear/hair contamination are reduced;
+- hidden or low-confidence scalp/neck is now plausible but flat;
+- this is better for model inspection than the raw v2 sheet, but still not
+  product-quality;
+- the remaining quality bottlenecks are central face color seams, final eye
+  assets, lighting normalization, and later render-to-selfie refinement.

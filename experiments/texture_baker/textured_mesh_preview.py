@@ -281,6 +281,7 @@ def texture_path_for_run(texture_dir: Path, texture_kind: str) -> Path:
     preferred = {
         "preview_filled": "base_color_preview_filled.png",
         "visual_completed": "base_color_visual_completed.png",
+        "cleanup_completed": "base_color_cleanup_completed.png",
         "observed": "base_color_observed.png",
     }[texture_kind]
     preferred_path = texture_dir / preferred
@@ -658,7 +659,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person", action="append", default=None)
     parser.add_argument("--mesh-key", action="append", default=None)
     parser.add_argument("--texture-name", default=None)
-    parser.add_argument("--texture-kind", choices=["preview_filled", "visual_completed", "observed"], default="preview_filled")
+    parser.add_argument(
+        "--texture-kind",
+        choices=["preview_filled", "visual_completed", "cleanup_completed", "observed"],
+        default="preview_filled",
+    )
     parser.add_argument("--uv-coords", type=Path, default=None)
     parser.add_argument("--valid-vertices", type=Path, default=None)
     parser.add_argument("--flame-masks", type=Path, default=None)

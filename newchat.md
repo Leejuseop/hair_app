@@ -312,6 +312,9 @@ texture/shape updates faster and use the explicit optimization as refinement.
 - It contains 6 model-candidate rows at yaw `-45,-30,-15,0,15,30,45`.
 - v2 is easier to inspect than v1 because black holes are reduced, but it still shows forehead/hair/headwear contamination, color seams, and non-final diagnostic eyes.
 - Do not choose a final base mesh winner from v2 yet. The next concrete task is completion/occlusion cleanup: remove hair/headwear leakage, fill low-confidence forehead/scalp/neck with plausible skin material, improve eyes, then return to fitted-camera selfie comparison.
+- Cleanup/completion pass now exists at `experiments/texture_baker/texture_cleanup_completion.py`.
+- It writes `base_color_cleanup_completed.png`, `cleanup_removed_mask.png`, `completion_replaced_mask.png`, and `cleanup_completion_manifest.json` beside each private v2 atlas.
+- Current cleanup sheet: `output/_comparison/face_texture_model_comparison_front45_v2_cleanup.png`. It reduces black holes and obvious headwear/hair leakage, but hidden scalp/neck is intentionally flatter material and central face color seams still remain.
 
 Current loader and baker scaffold:
 

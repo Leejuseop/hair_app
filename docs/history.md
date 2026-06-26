@@ -682,6 +682,21 @@ Decision:
   plausible skin material, improve eyes, then revisit fitted-camera
   selfie-render comparison.
 
+Follow-up cleanup/completion pass:
+
+- added `experiments/texture_baker/texture_cleanup_completion.py`;
+- it preserves `base_color_observed.png` and writes
+  `base_color_cleanup_completed.png` plus cleanup/replacement masks beside the
+  private v2 atlas;
+- it removes low-confidence or color-outlier skin/scalp/neck texels from review
+  use and replaces unobserved forehead, scalp, neck, boundary, and ear regions
+  with simple skin materials;
+- generated
+  `output/_comparison/face_texture_model_comparison_front45_v2_cleanup.png`;
+- the cleanup sheet reduces black holes and obvious headwear/hair leakage, but
+  it also makes hidden scalp/neck flatter. Central face color seams, real eye
+  assets, and fitted-camera selfie comparison remain unsolved.
+
 ## 20. 앞으로 기록을 추가하는 형식
 
 새로운 중요한 실험이나 방향 전환이 생기면 다음 형식으로 이 문서에 추가한다.
