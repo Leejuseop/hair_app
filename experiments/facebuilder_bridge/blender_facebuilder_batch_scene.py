@@ -39,6 +39,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--export-obj", action="store_true")
     parser.add_argument("--export-glb", action="store_true")
     parser.add_argument("--render-review", action="store_true")
+    parser.add_argument("--use-cleanup-texture", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -54,7 +55,7 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _safe_call(label: str, func: Any) -> dict[str, Any]:
@@ -125,6 +126,33 @@ def _set_camera_bake_enabled(camera: Any, enabled: bool) -> None:
         pass
 
 
+def _apply_texture_image_override(headnum: int, camnum: int, texture_path: Path) -> dict[str, Any]:
+    from bl_ext.user_default.keentools.addon_config import fb_settings
+    from bl_ext.user_default.keentools.facebuilder.fbloader import FBLoader
+
+    settings = fb_settings()
+    head = settings.get_head(headnum)
+    if head is None:
+        return {"ok": False, "reason": "head_not_found"}
+    camera = head.get_camera(camnum)
+    if camera is None:
+        return {"ok": False, "reason": "camera_not_found"}
+    original_image = camera.cam_image
+    original_size = list(original_image.size) if original_image else None
+    image = bpy.data.images.load(str(texture_path), check_existing=True)
+    new_size = list(image.size)
+    FBLoader.add_background_to_camera(headnum, camnum, image)
+    return {
+        "ok": True,
+        "texture_path": _safe_path(texture_path),
+        "original_image": original_image.name if original_image else None,
+        "original_size": original_size,
+        "new_image": image.name,
+        "new_size": new_size,
+        "same_size": original_size == new_size,
+    }
+
+
 def _align_camera(headnum: int, camnum: int) -> dict[str, Any]:
     from bl_ext.user_default.keentools.addon_config import fb_settings
     from bl_ext.user_default.keentools.facebuilder.fbloader import FBLoader
@@ -178,6 +206,8 @@ def _align_camera(headnum: int, camnum: int) -> dict[str, Any]:
         fb.add_preset_pins_and_solve(keyframe)
         update_head_mesh_non_neutral(fb, head)
         FBLoader.update_camera_pins_count(headnum, camnum)
+        FBLoader.update_all_camera_positions(headnum)
+        FBLoader.update_all_camera_focals(headnum)
 
     after_solve_pins = fb.pins_count(keyframe) if fb.is_key_at(keyframe) else 0
     ok = bool(pose_ok and after_solve_pins > 0)
@@ -293,39 +323,48 @@ def _cleanup_baked_texture(raw_path: Path, cleanup_path: Path, report_path: Path
     else:
         skin_color = np.array([0.62, 0.46, 0.38], dtype=np.float32)
 
-    # Heuristic bald-head cleanup. It targets only the most damaging non-skin
-    # atlas texels: empty texels, large near-black blobs, and strongly colored
-    # clothing/background leaks. Small dark details such as eyebrows and pupils
-    # should survive this pass; semantic matting is still future work.
-    raw_dark_mask = (alpha > 0.1) & (luma < 0.27) & (saturation < 0.92)
+    # Conservative bald-head cleanup. It targets only the most damaging large
+    # non-skin atlas regions. It intentionally does not fill the whole empty
+    # atlas background because that made previous review textures misleadingly
+    # brown and over-processed.
+    raw_dark_mask = (alpha > 0.1) & (luma < 0.20) & (saturation < 0.82)
     dark_hair_mask = connected_component_mask(
         raw_dark_mask,
-        min_pixels=max(120, int(width * height * 0.00018)),
-        border_min_pixels=max(36, int(width * height * 0.000045)),
+        min_pixels=max(520, int(width * height * 0.00042)),
+        border_min_pixels=max(180, int(width * height * 0.00013)),
     )
     not_red_feature = rgb[:, :, 0] < np.maximum(rgb[:, :, 1], rgb[:, :, 2]) * 1.16
     raw_color_leak_mask = (
         (alpha > 0.1)
-        & (luma < 0.72)
-        & (saturation > 0.42)
+        & (luma < 0.68)
+        & (saturation > 0.55)
         & ~skin_mask
         & not_red_feature
     )
     color_leak_mask = connected_component_mask(
         raw_color_leak_mask,
-        min_pixels=max(90, int(width * height * 0.00012)),
-        border_min_pixels=max(28, int(width * height * 0.000035)),
+        min_pixels=max(420, int(width * height * 0.00034)),
+        border_min_pixels=max(140, int(width * height * 0.00010)),
     )
     empty_mask = alpha < 0.05
-    replace_mask = dark_hair_mask | color_leak_mask | empty_mask
+    replace_mask = dark_hair_mask | color_leak_mask
 
     cleaned = rgba.copy()
     # Add a gentle luma ramp from the original texture so the fallback does not
     # become one flat sticker.
     tone = np.clip(luma[..., None] * 0.35 + 0.78, 0.68, 1.08)
     replacement = np.clip(skin_color.reshape((1, 1, 3)) * tone, 0.0, 1.0)
-    cleaned[:, :, :3][replace_mask] = replacement[replace_mask]
-    cleaned[:, :, 3][replace_mask] = 1.0
+    if np.count_nonzero(replace_mask) > 0:
+        try:
+            import cv2  # type: ignore
+
+            feather = cv2.GaussianBlur(replace_mask.astype(np.float32), (0, 0), sigmaX=1.8)
+            feather = np.clip(feather[..., None], 0.0, 1.0)
+            cleaned[:, :, :3] = cleaned[:, :, :3] * (1.0 - feather) + replacement * feather
+            cleaned[:, :, 3] = np.maximum(cleaned[:, :, 3], feather[:, :, 0])
+        except Exception:
+            cleaned[:, :, :3][replace_mask] = replacement[replace_mask]
+            cleaned[:, :, 3][replace_mask] = 1.0
 
     out = bpy.data.images.new("HairApp_BaldCleanup_Texture", width=width, height=height, alpha=True)
     out.pixels.foreach_set(cleaned.reshape(-1))
@@ -336,7 +375,7 @@ def _cleanup_baked_texture(raw_path: Path, cleanup_path: Path, report_path: Path
     out.save()
 
     report = {
-        "schema_version": "hair_app_bald_texture_cleanup_v1",
+        "schema_version": "hair_app_bald_texture_cleanup_v2_conservative",
         "raw_texture": _safe_path(raw_path),
         "cleanup_texture": _safe_path(cleanup_path),
         "width": width,
@@ -353,7 +392,8 @@ def _cleanup_baked_texture(raw_path: Path, cleanup_path: Path, report_path: Path
         "notes": [
             "heuristic_cleanup_not_final_semantic_matting",
             "preserves raw texture separately",
-            "used for current review material and GLB export",
+            "empty atlas background is counted but not replaced",
+            "used for material only when --use-cleanup-texture is set",
         ],
     }
     _write_json(report_path, report)
@@ -527,9 +567,43 @@ def _render_review(head_obj: Any, output_dir: Path) -> dict[str, Any]:
 
 
 def _add_camera_candidate(headnum: int, image_path: Path) -> Any:
+    from bl_ext.user_default.keentools.addon_config import fb_settings
     from bl_ext.user_default.keentools.facebuilder.fbloader import FBLoader
+    from bl_ext.user_default.keentools.facebuilder.utils.exif_reader import (
+        auto_setup_camera_from_exif,
+        read_exif_to_camera,
+    )
 
-    return FBLoader.add_new_camera_with_image(headnum, str(image_path))
+    camera = FBLoader.add_new_camera_with_image(headnum, str(image_path))
+
+    # Match FaceBuilder's multi-image UI import path. TextureBuilder depends on
+    # these per-photo projection values, even when the solved head mesh looks
+    # nearly identical after auto-align.
+    settings = fb_settings()
+    head = settings.get_head(headnum)
+    camnum = len(head.cameras) - 1 if head else -1
+    if camnum >= 0:
+        try:
+            read_exif_to_camera(headnum, camnum, str(image_path))
+            camera.orientation = camera.exif.orientation
+        except RuntimeError:
+            pass
+
+        try:
+            auto_setup_camera_from_exif(camera)
+        except Exception:
+            pass
+
+        fb = FBLoader.get_builder()
+        mode = fb.focal_length_estimation_mode()
+        if mode in ["FB_ESTIMATE_VARYING_FOCAL_LENGTH", "FB_ESTIMATE_STATIC_FOCAL_LENGTH"]:
+            fb.set_focal_length_at(
+                camera.get_keyframe(),
+                camera.get_focal_length_in_pixels_coef() * camera.focal,
+            )
+        FBLoader.center_geo_camera_projection(headnum, camnum)
+
+    return camera
 
 
 def main() -> int:
@@ -544,6 +618,7 @@ def main() -> int:
         "created_at_unix": time.time(),
         "ok": False,
         "version": manifest.get("version"),
+        "version_config": manifest.get("version_config", {}),
         "person": manifest.get("person"),
         "input_manifest": _safe_path(args.input_manifest),
         "output_dir": _safe_path(output_dir),
@@ -607,10 +682,26 @@ def main() -> int:
             align_value = align_result.get("value") if align_result.get("ok") else {}
             if isinstance(align_value, dict) and align_value.get("ok") and not candidate.get("allow_texture_bake", True):
                 _set_camera_bake_enabled(camera, False)
+            texture_override = None
+            if (
+                isinstance(align_value, dict)
+                and align_value.get("ok")
+                and candidate.get("allow_texture_bake", True)
+                and candidate.get("texture_path")
+            ):
+                texture_override = _safe_call(
+                    f"texture_image_override_{camnum}",
+                    lambda candidate_path=Path(candidate["texture_path"]), camnum=camnum: _apply_texture_image_override(
+                        headnum,
+                        camnum,
+                        candidate_path,
+                    ),
+                )
             attempt = {
                 "candidate": candidate,
                 "camera": _camera_info(camera, camnum) if camera else None,
                 "align": align_result,
+                "texture_override": texture_override,
                 "allow_texture_bake": bool(candidate.get("allow_texture_bake", True)),
             }
             item_result["attempts"].append(attempt)
@@ -660,7 +751,7 @@ def main() -> int:
         and isinstance(result["texture_cleanup"].get("value"), dict)
         and result["texture_cleanup"]["value"].get("ok")
     )
-    material_texture_path = cleanup_texture_path if cleanup_ok else texture_path
+    material_texture_path = cleanup_texture_path if args.use_cleanup_texture and cleanup_ok else texture_path
 
     head_obj = _head_object(settings, headnum)
     result["postprocess"] = _safe_call(
@@ -702,7 +793,7 @@ def main() -> int:
         "texture_cleanup_ok": bool(cleanup_ok),
         "obj_ok": bool(result["exports"].get("obj", {}).get("ok")),
         "glb_ok": bool(isinstance(glb_value, dict) and glb_value.get("ok")),
-        "review_ok": bool(result.get("review", {}).get("ok")),
+        "review_ok": bool((result.get("review") or {}).get("ok")),
     }
     result["ok"] = bool(aligned_count > 0)
 

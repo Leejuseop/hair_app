@@ -14,14 +14,14 @@ is a believable personal head for hairstyle preview:
 
 ## Current Direction
 
-As of 2026-06-27, the main face/head engine candidate is:
+As of 2026-06-28, the main face/head engine candidate is:
 
 ```text
 ordinary selfies + app scan frames
-  -> photo/frame scoring and filtering
   -> automated FaceBuilder/KeenTools solve inside headless Blender
-  -> private bald-head mesh and texture
-  -> Hair App post-processing
+  -> private raw FaceBuilder mesh and texture
+  -> optional texture-input preprocessing
+  -> optional texture-output post-processing
   -> mobile GLB + review sheets
 ```
 
@@ -34,9 +34,9 @@ far below product standard.
 The current working hypothesis is that FaceBuilder gives a stronger automated
 geometry-and-texture starting point, while Hair App should own:
 
-- input quality scoring;
-- automatic retry/reject logic around FaceBuilder alignment;
-- post-processing of the exported bald head;
+- camera/projection-faithful FaceBuilder automation;
+- texture-input preprocessing before bake;
+- texture-output post-processing after bake;
 - hairline/scalp preparation;
 - hair fitting, collision, and GLB export;
 - privacy-safe storage and deletion.
@@ -57,12 +57,16 @@ machine:
 - A new empty Blender scene can be created from a private photo folder, add
   photos as FaceBuilder cameras, auto-align at least one photo, bake a texture,
   and save a private `.blend`.
-- FaceBuilder v1/v2/v3 comparison batches now run for private Juseop and
-  Eunchae photo folders, write private Drive outputs, export OBJ/GLB, and build
+- FaceBuilder texture automation now matches the Blender UI `Create Texture`
+  path for the tested Juseop 10-photo case. The old automated raw bake differed
+  from the manual texture by mean RGB error about `18.14`; after restoring the
+  UI-equivalent camera/projection/focal updates, the difference fell to about
+  `0.12`.
+- The old FaceBuilder v1/v2/v3 outputs were retired because they were generated
+  before the texture-bake parity fix and with an over-aggressive cleanup pass.
+- New private FaceBuilder v1/v2/v3/v4 batches run for Juseop and Eunchae,
+  write Drive outputs, export OBJ/GLB, and build individual plus cross-version
   review sheets.
-- The latest v3 batch uses photo quality scoring, face-centered alignment
-  candidates, and a conservative texture gate so only frontal/color-clean crops
-  contribute to texture while side/profile photos can still help alignment.
 
 Private test outputs are written under `private_outputs/` and are ignored by
 Git. Current FaceBuilder version outputs are written under the private Drive
@@ -72,6 +76,8 @@ layout:
 <drive_root>/output/facebuilder_v1/<person>/
 <drive_root>/output/facebuilder_v2/<person>/
 <drive_root>/output/facebuilder_v3/<person>/
+<drive_root>/output/facebuilder_v4/<person>/
+<drive_root>/output/_comparison/facebuilder_v1_v4/
 <drive_root>/output/facebuilder_versions_summary.md
 ```
 
@@ -94,7 +100,7 @@ Research-side implementation includes:
 - Pixel3DMM V4 research notebook and freeze utilities;
 - Texture Baker v1/v2/v3 experiments and review sheets;
 - FaceBuilder bridge scripts for export inspection, headless smoke testing,
-  scene probing, empty-scene automation, v1/v2/v3 batch comparison, private
+  scene probing, empty-scene automation, v1/v2/v3/v4 batch comparison, private
   review outputs, and GLB export.
 
 ## Not Implemented Yet
@@ -144,14 +150,18 @@ private_outputs/
 
 ## Next Immediate Work
 
-1. Review the private v1/v2/v3 FaceBuilder sheets and GLBs.
-2. Build semantic post-processing around the FaceBuilder output:
+1. Review the private v1/v2/v3/v4 FaceBuilder sheets and GLBs.
+2. Replace the current heuristic texture-input preprocessing with semantic
+   masks. The first same-size preprocessed-photo pass reduces some background
+   and hair leakage but creates visible neutral-color patches, so it is not yet
+   product quality.
+3. Build semantic post-processing around the FaceBuilder output:
    scalp/hair/skin/neck/ear/eye/mouth/occlusion masks, not only color
    heuristics.
-3. Improve the bald-head substrate: remove remaining hair/background/shirt
+4. Improve the bald-head substrate: remove remaining hair/background/shirt
    leakage, fill scalp and rear head with plausible skin, and add clean
    eye/mouth materials.
-4. Decide whether FaceBuilder exported mesh can be used directly for the hair
+5. Decide whether FaceBuilder exported mesh can be used directly for the hair
    app, or whether a transfer/retopology step is required.
-5. After the bald head is credible, move to hair asset reconstruction/fitting,
+6. After the bald head is credible, move to hair asset reconstruction/fitting,
    collision, and mobile GLB viewer work.

@@ -1,7 +1,19 @@
 # Hair App 3D Master Plan
 
-Last synchronized: 2026-06-27
+Last synchronized: 2026-06-28
 Status: working architecture and experiment plan; not a frozen specification
+
+> 2026-06-28 update: FaceBuilder automation is now the active near-term
+> head-generation path. The previous private FaceBuilder v1/v2/v3 outputs were
+> retired because they were generated before texture-bake parity was fixed.
+> Current private comparison versions are:
+> `v1 = original photos + raw FaceBuilder texture`,
+> `v2 = preprocessed texture photos + raw FaceBuilder texture`,
+> `v3 = original photos + postprocessed texture`,
+> `v4 = preprocessed texture photos + postprocessed texture`.
+> All versions currently use all readable photos; quality scoring is diagnostic
+> only. The next quality jump must come from semantic input/output masks rather
+> than broader color heuristics.
 
 > 2026-06-27 update: the long-term product contracts in this document are still
 > useful, but the current near-term head-generation engine candidate has moved
@@ -1261,7 +1273,7 @@ If 3D hair reconstruction is uncertain, acceptable fallbacks include asking for 
 5. confirm data and model licensing;
 6. fine-tune only the stage whose measured gap justifies it;
 7. keep the original baseline for regression testing.
-## 21. 2026-06-27 Current Override: FaceBuilder Automation
+## 21. 2026-06-27/2026-06-28 Current Override: FaceBuilder Automation
 
 The earlier sections preserve the full product architecture and research plan.
 They are intentionally not deleted because they contain useful contracts for
@@ -1321,56 +1333,70 @@ Keep these parts of the old plan:
 
 The model choice changed, but the product contract did not.
 
-### 21.3 Current v1/v2/v3 automation status
+### 21.3 Current v1/v2/v3/v4 automation status
 
 The first FaceBuilder comparison pipeline now exists in
 `experiments/facebuilder_bridge/`.
 
 Implemented:
 
-- `facebuilder_version_runner.py` runs the local private v1/v2/v3 comparison
+- `facebuilder_version_runner.py` runs the local private v1/v2/v3/v4 comparison
   batch from normal Python.
 - `blender_facebuilder_batch_scene.py` runs inside headless Blender, creates the
   FaceBuilder head, adds image candidates, auto-aligns, bakes texture, saves a
   private `.blend`, exports OBJ/GLB, and renders review yaw images.
-- v1 uses all photos and baseline FaceBuilder auto-align.
-- v2 adds photo scoring and selection.
-- v3 adds face-crop alignment candidates and a strict texture gate: frontal,
-  color-clean crops can contribute to texture, while profile/side photos can
-  still help alignment but are disabled for texture baking.
+- The previous v1/v2/v3 outputs were retired on 2026-06-28 because they were
+  generated before the automated texture bake matched Blender UI `Create
+  Texture`.
+- v1 uses original photos and the raw FaceBuilder texture.
+- v2 uses original photos for auto-align, then swaps in same-size preprocessed
+  photos for texture bake while keeping the raw FaceBuilder texture material.
+- v3 uses original photos and applies the postprocessed cleanup texture as the
+  material.
+- v4 combines same-size preprocessed texture photos with postprocessed cleanup
+  texture material.
+- Photo quality scoring is diagnostic only in the current v1-v4 ablation; no
+  readable photos are rejected by quality score.
 - Private output folders are created under:
 
 ```text
 <drive_root>/output/facebuilder_v1/<person>/
 <drive_root>/output/facebuilder_v2/<person>/
 <drive_root>/output/facebuilder_v3/<person>/
+<drive_root>/output/facebuilder_v4/<person>/
+<drive_root>/output/_comparison/facebuilder_v1_v4/
 ```
 
 Latest private comparison summary:
 
-| Version | Person | Selected | Rejected | Aligned | Failed | TexCams |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| v1 | Juseop | 11 | 0 | 10 | 1 | 10 |
-| v1 | Eunchae | 8 | 0 | 7 | 1 | 7 |
-| v2 | Juseop | 7 | 4 | 6 | 1 | 6 |
-| v2 | Eunchae | 7 | 1 | 6 | 1 | 6 |
-| v3 | Juseop | 7 | 4 | 7 | 0 | 2 |
-| v3 | Eunchae | 7 | 1 | 7 | 0 | 1 |
+| Version | Person | Selected | Rejected | Preprocessed | Aligned | Failed | TexCams |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| v1 | Juseop | 11 | 0 | 0 | 10 | 1 | 10 |
+| v1 | Eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
+| v2 | Juseop | 11 | 0 | 11 | 10 | 1 | 10 |
+| v2 | Eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
+| v3 | Juseop | 11 | 0 | 0 | 10 | 1 | 10 |
+| v3 | Eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
+| v4 | Juseop | 11 | 0 | 11 | 10 | 1 | 10 |
+| v4 | Eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
 
-The important interpretation is that v3 is currently the best automated
-baseline, but it is still not product quality. It improves alignment reliability
-and reduces some texture contamination, but visible defects remain around
-scalp/hair patches, eyes, mouth/nostrils, neck/ear seams, and occasional
-background or clothing leakage.
+The important interpretation is that v1 is now the correct raw FaceBuilder
+baseline. v2/v4 confirm that same-size preprocessed texture photos can be
+swapped into FaceBuilder texture bake, but the first heuristic preprocessor
+creates visible neutral patches. v3/v4 confirm that cleanup textures can be
+routed into GLB/review materials, but the current cleanup remains below product
+quality. Visible defects remain around scalp/hair patches, eyes,
+mouth/nostrils, neck/ear seams, and background or clothing leakage.
 
 ### 21.4 New near-term milestones
 
-1. Human review of v1/v2/v3:
+1. Human review of v1/v2/v3/v4:
    - inspect private review sheets and GLBs;
-   - decide whether v3 is the right base for the next iteration;
+   - compare raw baseline, input preprocessing, output post-processing, and
+     their combination;
    - record what fails visually before changing more logic.
 
-2. Semantic bald-head post-processing:
+2. Semantic input/output processing:
    - remove hair, headwear, glasses, shirt, and background leakage;
    - fill scalp, neck, rear head, and low-confidence skin;
    - improve eyes, iris, eyelids, mouth interior, lips, ears, brows, and skin

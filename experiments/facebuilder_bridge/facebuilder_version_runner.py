@@ -1,4 +1,4 @@
-"""Run FaceBuilder v1/v2/v3 comparison batches from normal Python.
+"""Run FaceBuilder v1/v2/v3/v4 comparison batches from normal Python.
 
 This host-side runner prepares private Drive output folders, scores/copies
 photos, creates per-version input manifests, launches Blender in background
@@ -34,11 +34,18 @@ DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_JUSEOP_DIR = Path(os.environ.get("HAIR_APP_JUSEOP_DIR", str(Path.home() / "Desktop" / "\ub0b4\uc0ac\uc9c4")))
 DEFAULT_EUNCHAE_DIR = Path(os.environ.get("HAIR_APP_EUNCHAE_DIR", str(Path.home() / "Desktop" / "\uc740\ucc44\uc0ac\uc9c4")))
 
-VERSION_ORDER = ("v1", "v2", "v3")
+VERSION_ORDER = ("v1", "v2", "v3", "v4")
 VERSION_DESCRIPTIONS = {
-    "v1": "all photos, no pre-score rejection, baseline FaceBuilder auto-align",
-    "v2": "v1 plus photo quality scoring and selection",
-    "v3": "v2 plus enhanced image candidates for auto-align retry",
+    "v1": "original photos + raw FaceBuilder texture",
+    "v2": "preprocessed texture photos + raw FaceBuilder texture",
+    "v3": "original photos + postprocessed FaceBuilder texture",
+    "v4": "preprocessed texture photos + postprocessed FaceBuilder texture",
+}
+VERSION_CONFIG = {
+    "v1": {"preprocess_texture_inputs": False, "use_cleanup_texture": False},
+    "v2": {"preprocess_texture_inputs": True, "use_cleanup_texture": False},
+    "v3": {"preprocess_texture_inputs": False, "use_cleanup_texture": True},
+    "v4": {"preprocess_texture_inputs": True, "use_cleanup_texture": True},
 }
 
 REVIEW_YAW_ORDER = [0, 15, 30, 45, -15, -30, -45]
@@ -404,6 +411,109 @@ def _save_variant(src: Path, dst: Path, variant: str) -> dict[str, Any]:
         return {"path": _safe_path(dst), "width": out.width, "height": out.height}
 
 
+def _save_texture_preprocess_variant(
+    src: Path,
+    dst: Path,
+    score: dict[str, Any],
+) -> dict[str, Any]:
+    """Create a same-size texture-bake input with obvious non-face pixels muted.
+
+    This is intentionally conservative. Alignment still uses the original photo;
+    this image is only swapped in for FaceBuilder texture baking. The output
+    keeps the exact same width and height as the normalized original so the
+    solved camera projection remains valid.
+    """
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(src) as raw:
+        image = ImageOps.exif_transpose(raw).convert("RGB")
+
+    arr = np.asarray(image).astype(np.float32) / 255.0
+    height, width = arr.shape[:2]
+    yy, xx = np.mgrid[0:height, 0:width]
+    luma = arr[:, :, 0] * 0.2126 + arr[:, :, 1] * 0.7152 + arr[:, :, 2] * 0.0722
+    maxc = np.max(arr, axis=2)
+    minc = np.min(arr, axis=2)
+    saturation = (maxc - minc) / np.maximum(maxc, 1e-5)
+
+    bbox = score.get("face", {}).get("best_bbox")
+    if bbox:
+        x, y, w, h = [float(v) for v in bbox]
+        cx = x + w * 0.5
+        # Keep face, ears, hairline, and neck plausible. Everything far outside
+        # this soft oval is likely background/clothes for texture baking.
+        cy = y + h * 0.57
+        rx = max(1.0, w * 0.95)
+        ry = max(1.0, h * 1.20)
+        head_neck_oval = (((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2) <= 1.0
+        face_core = (
+            (xx >= x + w * 0.14)
+            & (xx <= x + w * 0.86)
+            & (yy >= y + h * 0.28)
+            & (yy <= y + h * 0.84)
+        )
+        upper_head = yy < y + h * 0.36
+        low_neck_or_clothes = yy > y + h * 0.88
+    else:
+        head_neck_oval = np.ones((height, width), dtype=bool)
+        face_core = np.zeros((height, width), dtype=bool)
+        upper_head = yy < height * 0.34
+        low_neck_or_clothes = yy > height * 0.78
+
+    skin_sample_mask = (
+        head_neck_oval
+        & ~upper_head
+        & ~low_neck_or_clothes
+        & (luma > 0.22)
+        & (luma < 0.88)
+        & (arr[:, :, 0] > arr[:, :, 2] * 1.03)
+        & (arr[:, :, 1] > arr[:, :, 2] * 0.78)
+        & (saturation < 0.55)
+    )
+    if np.count_nonzero(skin_sample_mask) >= 64:
+        skin = np.median(arr[skin_sample_mask], axis=0)
+    else:
+        skin = np.array([0.62, 0.46, 0.38], dtype=np.float32)
+
+    outside_subject = ~head_neck_oval
+    dark_hair = head_neck_oval & upper_head & (luma < 0.30) & (saturation < 0.82)
+    colored_leak = (
+        (outside_subject | low_neck_or_clothes)
+        & (saturation > 0.30)
+        & (luma < 0.86)
+        & ~face_core
+    )
+    very_dark_leak = (outside_subject | low_neck_or_clothes) & (luma < 0.20) & ~face_core
+    replace_mask = outside_subject | dark_hair | colored_leak | very_dark_leak
+
+    # Preserve a little local brightness so replacements are not one flat block.
+    tone = np.clip(luma[:, :, None] * 0.30 + 0.84, 0.72, 1.08)
+    replacement = np.clip(skin.reshape((1, 1, 3)) * tone, 0.0, 1.0)
+
+    cleaned = arr.copy()
+    cleaned[replace_mask] = replacement[replace_mask]
+
+    # Feather only the replacement edge. Pillow keeps this dependency light and
+    # avoids changing the image dimensions.
+    mask_image = Image.fromarray((replace_mask.astype(np.uint8) * 255), mode="L").filter(ImageFilter.GaussianBlur(radius=2.0))
+    replacement_image = Image.fromarray(np.clip(replacement * 255.0, 0, 255).astype(np.uint8), mode="RGB")
+    cleaned_image = Image.fromarray(np.clip(cleaned * 255.0, 0, 255).astype(np.uint8), mode="RGB")
+    original_image = Image.fromarray(np.clip(arr * 255.0, 0, 255).astype(np.uint8), mode="RGB")
+    blended = Image.composite(cleaned_image, original_image, mask_image)
+    blended.save(dst, quality=96)
+
+    return {
+        "path": _safe_path(dst),
+        "width": width,
+        "height": height,
+        "skin_reference_rgb": [float(x) for x in skin],
+        "replaced_pixels": int(np.count_nonzero(replace_mask)),
+        "replaced_ratio": float(np.mean(replace_mask)),
+        "face_bbox": bbox,
+        "policy": "same_size_conservative_nonface_mute_v1",
+    }
+
+
 def _save_face_crop_variant(
     src: Path,
     dst: Path,
@@ -448,22 +558,16 @@ def _select_for_version(
     threshold: float,
     min_selected: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    if version == "v1":
-        return scored, []
-
-    ok_items = [item for item in scored if item.get("ok") and not item.get("hard_reject")]
-    if not ok_items:
-        ok_items = [item for item in scored if item.get("ok")]
-    selected = [item for item in ok_items if item["score"] >= threshold]
-    if len(selected) < min_selected:
-        selected = sorted(ok_items, key=lambda item: item["score"], reverse=True)[: min(min_selected, len(ok_items))]
+    del version, threshold, min_selected
+    # Current v1-v4 experiment intentionally removes quality-based selection.
+    # Every readable photo is attempted in every version so the only variables
+    # are texture-input preprocessing and texture-output postprocessing.
+    selected = [item for item in scored if item.get("ok")]
     selected_paths = {item["path"] for item in selected}
     rejected = [
         {
             **item,
-            "reject_reason": "below_quality_threshold_or_top_k"
-            if item.get("ok")
-            else "unreadable_image",
+            "reject_reason": "unreadable_image",
         }
         for item in scored
         if item.get("path") not in selected_paths
@@ -483,72 +587,38 @@ def _prepare_version_manifest(
     source_images = _list_images(person.input_dir, max_images=max_images)
     scored = [_score_image(path) for path in source_images]
     selected, rejected = _select_for_version(version, scored, threshold, min_selected)
+    version_config = VERSION_CONFIG[version]
 
     source_by_safe_path = {_safe_path(path): path for path in source_images}
     manifest_items: list[dict[str, Any]] = []
+    texture_preprocess_rows: list[dict[str, Any]] = []
     for index, item in enumerate(selected):
         source_path = source_by_safe_path[item["path"]]
         stem = f"{index:03d}_{source_path.stem}"
         original_dst = folders["working_images"] / "originals" / f"{stem}.jpg"
         original_info = _copy_image_normalized(source_path, original_dst)
+        texture_info = None
+        if version_config["preprocess_texture_inputs"]:
+            texture_dst = folders["working_images"] / "texture_preprocessed" / f"{stem}_texture_preprocessed.jpg"
+            texture_info = _save_texture_preprocess_variant(source_path, texture_dst, item)
+            texture_preprocess_rows.append({
+                "image_id": f"{person.key}_{index:03d}",
+                "source_path": item["path"],
+                "preprocessed_path": texture_info["path"],
+                "policy": texture_info["policy"],
+                "replaced_ratio": texture_info["replaced_ratio"],
+                "replaced_pixels": texture_info["replaced_pixels"],
+            })
         candidates = [
             {
                 "kind": "original",
                 "path": original_info["path"],
                 "preferred": True,
                 "allow_texture_bake": True,
+                "texture_path": texture_info["path"] if texture_info else None,
+                "texture_kind": "preprocessed" if texture_info else "original",
             }
         ]
-        if version == "v3":
-            crop_candidates: list[dict[str, Any]] = []
-            face_detector = str(item.get("face", {}).get("detector") or "")
-            notes = set(item.get("decision_notes") or [])
-            allow_crop_texture = (
-                face_detector.startswith("frontal")
-                and item.get("components", {}).get("color", 0.0) >= 0.70
-                and "heavy_clipping" not in notes
-            )
-            for crop_kind, width_scale, top_scale, bottom_scale in (
-                ("face_crop", 3.00, 1.55, 1.90),
-                ("face_crop_wide", 4.15, 1.85, 2.35),
-            ):
-                crop_dst = folders["working_images"] / "alignment_candidates" / f"{stem}_{crop_kind}.jpg"
-                crop_info = _save_face_crop_variant(
-                    source_path,
-                    crop_dst,
-                    item.get("face", {}).get("best_bbox"),
-                    width_scale=width_scale,
-                    top_scale=top_scale,
-                    bottom_scale=bottom_scale,
-                )
-                if crop_info:
-                    crop_candidates.append({
-                        "kind": crop_kind,
-                        "path": crop_info["path"],
-                        "preferred": True,
-                        "allow_texture_bake": allow_crop_texture,
-                        "texture_gate": {
-                            "policy": "v3_frontal_color_clean_only",
-                            "face_detector": face_detector,
-                            "decision_notes": sorted(notes),
-                            "allowed": allow_crop_texture,
-                        },
-                        "crop_box": crop_info["crop_box"],
-                        "source_face_bbox": crop_info["source_face_bbox"],
-                    })
-            if crop_candidates:
-                candidates[0]["preferred"] = False
-                candidates[0]["allow_texture_bake"] = False
-                candidates = crop_candidates + candidates
-            for variant in ("autocontrast", "bright_contrast", "sharp"):
-                variant_dst = folders["working_images"] / "alignment_candidates" / f"{stem}_{variant}.jpg"
-                variant_info = _save_variant(source_path, variant_dst, variant)
-                candidates.append({
-                    "kind": variant,
-                    "path": variant_info["path"],
-                    "preferred": False,
-                    "allow_texture_bake": False,
-                })
 
         manifest_items.append({
             "index": index,
@@ -572,6 +642,9 @@ def _prepare_version_manifest(
         "all_scores": scored,
         "selected": selected,
         "rejected": rejected,
+        "selection_policy": "all_readable_images_no_quality_rejection",
+        "texture_preprocess_count": len(texture_preprocess_rows),
+        "texture_preprocess": texture_preprocess_rows,
     }
     _write_json(folders["input_manifest"] / "photo_quality_report.json", quality_report)
 
@@ -580,16 +653,19 @@ def _prepare_version_manifest(
         "created_at_unix": time.time(),
         "version": version,
         "version_description": VERSION_DESCRIPTIONS[version],
+        "version_config": version_config,
         "person": person.key,
         "person_label": person.label,
         "input_dir": _safe_path(person.input_dir),
         "output_dir": _safe_path(output_dir),
         "folders": {name: _safe_path(path) for name, path in folders.items()},
         "selection_policy": {
-            "v1": "all readable images are attempted",
-            "v2": "quality score threshold with min-selected fallback",
-            "v3": "v2 selection plus enhanced candidate images for align retry",
+            "v1": "original photos + raw FaceBuilder texture",
+            "v2": "original photos for align, same-size preprocessed photos for texture bake, raw texture material",
+            "v3": "original photos + FaceBuilder raw bake + postprocessed cleanup material",
+            "v4": "original photos for align, preprocessed photos for texture bake, postprocessed cleanup material",
             "active": version,
+            "quality_rejection_active": False,
         },
         "items": manifest_items,
         "rejected": rejected,
@@ -621,6 +697,8 @@ def _run_blender(
     repo_root: Path,
     manifest_path: Path,
     output_dir: Path,
+    *,
+    use_cleanup_texture: bool,
 ) -> dict[str, Any]:
     script = repo_root / "experiments" / "facebuilder_bridge" / "blender_facebuilder_batch_scene.py"
     log_dir = output_dir / "logs"
@@ -643,6 +721,8 @@ def _run_blender(
         "--export-glb",
         "--render-review",
     ]
+    if use_cleanup_texture:
+        command.append("--use-cleanup-texture")
     started = time.time()
     completed = subprocess.run(command, capture_output=True, text=False, check=False)
     stdout_path.write_bytes(completed.stdout or b"")
@@ -759,6 +839,78 @@ def _create_review_sheet(output_dir: Path) -> Path | None:
     return review_path
 
 
+def _create_version_comparison_sheet(
+    drive_root: Path,
+    versions: list[str],
+    person: PersonConfig,
+) -> Path | None:
+    output_root = drive_root / "output"
+    comparison_dir = output_root / "_comparison" / "facebuilder_v1_v4"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+
+    rows: list[tuple[str, Path]] = []
+    for version in versions:
+        output_dir = output_root / f"facebuilder_{version}" / person.key
+        if (output_dir / "run_manifest.json").exists():
+            rows.append((version, output_dir))
+    if not rows:
+        return None
+
+    columns = [
+        ("raw texture", lambda d: d / "05_postprocess" / "facebuilder_texture_bake.png"),
+        ("cleanup texture", lambda d: d / "05_postprocess" / "facebuilder_texture_bald_cleanup.png"),
+        ("yaw 0", lambda d: d / "07_review_sheets" / "render_yaw_+00.png"),
+        ("yaw +45", lambda d: d / "07_review_sheets" / "render_yaw_+45.png"),
+        ("yaw -45", lambda d: d / "07_review_sheets" / "render_yaw_-45.png"),
+    ]
+    thumb_w, thumb_h = 210, 210
+    label_w = 190
+    header_h = 76
+    row_h = thumb_h + 70
+    width = label_w + len(columns) * (thumb_w + 18) + 28
+    height = header_h + len(rows) * row_h + 24
+    sheet = Image.new("RGB", (width, height), (18, 18, 18))
+    draw = ImageDraw.Draw(sheet)
+    _draw_text(draw, (22, 18), f"{person.key} FaceBuilder v1-v4 comparison", (245, 245, 245))
+    _draw_text(draw, (22, 42), "Private review sheet. Do not commit generated assets.", (185, 185, 185))
+
+    for col_index, (label, _) in enumerate(columns):
+        x = label_w + col_index * (thumb_w + 18)
+        _draw_text(draw, (x, header_h - 24), label, (225, 225, 225))
+
+    for row_index, (version, output_dir) in enumerate(rows):
+        y = header_h + row_index * row_h
+        manifest_path = output_dir / "00_input_manifest" / "facebuilder_input_manifest.json"
+        manifest = _read_json(manifest_path) if manifest_path.exists() else {}
+        _draw_text(draw, (22, y + 18), version, (245, 245, 245))
+        _draw_text(draw, (22, y + 42), VERSION_DESCRIPTIONS.get(version, ""), (180, 180, 180))
+        summary = _read_json(output_dir / "run_manifest.json").get("summary", {})
+        _draw_text(
+            draw,
+            (22, y + 66),
+            f"aligned {summary.get('aligned_count', '?')} / texcams {summary.get('texture_enabled_count', '?')}",
+            (170, 170, 170),
+        )
+        if manifest.get("version_config", {}).get("preprocess_texture_inputs"):
+            _draw_text(draw, (22, y + 90), "pre-input: on", (150, 210, 170))
+        if manifest.get("version_config", {}).get("use_cleanup_texture"):
+            _draw_text(draw, (22, y + 112), "post-cleanup: material", (150, 210, 170))
+
+        for col_index, (_, resolver) in enumerate(columns):
+            path = resolver(output_dir)
+            x = label_w + col_index * (thumb_w + 18)
+            try:
+                thumb = _load_image_thumbnail(path, (thumb_w, thumb_h))
+                sheet.paste(thumb, (x, y + 28))
+            except Exception:
+                draw.rectangle([x, y + 28, x + thumb_w, y + 28 + thumb_h], fill=(54, 38, 38))
+                _draw_text(draw, (x + 10, y + 42), "missing", (230, 130, 130))
+
+    sheet_path = comparison_dir / f"{person.key}_facebuilder_v1_v4_comparison.png"
+    sheet.save(sheet_path)
+    return sheet_path
+
+
 def _collect_run_summary(output_dir: Path) -> dict[str, Any] | None:
     run_path = output_dir / "run_manifest.json"
     quality_path = output_dir / "00_input_manifest" / "photo_quality_report.json"
@@ -781,6 +933,9 @@ def _collect_run_summary(output_dir: Path) -> dict[str, Any] | None:
         "selected_count": quality.get("selected_count"),
         "rejected_count": quality.get("rejected_count"),
         "quality_threshold": quality.get("quality_threshold"),
+        "selection_policy": quality.get("selection_policy"),
+        "texture_preprocess_count": quality.get("texture_preprocess_count"),
+        "version_config": run.get("version_config"),
         "aligned_count": run.get("summary", {}).get("aligned_count"),
         "failed_count": run.get("summary", {}).get("failed_count"),
         "texture_enabled_count": run.get("summary", {}).get("texture_enabled_count"),
@@ -807,6 +962,11 @@ def _collect_run_summary(output_dir: Path) -> dict[str, Any] | None:
             .get("value", {})
             .get("cleanup_texture")
         ),
+        "material_texture_path": (
+            run.get("postprocess", {})
+            .get("value", {})
+            .get("texture_path")
+        ),
     }
 
 
@@ -825,9 +985,8 @@ def _write_summary_report(drive_root: Path, versions: list[str], people: list[Pe
         "created_at_unix": time.time(),
         "rows": rows,
         "interpretation": {
-            "v1": "baseline: all photos attempted",
-            "v2": "photo quality scoring and selection added",
-            "v3": "v2 plus enhanced image candidates for align retry",
+            key: VERSION_DESCRIPTIONS[key]
+            for key in VERSION_ORDER
         },
     }
     _write_json(output_root / "facebuilder_versions_summary.json", summary_json)
@@ -837,14 +996,14 @@ def _write_summary_report(drive_root: Path, versions: list[str], people: list[Pe
         "",
         "Private generated output summary. Do not commit generated assets.",
         "",
-        "| Version | Person | Selected | Rejected | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review | Candidate kinds |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |",
+        "| Version | Person | Selected | Rejected | Preproc | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review | Candidate kinds |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
         kinds = ", ".join(f"{key}:{value}" for key, value in sorted(row["selected_candidate_kinds"].items()))
         lines.append(
             "| {version} | {person} | {selected_count} | {rejected_count} | "
-            "{aligned_count} | {failed_count} | {texture_enabled_count} | "
+            "{texture_preprocess_count} | {aligned_count} | {failed_count} | {texture_enabled_count} | "
             "{texture_ok} | {texture_cleanup_ok} | "
             "{obj_ok} | {glb_ok} | {review_ok} | {kinds} |".format(
                 kinds=kinds or "-",
@@ -867,7 +1026,7 @@ def _write_summary_report(drive_root: Path, versions: list[str], people: list[Pe
         "logs/",
         "```",
         "",
-        "Compare v1/v2/v3 review sheets visually before making quality decisions.",
+        "Compare v1/v2/v3/v4 review sheets visually before making quality decisions.",
     ])
     (output_root / "facebuilder_versions_summary.md").write_text(
         "\n".join(lines) + "\n",
@@ -929,12 +1088,23 @@ def main(argv: list[str] | None = None) -> int:
                     repo_root=args.repo_root,
                     manifest_path=manifest_path,
                     output_dir=output_dir,
+                    use_cleanup_texture=VERSION_CONFIG[version]["use_cleanup_texture"],
                 )
             if not args.no_review_sheet:
                 sheet_path = _create_review_sheet(output_dir)
                 result["review_sheet"] = _safe_path(sheet_path) if sheet_path else None
             _write_json(output_dir / "host_run_summary.json", result)
             batch_results.append(result)
+
+    comparison_sheets: list[dict[str, Any]] = []
+    if not args.no_review_sheet:
+        for person in people:
+            sheet_path = _create_version_comparison_sheet(args.drive_root, versions, person)
+            if sheet_path:
+                comparison_sheets.append({
+                    "person": person.key,
+                    "path": _safe_path(sheet_path),
+                })
 
     batch_manifest = {
         "schema_version": "facebuilder_version_batch_v1",
@@ -943,6 +1113,7 @@ def main(argv: list[str] | None = None) -> int:
         "versions": versions,
         "people": [person.key for person in people],
         "results": batch_results,
+        "comparison_sheets": comparison_sheets,
     }
     batch_manifest_path = args.drive_root / "output" / "facebuilder_versions_batch_manifest.json"
     _write_json(batch_manifest_path, batch_manifest)

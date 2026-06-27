@@ -1,6 +1,6 @@
 # Hair App New-Chat Handoff
 
-Last synchronized: 2026-06-27
+Last synchronized: 2026-06-28
 
 Expected branch: `main`
 
@@ -58,7 +58,7 @@ The goal is a hair-app avatar, not a perfect measured 3D scan.
 
 ## 4. FaceBuilder Automation Status
 
-Verified locally on 2026-06-27:
+Verified locally on 2026-06-27 and updated on 2026-06-28:
 
 - Blender path: `C:\Program Files\Blender Foundation\Blender 5.1\blender.exe`
 - Blender version: 5.1.2
@@ -74,19 +74,41 @@ Verified locally on 2026-06-27:
 - Empty-scene automation v0 succeeded from a private Juseop photo folder with
   two selected photos: one aligned, one failed face detection, texture baking
   succeeded, and a private `.blend` was saved.
-- v1/v2/v3 FaceBuilder batches now run for private Juseop/Eunchae folders.
-  They write manifests, `.blend`, OBJ, GLB, baked textures, cleanup textures,
-  logs, and review sheets under private Drive output folders.
+- Texture bake parity with the Blender UI `Create Texture` button was fixed.
+  The old headless raw bake differed from the user's manual `ha.png` by mean
+  RGB error about `18.14`; after matching FaceBuilder's UI camera/projection
+  update path, the difference dropped to about `0.12`.
+- The old private v1/v2/v3 outputs were retired because they were generated
+  before this texture-bake parity fix and with an over-aggressive cleanup pass.
+  Representative private review sheets were archived at:
+  `G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_v1_v2_v3_20260628\`.
+- New v1/v2/v3/v4 FaceBuilder batches now run for private Juseop/Eunchae
+  folders. They write manifests, `.blend`, OBJ, GLB, baked textures, cleanup
+  textures, logs, individual review sheets, and cross-version comparison sheets
+  under private Drive output folders.
+- Current version definitions:
+  - `v1`: original photos + raw FaceBuilder texture.
+  - `v2`: original photos for auto-align, same-size preprocessed photos for
+    texture bake, raw FaceBuilder texture material.
+  - `v3`: original photos + postprocessed cleanup texture material.
+  - `v4`: preprocessed texture photos + postprocessed cleanup texture material.
 - Latest private batch summary:
   - v1 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
   - v1 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
-  - v2 Juseop: 7 selected, 6 aligned, 1 failed, 6 texture cameras.
-  - v2 Eunchae: 7 selected, 6 aligned, 1 failed, 6 texture cameras.
-  - v3 Juseop: 7 selected, 7 aligned, 0 failed, 2 texture cameras.
-  - v3 Eunchae: 7 selected, 7 aligned, 0 failed, 1 texture camera.
-- v3 uses photo scoring, face-crop candidates, and a texture gate that lets
-  frontal/color-clean crops contribute to texture while profile photos can
-  still help alignment.
+  - v2 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
+  - v2 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
+  - v3 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
+  - v3 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
+  - v4 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
+  - v4 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
+- Cross-version comparison sheets:
+  - `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\juseop_facebuilder_v1_v4_comparison.png`
+  - `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\eunchae_facebuilder_v1_v4_comparison.png`
+- Visual conclusion: v1 is now the correct raw FaceBuilder baseline. The first
+  v2/v4 same-size preprocessing reduces some contamination but creates large
+  neutral patches. v3/v4 cleanup is less destructive than before but still not
+  product quality. The next improvement needs semantic masks, not broader color
+  heuristics.
 
 Private v0 outputs were written under:
 
@@ -108,25 +130,29 @@ Tracked tools:
 - `experiments/facebuilder_bridge/blender_facebuilder_batch_scene.py`
 
 These scripts are still research/bridge code, not production job orchestration.
-They now prove that the v1/v2/v3 comparison loop can be generated without
+They now prove that the v1/v2/v3/v4 comparison loop can be generated without
 manual Blender clicking.
 
 ## 6. Next Work Plan
 
 Immediate next stage:
 
-1. Review the private v1/v2/v3 sheets and GLBs with the user.
-   - v3 is the current best automated baseline.
-   - It is still not product quality.
+1. Review the private v1/v2/v3/v4 sheets and GLBs with the user.
+   - v1 is the correct raw baseline.
+   - v2/v4 preprocessing is not good enough yet; it introduces obvious neutral
+     patches.
+   - v3/v4 cleanup is useful as a controlled comparison, but still not product
+     quality.
    - Main remaining issues: hair/scalp patches, eyes, mouth/nostrils, neck/ear
-     seams, and occasional texture leakage.
+     seams, clothing/background leakage, and non-semantic over-replacement.
 
-2. Replace heuristic cleanup with semantic post-processing.
+2. Replace heuristic input preprocessing and cleanup with semantic processing.
    - Need face/skin/scalp/hair/background/neck/ear masks.
    - Need eye, iris, eyelid, mouth, lip, brow, and nostril materials.
    - Need observed-versus-filled confidence/provenance maps.
 
-3. Improve photo/frame analysis before FaceBuilder.
+3. Reintroduce photo/frame analysis only after the v1/v2/v3/v4 ablation is
+   understood.
    - Add robust landmarks, pose/yaw, eye/mouth state, occlusion, segmentation
      confidence, and lighting/color normalization.
 

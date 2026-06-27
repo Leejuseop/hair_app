@@ -119,26 +119,27 @@ Example:
 
 ### `facebuilder_version_runner.py`
 
-Runs the current private v1/v2/v3 FaceBuilder comparison batch from normal
-Python. It prepares version/person folders, scores photos, writes input
-manifests, launches Blender in background mode, and builds review sheets.
+Runs the current private v1/v2/v3/v4 FaceBuilder comparison batch from normal
+Python. It prepares version/person folders, writes input manifests, launches
+Blender in background mode, and builds individual plus cross-version review
+sheets.
 
 Versions:
 
-- `v1`: all photos, baseline FaceBuilder auto-align, no pre-score rejection.
-- `v2`: v1 plus photo quality scoring and selection.
-- `v3`: v2 plus face-centered alignment candidates and a stricter texture gate.
+- `v1`: original photos + raw FaceBuilder texture.
+- `v2`: original photos for auto-align, same-size preprocessed photos for
+  texture bake, raw FaceBuilder texture material.
+- `v3`: original photos + postprocessed cleanup texture material.
+- `v4`: preprocessed texture photos + postprocessed cleanup texture material.
 
-The v3 texture gate is intentionally conservative: frontal/color-clean crops can
-contribute to texture, while profile or heavily clipped photos can still help
-alignment but are disabled for texture baking. This reduced some background and
-colored-light leakage, but it is not a final semantic cleanup system.
+The current v1-v4 experiment intentionally does not reject photos by quality
+score. Every readable photo is attempted in every version so the only variables
+are texture-input preprocessing and texture-output post-processing.
 
 Example:
 
 ```powershell
 python experiments\facebuilder_bridge\facebuilder_version_runner.py `
-  --quality-threshold 0.80 `
   --clean
 ```
 
@@ -149,7 +150,7 @@ Path defaults can be overridden with `--drive-root`, `--juseop-dir`,
 Useful options:
 
 ```powershell
-  --version v3 `
+  --version v4 `
   --person juseop `
   --max-images 2 `
   --skip-blender
@@ -161,6 +162,7 @@ Private output layout:
 <drive_root>/output/facebuilder_v1/<person>/
 <drive_root>/output/facebuilder_v2/<person>/
 <drive_root>/output/facebuilder_v3/<person>/
+<drive_root>/output/facebuilder_v4/<person>/
   00_input_manifest/
   01_working_images/
   02_alignment/
@@ -178,6 +180,7 @@ Batch-level summaries:
 <drive_root>/output/facebuilder_versions_batch_manifest.json
 <drive_root>/output/facebuilder_versions_summary.json
 <drive_root>/output/facebuilder_versions_summary.md
+<drive_root>/output/_comparison/facebuilder_v1_v4/<person>_facebuilder_v1_v4_comparison.png
 ```
 
 ### `blender_facebuilder_batch_scene.py`
@@ -188,19 +191,51 @@ candidates as cameras, tries auto-align, bakes texture, applies Hair App
 material/post-process preparation, exports OBJ/GLB, renders review yaw images,
 and writes `run_manifest.json`.
 
+The Blender automation now mirrors FaceBuilder's UI import/auto-align state more
+closely before texture baking:
+
+- read EXIF/focal data for each photo candidate;
+- center the FaceBuilder geometry projection after each camera import;
+- after auto-align, update all camera positions and focal lengths before
+  TextureBuilder runs.
+
+This matters because TextureBuilder uses per-photo camera projection state, not
+just the final mesh vertices. A head mesh can compare as nearly identical while
+the baked texture is badly different if those projection values are stale.
+
 The current post-process includes only a heuristic baked-texture cleanup:
 
 - keep the raw FaceBuilder bake;
 - create a separate `facebuilder_texture_bald_cleanup.png`;
-- replace empty texels, large dark blobs, and obvious color leaks with a skin
+- conservatively replace large dark blobs and obvious color leaks with a skin
   reference;
 - write `bald_texture_cleanup_report.json`;
-- use the cleanup texture for the current GLB and review renders.
+- keep the raw FaceBuilder texture as the default material/GLB/review texture;
+- use the cleanup texture only when `--use-cleanup-texture` is explicitly set.
 
-This is deliberately not treated as final product quality. The next required
-step is semantic scalp/skin/occlusion cleanup.
+This is deliberately not treated as final product quality. The heuristic cleanup
+is a controlled ablation step, not a final semantic matting system. The next
+required step is semantic scalp/skin/occlusion cleanup.
 
-## Local Verification on 2026-06-27
+### `texture_bake_settings_probe.py`
+
+Runs inside Blender against an existing private `.blend` file and bakes several
+FaceBuilder TextureBuilder setting variants. It is a parity/debugging tool for
+checking whether an automated bake matches the Blender UI `Create Texture`
+button result.
+
+Example:
+
+```powershell
+& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" `
+  --background "<private_facebuilder_scene.blend>" `
+  --python "C:\Users\User\Desktop\hair_app\experiments\facebuilder_bridge\texture_bake_settings_probe.py" `
+  -- `
+  --output-dir "<private_output_dir>\texture_settings_probe" `
+  --reference "<private_manual_texture.png>"
+```
+
+## Local Verification on 2026-06-27 And 2026-06-28
 
 Environment:
 
@@ -244,38 +279,76 @@ Empty-scene automation v0:
 - a private `.blend`, private texture PNG, and `result.json` were saved under
   `private_outputs/facebuilder_bridge/`.
 
-Version batch run:
+Retired version batch:
 
-| Version | Person | Selected | Rejected | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |
-| v1 | juseop | 11 | 0 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
-| v1 | eunchae | 8 | 0 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
-| v2 | juseop | 7 | 4 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
-| v2 | eunchae | 7 | 1 | 6 | 1 | 6 | yes | yes | yes | yes | yes |
-| v3 | juseop | 7 | 4 | 7 | 0 | 2 | yes | yes | yes | yes | yes |
-| v3 | eunchae | 7 | 1 | 7 | 0 | 1 | yes | yes | yes | yes | yes |
+- The previous private v1/v2/v3 outputs were retired on 2026-06-28 because
+  they were generated before the camera/projection parity fix and with a
+  cleanup pass that was too aggressive.
+- Bulk private outputs were removed from Drive.
+- Representative private review sheets were archived under:
+  `G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_v1_v2_v3_20260628\`
+
+Current v1-v4 batch run:
+
+| Version | Person | Selected | Rejected | Preproc | Aligned | Failed | TexCams | Texture | Cleanup | OBJ | GLB | Review |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |
+| v1 | juseop | 11 | 0 | 0 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v1 | eunchae | 8 | 0 | 0 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+| v2 | juseop | 11 | 0 | 11 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v2 | eunchae | 8 | 0 | 8 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+| v3 | juseop | 11 | 0 | 0 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v3 | eunchae | 8 | 0 | 0 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+| v4 | juseop | 11 | 0 | 11 | 10 | 1 | 10 | yes | yes | yes | yes | yes |
+| v4 | eunchae | 8 | 0 | 8 | 7 | 1 | 7 | yes | yes | yes | yes | yes |
+
+Cross-version comparison sheets:
+
+- `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\juseop_facebuilder_v1_v4_comparison.png`
+- `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\eunchae_facebuilder_v1_v4_comparison.png`
+
+Texture bake parity check:
+
+- Manual reference: the user created `ha.png` in Blender by pressing
+  FaceBuilder Texture > `Create Texture` after auto-aligning the same 10 Juseop
+  photos.
+- Previous headless bake called the correct `bake_tex` function, but it skipped
+  parts of the UI camera/projection update flow. It matched the solved mesh, but
+  not the texture projection state.
+- The previous raw headless texture differed from `ha.png` by mean RGB error
+  about `18.14`.
+- Sweeping TextureBuilder settings alone did not solve the issue; the best
+  tested settings variant still had mean RGB error about `15.44`.
+- After matching the UI import/auto-align camera updates, the automated raw bake
+  differed from `ha.png` by mean RGB error about `0.12`, which is close enough
+  to treat as the same FaceBuilder texture bake path.
+- The old heuristic cleanup texture still differed badly from the manual raw
+  reference and should not be used as the default material.
 
 Conclusion: the automation bridge is now real enough to generate comparable
-private v1/v2/v3 artifacts without manual clicking. Codex can run Blender
+private v1/v2/v3/v4 artifacts without manual clicking. Codex can run Blender
 headlessly, drive key FaceBuilder operations, write diagnostics, export GLB, and
 iterate on scripts.
 
-Quality conclusion: v3 is the best current automated version, but it is still
-not product quality. It improves failure rate and reduces the worst photo
-contamination, yet visible problems remain: hair/scalp patches, eye material,
-mouth/nostril regions, neck/ear seams, and occasional texture leakage from
-photo background or clothing.
+Quality conclusion: v1 is now the correct raw FaceBuilder baseline. v2/v4 prove
+that same-size preprocessed texture photos can be swapped in successfully, but
+the first conservative non-face mute creates visible neutral patches and is not
+good enough. v3/v4 prove that postprocessed texture material can be routed into
+GLB/review output, but the heuristic cleanup is still not product quality.
+Visible problems remain: hair/scalp patches, eye material, mouth/nostril
+regions, neck/ear seams, clothing/background leakage, and non-semantic
+over-replacement.
 
 ## Current Limitations
 
 - Auto-align quality still affects final geometry/texture heavily.
 - FaceBuilder can fail face detection on occluded/glasses images.
-- The current v1/v2/v3 runner is a local research pipeline, not production job
+- The current v1/v2/v3/v4 runner is a local research pipeline, not production job
   orchestration.
-- Photo scoring is still coarse. It uses sharpness, exposure, contrast,
-  clipping, resolution, OpenCV face size/center signals, and simple color-cast
-  scoring, but it does not yet use robust landmarks, eye/mouth state, glasses,
-  hands, phone, hair, or segmentation confidence.
+- Photo scoring exists as a diagnostic report but is intentionally disabled as
+  a rejection gate in the current v1-v4 ablation.
+- The same-size preprocessed-photo pass is heuristic. It reduces some obvious
+  texture pollution but can create large neutral skin-color patches on the
+  rendered head.
 - The cleanup pass is heuristic color/component replacement, not semantic
   matting. It can reduce ugly artifacts but cannot reliably know "hair versus
   eyebrow" or "skin versus background."
@@ -285,13 +358,13 @@ photo background or clothing.
 
 ## Next Work
 
-1. Review v1/v2/v3 private sheets and decide whether v3 is the right base for
-   the next pass.
-2. Replace heuristic cleanup with semantic post-processing:
+1. Review v1/v2/v3/v4 private sheets with the user.
+2. Replace heuristic input preprocessing and cleanup with semantic processing:
    - face/skin/scalp/hair/background/neck/ear masks;
    - eye, iris, eyelid, mouth, lip, brow, and nostril materials;
    - confidence and provenance maps for observed versus filled regions.
-3. Add stronger input analysis before FaceBuilder:
+3. Reintroduce stronger input analysis before FaceBuilder after the current
+   ablation is understood:
    - robust landmarks;
    - pose/yaw;
    - eye closed / mouth open;

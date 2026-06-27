@@ -1,6 +1,6 @@
 # Hair App Project History
 
-Last synchronized: 2026-06-27
+Last synchronized: 2026-06-28
 Status: detailed project chronology and archive for retired engine paths
 
 ## How To Read This File
@@ -21,6 +21,141 @@ Current source-of-truth files:
 Former standalone active documents for Pixel3DMM and Texture Baker were moved
 into this file because those engines are no longer the main product path. Their
 records are preserved below as detailed archive sections.
+
+## 2026-06-28 FaceBuilder Texture Parity Fix And v1-v4 Reset
+
+This entry records an important reset of the FaceBuilder experiment line.
+
+### Why The Previous FaceBuilder v1/v2/v3 Outputs Were Retired
+
+The first private FaceBuilder v1/v2/v3 batch was generated before the automated
+texture bake matched the Blender UI `Create Texture` path. The visible output
+was therefore not a fair test of FaceBuilder or the planned Hair App pipeline.
+
+The root problem was not the solved mesh. A manual Blender export and the
+automated auto-align export were nearly identical in geometry. The problem was
+that TextureBuilder depends on each photo camera's projection state, not only
+on the final head mesh. The old automation added cameras and solved pins, but
+it skipped parts of the UI import/auto-align update flow:
+
+- EXIF/focal setup for each imported photo;
+- `center_geo_camera_projection` after camera import;
+- updating all FaceBuilder camera positions after auto-align;
+- updating all FaceBuilder camera focal lengths after auto-align.
+
+Because those camera/projection values were stale, the headless texture bake
+sampled the same photos differently from the Blender UI. The user manually
+created `ha.png` in Blender by pressing FaceBuilder Texture > `Create Texture`
+after auto-aligning the same 10 Juseop photos. The old automated raw texture
+differed from this manual reference by mean RGB error about `18.14`.
+
+TextureBuilder option sweeps did not solve the mismatch. The best tested
+settings variant still differed from `ha.png` by mean RGB error about `15.44`.
+After the automation was changed to mirror the UI camera/projection update
+path, the automated raw bake differed from `ha.png` by mean RGB error about
+`0.12`, which is close enough to treat as the same FaceBuilder texture bake
+path.
+
+The old cleanup pass was also too aggressive. It replaced too much of the raw
+texture and made the rendered head worse. Therefore the previous v1/v2/v3
+private outputs were retired and should not be used for quality decisions.
+
+### Drive Archive And Cleanup
+
+The old bulk private outputs were removed from Drive. Representative private
+review sheets and small manifests were preserved under:
+
+```text
+G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_v1_v2_v3_20260628\
+```
+
+Archived representative review sheets:
+
+```text
+v1/juseop/review_sheet.png
+v1/eunchae/review_sheet.png
+v2/juseop/review_sheet.png
+v2/eunchae/review_sheet.png
+v3/juseop/review_sheet.png
+v3/eunchae/review_sheet.png
+```
+
+The images themselves are private biometric review assets and must stay in
+Drive, not Git.
+
+### New v1-v4 Experiment Definition
+
+The version comparison was reset to isolate the effect of two variables:
+texture-input preprocessing and texture-output post-processing. Photo quality
+selection was intentionally disabled for this ablation. Every readable photo is
+attempted in every version.
+
+Current definitions:
+
+```text
+v1 = original photos + raw FaceBuilder texture
+v2 = original photos for auto-align + same-size preprocessed photos for texture bake + raw FaceBuilder texture
+v3 = original photos + postprocessed cleanup texture
+v4 = preprocessed texture photos + postprocessed cleanup texture
+```
+
+Important implementation details:
+
+- Auto-align always uses the original normalized photo.
+- v2/v4 add a `texture_path` to the manifest candidate. After auto-align
+  succeeds, Blender swaps the camera image to the same-size preprocessed image
+  before texture bake.
+- v1/v2 use `facebuilder_texture_bake.png` as the material texture.
+- v3/v4 pass `--use-cleanup-texture` and use
+  `facebuilder_texture_bald_cleanup.png` as the material texture.
+- Raw FaceBuilder texture is always preserved.
+- Cleanup texture is always saved for comparison, but is only applied in v3/v4.
+
+### New v1-v4 Run Results
+
+The new private batch completed successfully for Juseop and Eunchae.
+
+```text
+G:\내 드라이브\hair_app\output\facebuilder_v1\
+G:\내 드라이브\hair_app\output\facebuilder_v2\
+G:\내 드라이브\hair_app\output\facebuilder_v3\
+G:\내 드라이브\hair_app\output\facebuilder_v4\
+```
+
+Summary:
+
+| Version | Person | Selected | Rejected | Preprocessed | Aligned | Failed | Texture cameras |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| v1 | juseop | 11 | 0 | 0 | 10 | 1 | 10 |
+| v1 | eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
+| v2 | juseop | 11 | 0 | 11 | 10 | 1 | 10 |
+| v2 | eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
+| v3 | juseop | 11 | 0 | 0 | 10 | 1 | 10 |
+| v3 | eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
+| v4 | juseop | 11 | 0 | 11 | 10 | 1 | 10 |
+| v4 | eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
+
+Cross-version private comparison sheets:
+
+```text
+G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\juseop_facebuilder_v1_v4_comparison.png
+G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\eunchae_facebuilder_v1_v4_comparison.png
+```
+
+Visual conclusion from this first reset batch:
+
+- v1 is now the correct raw FaceBuilder baseline.
+- v2 proves same-size preprocessed texture inputs can be swapped in, but the
+  first heuristic preprocessor creates visible neutral-color patches on the
+  rendered head.
+- v3 proves cleanup texture routing works, but the current heuristic cleanup is
+  still not product quality.
+- v4 combines both effects, but the visible result confirms that semantic masks
+  are needed before this approach becomes useful.
+
+Next lesson: do not broaden color heuristics blindly. The next quality step
+should use semantic masks for skin, hair, scalp, background, neck, ear, eye,
+mouth, and occlusion regions.
 
 ## 1. Original Product Idea
 
@@ -1875,6 +2010,12 @@ Final historical interpretation:
   ideas, but not continue it as the main head-generation path.
 
 ## 26. 2026-06-27 FaceBuilder v1/v2/v3 Batch Automation
+
+Retirement note: this section is preserved as a historical record of the first
+FaceBuilder batch automation attempt. Its generated private outputs were
+retired on 2026-06-28 after the texture-bake parity bug was found. The current
+active FaceBuilder comparison is the v1/v2/v3/v4 reset described near the top
+of this file.
 
 ### 26.1 User Request
 
