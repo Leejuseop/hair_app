@@ -64,21 +64,28 @@ machine:
   `0.12`.
 - The old FaceBuilder v1/v2/v3 outputs were retired because they were generated
   before the texture-bake parity fix and with an over-aggressive cleanup pass.
-- New private FaceBuilder v1/v2/v3/v4 batches run for Juseop and Eunchae,
-  write Drive outputs, export OBJ/GLB, and build individual plus cross-version
-  review sheets.
+- The later FaceBuilder v1/v2/v3/v4 color-mute batches were also retired: the
+  same-size preprocessor filled rejected regions with skin-like color, which
+  made the texture bake dirtier rather than cleaner.
+- The current private FaceBuilder semantic ablation now runs for Juseop and
+  Eunchae, reusing the previous Pixel3DMM V4 FaceBoxes crops and FaRL
+  segmentations:
+  - `semantic_v1`: raw validated photos + raw FaceBuilder texture;
+  - `semantic_v2`: V4 crops + raw FaceBuilder texture;
+  - `semantic_v3`: V4 crops + sentinel-colored semantic texture inputs.
+  It writes Drive outputs, OBJ/GLB, per-version review sheets, crop/segmentation
+  review sheets, and a cross-version comparison sheet.
 
 Private test outputs are written under `private_outputs/` and are ignored by
 Git. Current FaceBuilder version outputs are written under the private Drive
 layout:
 
 ```text
-<drive_root>/output/facebuilder_v1/<person>/
-<drive_root>/output/facebuilder_v2/<person>/
-<drive_root>/output/facebuilder_v3/<person>/
-<drive_root>/output/facebuilder_v4/<person>/
-<drive_root>/output/_comparison/facebuilder_v1_v4/
-<drive_root>/output/facebuilder_versions_summary.md
+<drive_root>/output/facebuilder_semantic_v1/<person>/
+<drive_root>/output/facebuilder_semantic_v2/<person>/
+<drive_root>/output/facebuilder_semantic_v3/<person>/
+<drive_root>/output/_preprocess_review/<person>/
+<drive_root>/output/_comparison/facebuilder_semantic_v1_v3/
 ```
 
 ## Implemented Repository Pieces
@@ -100,8 +107,11 @@ Research-side implementation includes:
 - Pixel3DMM V4 research notebook and freeze utilities;
 - Texture Baker v1/v2/v3 experiments and review sheets;
 - FaceBuilder bridge scripts for export inspection, headless smoke testing,
-  scene probing, empty-scene automation, v1/v2/v3/v4 batch comparison, private
-  review outputs, and GLB export.
+  scene probing, empty-scene automation, batch comparison, private review
+  outputs, and GLB export.
+- FaceBuilder semantic ablation scripts that reuse Pixel3DMM V4 crop/FaRL
+  preprocessing and test raw versus cropped versus sentinel-colored texture
+  inputs.
 
 ## Not Implemented Yet
 
@@ -150,11 +160,11 @@ private_outputs/
 
 ## Next Immediate Work
 
-1. Review the private v1/v2/v3/v4 FaceBuilder sheets and GLBs.
-2. Replace the current heuristic texture-input preprocessing with semantic
-   masks. The first same-size preprocessed-photo pass reduces some background
-   and hair leakage but creates visible neutral-color patches, so it is not yet
-   product quality.
+1. Review the private semantic v1/v2/v3 FaceBuilder sheets and GLBs.
+2. Treat semantic v3 as a diagnostic, not a final look: sentinel colors prove
+   that FaceBuilder blends raw pixel colors, so bad semantic regions must be
+   removed or repaired after bake rather than replaced with fake skin before
+   bake.
 3. Build semantic post-processing around the FaceBuilder output:
    scalp/hair/skin/neck/ear/eye/mouth/occlusion masks, not only color
    heuristics.

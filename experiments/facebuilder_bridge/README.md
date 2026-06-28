@@ -119,10 +119,13 @@ Example:
 
 ### `facebuilder_version_runner.py`
 
-Runs the current private v1/v2/v3/v4 FaceBuilder comparison batch from normal
-Python. It prepares version/person folders, writes input manifests, launches
-Blender in background mode, and builds individual plus cross-version review
-sheets.
+Runs the lower-level private FaceBuilder comparison batch from normal Python.
+It prepares version/person folders, writes input manifests, launches Blender in
+background mode, and builds individual plus cross-version review sheets.
+
+Historical note: the old v1/v2/v3/v4 color-mute experiment is retired. It is
+preserved in Drive history archives and in `docs/history.md`, but it is not the
+active quality path.
 
 Versions:
 
@@ -136,7 +139,7 @@ The current v1-v4 experiment intentionally does not reject photos by quality
 score. Every readable photo is attempted in every version so the only variables
 are texture-input preprocessing and texture-output post-processing.
 
-Example:
+Example for the retired color-mute runner:
 
 ```powershell
 python experiments\facebuilder_bridge\facebuilder_version_runner.py `
@@ -181,6 +184,34 @@ Batch-level summaries:
 <drive_root>/output/facebuilder_versions_summary.json
 <drive_root>/output/facebuilder_versions_summary.md
 <drive_root>/output/_comparison/facebuilder_v1_v4/<person>_facebuilder_v1_v4_comparison.png
+```
+
+### `../facebuilder_semantic_ablation/run_facebuilder_semantic_ablation.py`
+
+Runs the current active FaceBuilder semantic ablation from normal Python. It
+reuses the previous Pixel3DMM V4 FaceBoxes crops and FaRL segmentation maps,
+then compares:
+
+- `semantic_v1`: raw V4-validated photos + raw FaceBuilder texture;
+- `semantic_v2`: V4 crops + raw FaceBuilder texture;
+- `semantic_v3`: V4 crops + sentinel-colored semantic texture inputs.
+
+Example:
+
+```powershell
+python experiments\facebuilder_semantic_ablation\run_facebuilder_semantic_ablation.py `
+  --drive-root "G:\내 드라이브\hair_app" `
+  --clean
+```
+
+Private output layout:
+
+```text
+<drive_root>/output/facebuilder_semantic_v1/<person>/
+<drive_root>/output/facebuilder_semantic_v2/<person>/
+<drive_root>/output/facebuilder_semantic_v3/<person>/
+<drive_root>/output/_preprocess_review/<person>/
+<drive_root>/output/_comparison/facebuilder_semantic_v1_v3/
 ```
 
 ### `blender_facebuilder_batch_scene.py`

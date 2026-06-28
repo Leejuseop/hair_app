@@ -82,33 +82,35 @@ Verified locally on 2026-06-27 and updated on 2026-06-28:
   before this texture-bake parity fix and with an over-aggressive cleanup pass.
   Representative private review sheets were archived at:
   `G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_v1_v2_v3_20260628\`.
-- New v1/v2/v3/v4 FaceBuilder batches now run for private Juseop/Eunchae
-  folders. They write manifests, `.blend`, OBJ, GLB, baked textures, cleanup
-  textures, logs, individual review sheets, and cross-version comparison sheets
-  under private Drive output folders.
+- The later FaceBuilder v1/v2/v3/v4 color-mute ablation was also retired
+  because the preprocessor filled rejected regions with skin-like colors. That
+  made fake skin enter the FaceBuilder texture bake and polluted the result.
+  Its private bulk outputs were moved to:
+  `G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_color_mute_v1_v4_20260628T091346Z\`.
+- Current FaceBuilder semantic ablation runs through
+  `experiments/facebuilder_semantic_ablation/run_facebuilder_semantic_ablation.py`.
+  It reuses the previous Pixel3DMM V4 crop/FaRL segmentation artifacts instead
+  of inventing a new crop/segmentation engine.
 - Current version definitions:
-  - `v1`: original photos + raw FaceBuilder texture.
-  - `v2`: original photos for auto-align, same-size preprocessed photos for
-    texture bake, raw FaceBuilder texture material.
-  - `v3`: original photos + postprocessed cleanup texture material.
-  - `v4`: preprocessed texture photos + postprocessed cleanup texture material.
-- Latest private batch summary:
-  - v1 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
-  - v1 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
-  - v2 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
-  - v2 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
-  - v3 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
-  - v3 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
-  - v4 Juseop: 11 selected, 10 aligned, 1 failed, 10 texture cameras.
-  - v4 Eunchae: 8 selected, 7 aligned, 1 failed, 7 texture cameras.
-- Cross-version comparison sheets:
-  - `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\juseop_facebuilder_v1_v4_comparison.png`
-  - `G:\내 드라이브\hair_app\output\_comparison\facebuilder_v1_v4\eunchae_facebuilder_v1_v4_comparison.png`
-- Visual conclusion: v1 is now the correct raw FaceBuilder baseline. The first
-  v2/v4 same-size preprocessing reduces some contamination but creates large
-  neutral patches. v3/v4 cleanup is less destructive than before but still not
-  product quality. The next improvement needs semantic masks, not broader color
-  heuristics.
+  - `semantic_v1`: raw V4-validated photos + raw FaceBuilder texture.
+  - `semantic_v2`: V4 FaceBoxes crops + raw FaceBuilder texture.
+  - `semantic_v3`: V4 FaceBoxes crops for alignment plus sentinel-colored FaRL
+    semantic texture inputs.
+- Latest private semantic batch summary:
+  - Juseop: 19 input rows; 9 scan frames are alignment-only by default; 10
+    selfie rows enter texture bake.
+  - Eunchae: 8 input rows; all 8 enter texture bake.
+  - All six version/person runs have `.blend`, OBJ, GLB, baked texture, cleanup
+    texture, yaw renders, `run_manifest.json`, and `semantic_review_sheet.png`.
+- Private review sheets:
+  - `G:\내 드라이브\hair_app\output\_preprocess_review\juseop\juseop_crop_segmentation_sentinel_review.png`
+  - `G:\내 드라이브\hair_app\output\_preprocess_review\eunchae\eunchae_crop_segmentation_sentinel_review.png`
+  - `G:\내 드라이브\hair_app\output\_comparison\facebuilder_semantic_v1_v3\facebuilder_semantic_v1_v3_comparison.png`
+- Visual conclusion: crop is useful and v2 is a cleaner controlled baseline
+  than raw v1. Sentinel v3 is not a usable final look; it proves FaceBuilder
+  consumes/blends the colored bad-region pixels. The next real improvement is
+  semantic post-bake repair and better occlusion masks, not another skin-color
+  fill before bake.
 
 Private v0 outputs were written under:
 
@@ -128,30 +130,33 @@ Tracked tools:
 - `experiments/facebuilder_bridge/blender_facebuilder_auto_scene_v0.py`
 - `experiments/facebuilder_bridge/facebuilder_version_runner.py`
 - `experiments/facebuilder_bridge/blender_facebuilder_batch_scene.py`
+- `experiments/facebuilder_semantic_ablation/run_facebuilder_semantic_ablation.py`
 
 These scripts are still research/bridge code, not production job orchestration.
-They now prove that the v1/v2/v3/v4 comparison loop can be generated without
-manual Blender clicking.
+They now prove that FaceBuilder, crop reuse, semantic sentinel preprocessing,
+OBJ/GLB export, and review-sheet generation can be run without manual Blender
+clicking.
 
 ## 6. Next Work Plan
 
 Immediate next stage:
 
-1. Review the private v1/v2/v3/v4 sheets and GLBs with the user.
-   - v1 is the correct raw baseline.
-   - v2/v4 preprocessing is not good enough yet; it introduces obvious neutral
-     patches.
-   - v3/v4 cleanup is useful as a controlled comparison, but still not product
-     quality.
+1. Review the private semantic v1/v2/v3 sheets and GLBs with the user.
+   - v1 is the raw FaceBuilder baseline.
+   - v2 tests whether V4 crops improve alignment/texture stability.
+   - v3 tests whether sentinel colors reveal FaceBuilder's texture source
+     behavior.
    - Main remaining issues: hair/scalp patches, eyes, mouth/nostrils, neck/ear
-     seams, clothing/background leakage, and non-semantic over-replacement.
+     seams, clothing/background leakage, perfume/hand/phone occlusion leakage,
+     and sentinel-color contamination.
 
-2. Replace heuristic input preprocessing and cleanup with semantic processing.
+2. Replace heuristic input preprocessing and cleanup with semantic post-bake
+   repair.
    - Need face/skin/scalp/hair/background/neck/ear masks.
    - Need eye, iris, eyelid, mouth, lip, brow, and nostril materials.
    - Need observed-versus-filled confidence/provenance maps.
 
-3. Reintroduce photo/frame analysis only after the v1/v2/v3/v4 ablation is
+3. Reintroduce photo/frame analysis only after the semantic v1/v2/v3 ablation is
    understood.
    - Add robust landmarks, pose/yaw, eye/mouth state, occlusion, segmentation
      confidence, and lighting/color normalization.

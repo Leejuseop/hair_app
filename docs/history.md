@@ -22,6 +22,231 @@ Former standalone active documents for Pixel3DMM and Texture Baker were moved
 into this file because those engines are no longer the main product path. Their
 records are preserved below as detailed archive sections.
 
+## 2026-06-28 FaceBuilder Semantic Crop/Sentinel Ablation
+
+This entry records the current active FaceBuilder comparison after the user
+rejected the skin-color fill preprocessing approach.
+
+### Why The v1-v4 Color-Mute Ablation Was Retired
+
+After texture-bake parity with Blender UI `Create Texture` was fixed, a
+four-version FaceBuilder ablation was attempted:
+
+```text
+v1 = original photos + raw FaceBuilder texture
+v2 = original photos + same-size preprocessed texture photos
+v3 = original photos + output cleanup texture
+v4 = same-size preprocessed texture photos + output cleanup texture
+```
+
+The experiment proved routing and review automation, but it was not a good
+quality direction. The preprocessor filled hair/background/object regions with
+skin-like colors. FaceBuilder then treated that fake skin as real texture
+evidence, so the input was not cleaned; it was corrupted before the bake.
+
+Those private outputs were moved out of the active output root and preserved as
+a private historical archive:
+
+```text
+G:\내 드라이브\hair_app\output\history_archive\retired_facebuilder_color_mute_v1_v4_20260628T091346Z\
+```
+
+The archive keeps the old `.blend`, OBJ/GLB, texture, logs, manifests, and
+review sheets for forensic comparison. These remain private biometric artifacts
+and must not be committed to Git.
+
+### New Semantic Ablation Goal
+
+The next experiment changed one thing: instead of inventing a new crop or
+segmentation system, it reuses the previous Pixel3DMM V4 preprocessing outputs:
+
+- official FaceBoxesV2 per-photo no-roll crop;
+- 512x512 crop;
+- margin 1.42;
+- FaRL face parsing label maps;
+- existing crop/segmentation review artifacts.
+
+The purpose is not to make a final product head yet. The purpose is to answer
+three narrower questions:
+
+1. Does FaceBuilder behave better on raw validated photos or on consistent
+   FaceBoxes crops?
+2. Does the previous V4 crop engine still look reliable enough to reuse?
+3. If bad semantic regions are painted with impossible colors, do those colors
+   enter the FaceBuilder baked texture?
+
+### Version Definitions
+
+Current active private versions:
+
+```text
+semantic_v1 = raw V4-validated photos + raw FaceBuilder texture
+semantic_v2 = Pixel3DMM V4 crops + raw FaceBuilder texture
+semantic_v3 = Pixel3DMM V4 crops for alignment + sentinel-colored semantic texture inputs
+```
+
+Sentinel colors are deliberately impossible skin colors:
+
+- background: green;
+- hair: purple;
+- cloth: blue;
+- eyeglasses: cyan;
+- hat or miscellaneous region: yellow;
+- accessory/unknown/uncovered/outlier: red, pink, or orange.
+
+If those colors appear in the baked texture, the experiment proves FaceBuilder
+is using or blending those pixels rather than semantically ignoring them.
+
+### Input Scope And Important Caveat
+
+The user asked to use the Desktop `내사진` and `은채사진` folders. For this
+controlled semantic ablation, the implementation used the already validated
+Pixel3DMM V4 manifest rows because those rows are the only ones with matching
+old FaceBoxes crop and FaRL segmentation artifacts.
+
+Current rows:
+
+- Juseop: 19 V4 rows = 9 app-scan frames plus 10 selfie rows.
+- Eunchae: 8 selfie rows.
+
+There are Desktop-only Juseop images outside this V4 crop/segmentation set. They
+were not added to this ablation because doing so would mix old trusted crop/seg
+with a new unvalidated crop engine and would make v1/v2/v3 less comparable. If
+the next experiment truly needs every Desktop image, the correct next step is
+to rerun the V4 crop/FaRL preprocessing over that exact Desktop set first.
+
+For Juseop, `scan_*` rows are alignment-only by default. They are still used to
+help FaceBuilder fit the head, but they do not enter texture bake unless the
+runner is called with `--texture-scan-frames`. This was necessary because full
+19-camera texture bake with mixed scan and selfie cameras stalled in headless
+FaceBuilder. It also matches the product plan: app scan stabilizes geometry,
+while selfies provide appearance texture.
+
+### Implemented Code
+
+New tracked files:
+
+```text
+experiments/facebuilder_semantic_ablation/README.md
+experiments/facebuilder_semantic_ablation/run_facebuilder_semantic_ablation.py
+```
+
+The runner:
+
+- validates existing Pixel3DMM V4 crop/segmentation manifests;
+- copies raw/crop/sentinel working inputs into private Drive output folders;
+- builds crop/segmentation/sentinel review sheets;
+- writes FaceBuilder input manifests for each version/person;
+- calls the existing headless Blender FaceBuilder batch runner;
+- exports OBJ and GLB through the existing bridge path;
+- creates per-version `semantic_review_sheet.png` files;
+- creates a global v1/v2/v3 comparison sheet;
+- archives old retired FaceBuilder v1-v4 outputs when `--archive-old` is used.
+
+Main command shape:
+
+```powershell
+python experiments\facebuilder_semantic_ablation\run_facebuilder_semantic_ablation.py `
+  --drive-root "G:\내 드라이브\hair_app" `
+  --archive-old `
+  --clean
+```
+
+Review-only regeneration after the Blender work already exists:
+
+```powershell
+python experiments\facebuilder_semantic_ablation\run_facebuilder_semantic_ablation.py `
+  --drive-root "G:\내 드라이브\hair_app" `
+  --skip-existing
+```
+
+### Private Output Layout
+
+Active private outputs:
+
+```text
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v1\juseop\
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v1\eunchae\
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v2\juseop\
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v2\eunchae\
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v3\juseop\
+G:\내 드라이브\hair_app\output\facebuilder_semantic_v3\eunchae\
+G:\내 드라이브\hair_app\output\_semantic_preprocess\
+G:\내 드라이브\hair_app\output\_preprocess_review\
+G:\내 드라이브\hair_app\output\_comparison\facebuilder_semantic_v1_v3\
+```
+
+Important review sheets:
+
+```text
+G:\내 드라이브\hair_app\output\_preprocess_review\juseop\juseop_crop_segmentation_sentinel_review.png
+G:\내 드라이브\hair_app\output\_preprocess_review\eunchae\eunchae_crop_segmentation_sentinel_review.png
+G:\내 드라이브\hair_app\output\_comparison\facebuilder_semantic_v1_v3\facebuilder_semantic_v1_v3_comparison.png
+```
+
+Each version/person folder also contains:
+
+```text
+01_input_manifest/input_manifest.json
+03_facebuilder_scene/<person>_<version>_facebuilder.blend
+04_exports/<person>_<version>_bald_head.obj
+05_postprocess/facebuilder_texture_bake.png
+05_postprocess/facebuilder_texture_bald_cleanup.png
+06_glb/<person>_<version>_bald_head.glb
+07_review_sheets/render_yaw_*.png
+07_review_sheets/semantic_review_sheet.png
+run_manifest.json
+logs/
+```
+
+### Latest Run Summary
+
+| Version | Person | Input rows | Texture rows | Texture source | Result |
+| --- | --- | ---: | ---: | --- | --- |
+| semantic_v1 | Juseop | 19 | 10 | raw validated photos | complete |
+| semantic_v1 | Eunchae | 8 | 8 | raw validated photos | complete |
+| semantic_v2 | Juseop | 19 | 10 | V4 crops | complete |
+| semantic_v2 | Eunchae | 8 | 8 | V4 crops | complete |
+| semantic_v3 | Juseop | 19 | 10 | sentinel-colored V4 crops | complete |
+| semantic_v3 | Eunchae | 8 | 8 | sentinel-colored V4 crops | complete |
+
+### Visual Findings
+
+The crop review sheets show that the old Pixel3DMM V4 crop engine is still
+useful. Faces are consistently centered at a comparable scale, and this is a
+better controlled input for FaceBuilder than arbitrary uncropped phone images.
+
+The FaRL segmentation is useful for broad regions: skin, hair, background,
+clothes, eyes, lips, nose, ears, and neck. However, it is not a complete
+occlusion detector. Skin-colored hands/fingers, perfume bottles, phones, and
+some accessories can still be partially mislabeled as skin or face-adjacent
+regions. This matters most for Eunchae's perfume/hand images.
+
+The sentinel v3 result is intentionally not visually usable. Purple/green/blue
+sentinel colors appear in the baked texture and rendered head. That is useful
+evidence: FaceBuilder does not semantically understand those painted regions;
+it samples or blends the pixels. Therefore, replacing bad regions with fake
+skin before bake is unsafe, and replacing them with sentinel colors before bake
+is only diagnostic.
+
+The best immediate baseline is semantic_v2, not because it is product quality,
+but because it keeps real photo pixels while making input scale and face
+position more consistent. The next quality step should be semantic post-bake
+repair and occlusion-aware masking, not more pre-bake color filling.
+
+### Next Decisions From This Experiment
+
+1. Keep FaceBuilder automation as the near-term head engine.
+2. Keep Pixel3DMM V4 crop/FaRL preprocessing as a reusable preprocessing
+   source, but do not pretend FaRL alone detects hands/phones/perfume bottles.
+3. Stop using skin-color fill as pre-bake cleanup.
+4. Use sentinel coloring only as a diagnostic probe, not a product path.
+5. Build post-bake cleanup around semantic masks, observed/fallback confidence,
+   and separate eye/mouth/scalp materials.
+6. If the user wants every Desktop image included, first rerun V4 crop/FaRL over
+   the exact Desktop folders and then rerun semantic_v1/v2/v3 on the matching
+   set.
+
 ## 2026-06-28 FaceBuilder Texture Parity Fix And v1-v4 Reset
 
 This entry records an important reset of the FaceBuilder experiment line.

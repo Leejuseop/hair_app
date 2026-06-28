@@ -4,16 +4,15 @@ Last synchronized: 2026-06-28
 Status: working architecture and experiment plan; not a frozen specification
 
 > 2026-06-28 update: FaceBuilder automation is now the active near-term
-> head-generation path. The previous private FaceBuilder v1/v2/v3 outputs were
-> retired because they were generated before texture-bake parity was fixed.
-> Current private comparison versions are:
-> `v1 = original photos + raw FaceBuilder texture`,
-> `v2 = preprocessed texture photos + raw FaceBuilder texture`,
-> `v3 = original photos + postprocessed texture`,
-> `v4 = preprocessed texture photos + postprocessed texture`.
-> All versions currently use all readable photos; quality scoring is diagnostic
-> only. The next quality jump must come from semantic input/output masks rather
-> than broader color heuristics.
+> head-generation path. The earlier private FaceBuilder v1/v2/v3 outputs were
+> retired after the texture-bake parity fix, and the later v1/v2/v3/v4
+> color-mute ablation was retired after it showed that fake skin-color fills
+> pollute the bake. The current private comparison is the semantic ablation:
+> `semantic_v1 = raw V4-validated photos + raw FaceBuilder texture`,
+> `semantic_v2 = Pixel3DMM V4 crops + raw FaceBuilder texture`,
+> `semantic_v3 = Pixel3DMM V4 crops + sentinel-colored semantic texture inputs`.
+> The next quality jump must come from semantic post-bake repair, better
+> occlusion masks, and clean eye/mouth/scalp materials.
 
 > 2026-06-27 update: the long-term product contracts in this document are still
 > useful, but the current near-term head-generation engine candidate has moved
@@ -1333,71 +1332,77 @@ Keep these parts of the old plan:
 
 The model choice changed, but the product contract did not.
 
-### 21.3 Current v1/v2/v3/v4 automation status
+### 21.3 Current semantic v1/v2/v3 automation status
 
-The first FaceBuilder comparison pipeline now exists in
-`experiments/facebuilder_bridge/`.
+The FaceBuilder bridge remains in `experiments/facebuilder_bridge/`. The active
+semantic comparison runner is
+`experiments/facebuilder_semantic_ablation/run_facebuilder_semantic_ablation.py`.
 
 Implemented:
 
-- `facebuilder_version_runner.py` runs the local private v1/v2/v3/v4 comparison
-  batch from normal Python.
+- `facebuilder_version_runner.py` remains the lower-level FaceBuilder batch
+  runner and Blender launcher.
 - `blender_facebuilder_batch_scene.py` runs inside headless Blender, creates the
   FaceBuilder head, adds image candidates, auto-aligns, bakes texture, saves a
   private `.blend`, exports OBJ/GLB, and renders review yaw images.
-- The previous v1/v2/v3 outputs were retired on 2026-06-28 because they were
-  generated before the automated texture bake matched Blender UI `Create
-  Texture`.
-- v1 uses original photos and the raw FaceBuilder texture.
-- v2 uses original photos for auto-align, then swaps in same-size preprocessed
-  photos for texture bake while keeping the raw FaceBuilder texture material.
-- v3 uses original photos and applies the postprocessed cleanup texture as the
-  material.
-- v4 combines same-size preprocessed texture photos with postprocessed cleanup
-  texture material.
-- Photo quality scoring is diagnostic only in the current v1-v4 ablation; no
-  readable photos are rejected by quality score.
+- `run_facebuilder_semantic_ablation.py` reuses the previous Pixel3DMM V4
+  FaceBoxes crops and FaRL segmentation artifacts, builds raw/crop/sentinel
+  input manifests, runs the FaceBuilder batch, and creates private review
+  sheets.
+- The previous v1/v2/v3 outputs were retired because they were generated before
+  the automated texture bake matched Blender UI `Create Texture`.
+- The later v1/v2/v3/v4 color-mute ablation was retired because its
+  preprocessor filled rejected regions with skin-like color and polluted the
+  texture bake.
+- `semantic_v1` uses raw V4-validated photos and the raw FaceBuilder texture.
+- `semantic_v2` uses the existing Pixel3DMM V4 FaceBoxes crops for alignment
+  and raw FaceBuilder texture bake.
+- `semantic_v3` aligns on the V4 crops and swaps texture inputs to
+  sentinel-colored FaRL semantic crops.
+- For Juseop, `scan_*` rows are alignment-only by default; this avoids
+  FaceBuilder stalls when many mixed scan/selfie cameras enter the same texture
+  bake and matches the product plan where scan frames stabilize geometry while
+  selfies drive appearance.
 - Private output folders are created under:
 
 ```text
-<drive_root>/output/facebuilder_v1/<person>/
-<drive_root>/output/facebuilder_v2/<person>/
-<drive_root>/output/facebuilder_v3/<person>/
-<drive_root>/output/facebuilder_v4/<person>/
-<drive_root>/output/_comparison/facebuilder_v1_v4/
+<drive_root>/output/facebuilder_semantic_v1/<person>/
+<drive_root>/output/facebuilder_semantic_v2/<person>/
+<drive_root>/output/facebuilder_semantic_v3/<person>/
+<drive_root>/output/_preprocess_review/<person>/
+<drive_root>/output/_comparison/facebuilder_semantic_v1_v3/
 ```
 
 Latest private comparison summary:
 
-| Version | Person | Selected | Rejected | Preprocessed | Aligned | Failed | TexCams |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| v1 | Juseop | 11 | 0 | 0 | 10 | 1 | 10 |
-| v1 | Eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
-| v2 | Juseop | 11 | 0 | 11 | 10 | 1 | 10 |
-| v2 | Eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
-| v3 | Juseop | 11 | 0 | 0 | 10 | 1 | 10 |
-| v3 | Eunchae | 8 | 0 | 0 | 7 | 1 | 7 |
-| v4 | Juseop | 11 | 0 | 11 | 10 | 1 | 10 |
-| v4 | Eunchae | 8 | 0 | 8 | 7 | 1 | 7 |
+| Version | Person | Input rows | Texture rows | Input mode | Bake result |
+| --- | --- | ---: | ---: | --- | --- |
+| semantic_v1 | Juseop | 19 | 10 | raw validated photos | complete |
+| semantic_v1 | Eunchae | 8 | 8 | raw validated photos | complete |
+| semantic_v2 | Juseop | 19 | 10 | Pixel3DMM V4 crops | complete |
+| semantic_v2 | Eunchae | 8 | 8 | Pixel3DMM V4 crops | complete |
+| semantic_v3 | Juseop | 19 | 10 | crops + sentinel texture inputs | complete |
+| semantic_v3 | Eunchae | 8 | 8 | crops + sentinel texture inputs | complete |
 
-The important interpretation is that v1 is now the correct raw FaceBuilder
-baseline. v2/v4 confirm that same-size preprocessed texture photos can be
-swapped into FaceBuilder texture bake, but the first heuristic preprocessor
-creates visible neutral patches. v3/v4 confirm that cleanup textures can be
-routed into GLB/review materials, but the current cleanup remains below product
-quality. Visible defects remain around scalp/hair patches, eyes,
-mouth/nostrils, neck/ear seams, and background or clothing leakage.
+The important interpretation is that crop reuse is helpful as a controlled
+baseline, but sentinel v3 is diagnostic rather than product-looking. The
+sentinel colors appear in the baked texture and render, proving FaceBuilder is
+still consuming or blending those input pixels. Bad regions should therefore be
+masked, weighted out, or repaired after bake; painting fake skin before bake is
+not a reliable solution. Visible defects remain around hair/scalp, eyes,
+mouth/nostrils, neck/ear seams, clothing/background leakage, and hand/object
+occlusions.
 
 ### 21.4 New near-term milestones
 
-1. Human review of v1/v2/v3/v4:
+1. Human review of semantic v1/v2/v3:
    - inspect private review sheets and GLBs;
-   - compare raw baseline, input preprocessing, output post-processing, and
-     their combination;
+   - compare raw baseline, V4 crop baseline, and sentinel contamination;
    - record what fails visually before changing more logic.
 
-2. Semantic input/output processing:
-   - remove hair, headwear, glasses, shirt, and background leakage;
+2. Semantic post-bake processing:
+   - remove hair, headwear, glasses, hands, phones, perfume bottles, shirt, and
+     background leakage;
    - fill scalp, neck, rear head, and low-confidence skin;
    - improve eyes, iris, eyelids, mouth interior, lips, ears, brows, and skin
      material;
