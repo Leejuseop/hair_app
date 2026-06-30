@@ -75,9 +75,10 @@ machine:
   It writes Drive outputs, OBJ/GLB, per-version review sheets, crop/segmentation
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
-  mask comparison, Step 4 clean-pixel UV projection, and Step 5 raw-versus-clean
-  arbitration. `v2_farl_grounded_sam` is the current mask candidate, and the
-  Step 5 `blend` texture is the preferred starting point for Step 6.
+  mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
+  arbitration, and the first Step 6 safety pass. `v2_farl_grounded_sam` is the
+  current mask candidate, and Step 6 is now using the Step 5 `blend` texture as
+  its fixed baseline.
 
 Private test outputs are written under `private_outputs/` and are ignored by
 Git. Current FaceBuilder version outputs are written under the private Drive
@@ -92,6 +93,7 @@ layout:
 <drive_root>/output/facebuilder_mask_aware_step3/<stamp>/
 <drive_root>/output/facebuilder_mask_aware_step4/<stamp>/
 <drive_root>/output/facebuilder_mask_aware_step5/<stamp>/
+<drive_root>/output/facebuilder_mask_aware_step6/<stamp>/
 ```
 
 ## Implemented Repository Pieces
@@ -119,7 +121,8 @@ Research-side implementation includes:
   preprocessing and test raw versus cropped versus sentinel-colored texture
   inputs.
 - FaceBuilder mask-aware correction scripts for parser/object-mask comparison,
-  clean-pixel UV projection, raw-versus-clean arbitration, and review sheets.
+  clean-pixel UV projection, raw-versus-clean arbitration, Step 6 postprocess,
+  and review sheets.
 
 ## Not Implemented Yet
 
@@ -168,15 +171,18 @@ private_outputs/
 
 ## Next Immediate Work
 
-1. Start Step 6 from the Step 5 `blend` texture, one post-process element at a
-   time, with a review sheet after each element.
-2. Treat the current forehead issue as mostly valid skin with baked lighting and
+1. Continue Step 6 from the Step 5 `blend` texture, one post-process element at
+   a time, with a review sheet after each element.
+2. Keep v01 hard black skin-hole fill as a conservative safety pass. It fills
+   only tiny dot-like holes and protects eyes, mouth, brows, nostrils, scalp,
+   and clothing.
+3. Treat the current forehead issue as mostly valid skin with baked lighting and
    tone mismatch, not as a confirmed hair-segmentation failure. Do not erase
    forehead detail aggressively.
-3. Repair semantic regions in this order: hard black holes, forehead tone,
-   mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears, scalp/hairline,
-   and final global color smoothing.
-4. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+4. Repair the next semantic regions in this order: forehead tone, mouth/lips,
+   eyes/eyebrows, neck/lower clothing leakage, ears, scalp/hairline, and final
+   global color smoothing.
+5. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
    candidate unless visual review proves otherwise.
 5. Preserve confidence/provenance maps so observed pixels, blended pixels, and
    generated/fallback pixels remain distinguishable.

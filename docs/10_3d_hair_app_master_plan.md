@@ -1555,15 +1555,33 @@ Observed Step 5 category ratios:
 | Juseop | 0.007 | 0.030 | 0.156 | 0.807 | 0.781 |
 | Eunchae | 0.023 | 0.012 | 0.103 | 0.862 | 0.788 |
 
-Next active stage:
+Current Step 6 status:
 
 ```text
-Step 6: completion/material-specific repair
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_084010
 ```
 
-Step 6 should repair black completion-needed regions by semantic region:
-scalp/hairline, skin gaps, neck, ears, eyes, mouth, lips, nostrils, brows, and
-other material-specific areas.
+Step 6 has started from the Step 5 `blend` texture. The implemented script is
+`experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
+
+Completed Step 6 sub-steps:
+
+- `v00_baseline`: Step 5 `blend` render baseline.
+- `v01_hard_skin_holes`: conservative black-hole skin fill.
+
+Important Step 6 v01 result:
+
+- The first broader fill attempt touched eye-region candidates, so it was
+  rejected.
+- The accepted v01 protects dark feature regions near skin before filling.
+- Accepted v01 fills only 39 texels for Juseop and 13 texels for Eunchae at the
+  1024 atlas, so the visual change is intentionally tiny.
+- This is acceptable for v01 because the rule is safety first: eyes, mouth,
+  brows, nostrils, scalp, and clothing must not be filled as skin.
+
+Remaining Step 6 should repair completion-needed and contaminated regions by
+semantic/material region: forehead tone, mouth/lips, eyes/brows, neck/lower
+leakage, ears/side face, scalp/hairline, and only then final color smoothing.
 
 Detailed Step 6 plan:
 
@@ -1579,12 +1597,15 @@ Detailed Step 6 plan:
    - Fill from nearby reliable Step 5/Step 4 observed skin using distance
      weighting and low-radius smoothing.
    - Do not fill eyes, mouth, brows, nostrils, scalp, or clothing with face skin.
+   - Current v01 is complete as a conservative safety pass. Do not widen it
+     before the larger visible artifacts are handled separately.
 
 3. Forehead tone repair
    - Current visual read: the forehead issue is mostly valid skin with baked
      lighting/tone mismatch, not confirmed hair leakage from the mask.
    - Lift overly dark forehead skin toward nearby forehead/midface skin while
      preserving local detail and avoiding a flat fake-skin patch.
+   - This is the next active sub-step.
 
 4. Mouth and lips
    - Treat lip, mouth interior, teeth-like bright pixels, and nostril-like dark

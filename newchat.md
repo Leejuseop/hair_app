@@ -1,6 +1,6 @@
 # Hair App New-Chat Handoff
 
-Last synchronized: 2026-06-30
+Last synchronized: 2026-07-01
 
 Expected branch: `main`
 
@@ -90,6 +90,7 @@ Completed:
 - Step 3: parser/object-mask ablation.
 - Step 4: clean-pixel UV projection.
 - Step 5: raw-versus-clean texture arbitration.
+- Step 6 v00/v01: baseline plus conservative hard black skin-hole fill.
 
 Current Step 3 winner:
 
@@ -155,7 +156,27 @@ Visual read:
 - `blend` looks better than `select` and should be the main Step 6 base.
 - `select` should remain only as a diagnostic comparison.
 
-## 6. Next Active Step: Step 6
+Active Step 6 output:
+
+```text
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_084010
+```
+
+Step 6 v01 status:
+
+- Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
+- `v00_baseline` copies/renders Step 5 `blend`.
+- `v01_hard_skin_holes` is complete as a very conservative safety pass.
+- The first broader v01 attempt was rejected because the changed overlay touched
+  eye-region candidates.
+- The accepted v01 protects dark feature regions near skin before filling.
+- Accepted filled texels at 1024 atlas:
+  - Juseop: 39
+  - Eunchae: 13
+- This tiny visible change is intentional. Do not widen v01 before handling the
+  bigger visible artifacts as separate material-specific repairs.
+
+## 6. Next Active Step: Step 6 v02
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -163,44 +184,34 @@ Do not batch many fixes together.
 
 Planned order:
 
-1. Baseline review
-   - Load Step 5 `blend`.
-   - Render 0, +/-15, +/-30, +/-45.
-   - Keep `select` beside it only for comparison.
-
-2. Hard black skin holes
-   - Fill black `COMPLETION_NEEDED` pixels only where the semantic region is
-     skin-like and neighboring observed skin is reliable.
-   - Exclude eyes, mouth, brows, nostrils, scalp, and clothing from skin fill.
-
-3. Forehead tone
+1. Forehead tone
    - Treat dark forehead patches as valid skin with baked lighting/tone
      mismatch unless masks/source maps prove otherwise.
    - Lift/smooth tone from nearby forehead and midface skin.
    - Preserve detail; do not flatten into fake skin.
 
-4. Mouth and lips
+2. Mouth and lips
    - Repair mouth interior and lips as separate materials.
    - Do not diffuse cheek skin into the mouth.
 
-5. Eyes and brows
+3. Eyes and brows
    - Repair eye, eyelid, and brow regions separately.
    - Avoid blending eye whites or brow darkness into skin.
 
-6. Neck and lower leakage
+4. Neck and lower leakage
    - Remove shirt/background remnants near lower neck using semantic location,
      decision/source maps, and color outlier checks.
    - Replace only after review confirms useful skin is not being removed.
 
-7. Ears and side face
+5. Ears and side face
    - Fill low-confidence ear/side gaps conservatively.
    - Use observed pixels first; use fallback only for missing regions.
 
-8. Scalp and hairline
+6. Scalp and hairline
    - Create plausible scalp material and hairline transition.
    - Keep scalp/hairline separate from forehead skin.
 
-9. Final mild color pass
+7. Final mild color pass
    - Apply only after individual repairs are accepted.
    - Avoid early global color correction because it hides which sub-step helped.
 

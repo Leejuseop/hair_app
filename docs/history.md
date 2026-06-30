@@ -2734,3 +2734,73 @@ Step 6 will be run one element at a time, with review sheets after each element:
 The key process rule is diagnostic isolation: do not batch many post-process
 changes together. Each region-specific repair must produce before/after review
 sheets so quality changes can be attributed to one logic change.
+
+### 27.7 Step 6 v00/v01 Postprocess
+
+Date: 2026-07-01.
+
+Step 6 implementation started with the Step 5 `blend` texture fixed as the
+baseline. The active script is:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py
+```
+
+Active private Step 6 output:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_084010
+```
+
+Generated sub-steps:
+
+```text
+v00_baseline
+v01_hard_skin_holes
+```
+
+v00 simply copies the active Step 5 `blend` texture and renders it for baseline
+review. Step 5 `select` is saved only as a diagnostic comparison.
+
+v01 targets only hard black `COMPLETION_NEEDED` skin holes. The first internal
+attempt was too permissive: it filled thousands of texels but also marked
+eye-region candidates in the changed overlay. That violated the rule that eyes,
+mouth, brows, nostrils, scalp, and clothing must not be filled with skin. The
+logic was therefore tightened before accepting the output.
+
+Accepted v01 logic:
+
+- find reliable observed skin from non-completion texels plus broad YCbCr/luma
+  skin gates;
+- close that reliable skin mask with a small radius;
+- consider only nearby `COMPLETION_NEEDED` texels as skin-hole candidates;
+- build a magenta feature-protection mask for dark completion regions near
+  skin, covering eyes, mouth/lip gaps, brows, nostril-like fragments, scalp
+  boundary, and lower non-skin islands;
+- fill only the remaining tiny dot-like holes from nearest reliable skin;
+- smooth only changed texels locally.
+
+Accepted v01 metrics at 1024 atlas:
+
+| Person | Filled texels | Feature-protected texels | Result |
+| --- | ---: | ---: | --- |
+| Juseop | 39 | 80,403 | Very conservative, visually tiny |
+| Eunchae | 13 | 85,922 | Very conservative, visually tiny |
+
+Interpretation:
+
+- v01 is intentionally a safety pass, not a visible quality leap.
+- It proves the Step 6 review/diagnostic scaffold works and that skin diffusion
+  can be prevented from entering eyes/mouth/brows.
+- The current large visible problems are forehead tone mismatch, mouth/eye
+  materials, neck/clothing leakage, and scalp/hairline material. Those should be
+  handled as separate Step 6 sub-steps rather than by widening v01.
+
+Next Step 6 sub-step:
+
+```text
+v02_forehead_tone
+```
+
+v02 should treat the forehead artifact as a tone/lighting mismatch in valid
+skin unless masks/source maps prove true occluder leakage.

@@ -231,10 +231,16 @@ Important visual interpretation:
 - It is more likely valid skin with baked lighting/tone mismatch, darkened by
   blending and render lighting.
 
-## Next Step: Step 6
+### Step 6: Material-Specific Postprocess
 
-Step 6 is material-specific post-processing. It should be run one element at a
-time, with a fresh review sheet after each individual repair.
+Script:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py
+```
+
+Step 6 starts from the Step 5 `blend` texture. It is intentionally run one
+element at a time, with a fresh review sheet after each individual repair.
 
 Planned process:
 
@@ -247,3 +253,47 @@ Planned process:
    scalp/hairline as separate material regions.
 5. Apply only mild final color smoothing after the individual repairs are
    visually accepted.
+
+Current private Step 6 output:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_084010
+```
+
+Implemented sub-steps:
+
+```text
+v00_baseline = Step 5 blend texture
+v01_hard_skin_holes = conservative black-hole skin fill
+```
+
+v01 logic:
+
+- use Step 5 `blend` as the baseline;
+- detect reliable observed skin from non-completion texels and broad skin-color
+  gates;
+- only consider `COMPLETION_NEEDED` texels that sit very close to reliable
+  skin after a small skin-mask closing pass;
+- protect dark completion-needed feature regions near skin, shown in magenta in
+  the UV review sheet;
+- fill only tiny remaining dot-like holes from the nearest reliable skin pixel;
+- smooth only the changed texels locally;
+- leave eyes, mouth, brows, nostrils, scalp, and clothing effectively
+  untouched.
+
+Observed v01 metrics at 1024 atlas:
+
+| Person | Filled texels | Feature-protected texels | Read |
+| --- | ---: | ---: | --- |
+| Juseop | 39 | 80,403 | Safe but visually tiny change |
+| Eunchae | 13 | 85,922 | Safe but visually tiny change |
+
+Interpretation:
+
+- The first naive v01 attempt filled thousands of texels but touched eye-region
+  candidates, so it was rejected.
+- The accepted v01 is deliberately conservative. It does not materially improve
+  the current look, but it establishes a safe rule: skin-hole filling must not
+  leak into eyes, lips, brows, nostrils, scalp, or clothing.
+- The next useful Step 6 sub-step is forehead tone repair, because the biggest
+  visible artifact is not a small black skin hole.
