@@ -14,14 +14,14 @@ is a believable personal head for hairstyle preview:
 
 ## Current Direction
 
-As of 2026-06-28, the main face/head engine candidate is:
+As of 2026-06-30, the main face/head engine candidate is:
 
 ```text
 ordinary selfies + app scan frames
   -> automated FaceBuilder/KeenTools solve inside headless Blender
   -> private raw FaceBuilder mesh and texture
-  -> optional texture-input preprocessing
-  -> optional texture-output post-processing
+  -> mask-aware texture correction from FaceBuilder cameras/UV
+  -> material-specific texture post-processing
   -> mobile GLB + review sheets
 ```
 
@@ -32,11 +32,10 @@ visibility, completion, and review tooling, but the visible identity quality is
 far below product standard.
 
 The current working hypothesis is that FaceBuilder gives a stronger automated
-geometry-and-texture starting point, while Hair App should own:
+geometry-and-camera starting point, while Hair App should own:
 
 - camera/projection-faithful FaceBuilder automation;
-- texture-input preprocessing before bake;
-- texture-output post-processing after bake;
+- mask-aware texture trust, repair, and completion after bake;
 - hairline/scalp preparation;
 - hair fitting, collision, and GLB export;
 - privacy-safe storage and deletion.
@@ -67,7 +66,7 @@ machine:
 - The later FaceBuilder v1/v2/v3/v4 color-mute batches were also retired: the
   same-size preprocessor filled rejected regions with skin-like color, which
   made the texture bake dirtier rather than cleaner.
-- The current private FaceBuilder semantic ablation now runs for Juseop and
+- The private FaceBuilder semantic ablation runs for Juseop and
   Eunchae, reusing the previous Pixel3DMM V4 FaceBoxes crops and FaRL
   segmentations:
   - `semantic_v1`: raw validated photos + raw FaceBuilder texture;
@@ -75,6 +74,10 @@ machine:
   - `semantic_v3`: V4 crops + sentinel-colored semantic texture inputs.
   It writes Drive outputs, OBJ/GLB, per-version review sheets, crop/segmentation
   review sheets, and a cross-version comparison sheet.
+- The active mask-aware correction experiment has completed Step 3 parser/object
+  mask comparison, Step 4 clean-pixel UV projection, and Step 5 raw-versus-clean
+  arbitration. `v2_farl_grounded_sam` is the current mask candidate, and the
+  Step 5 `blend` texture is the preferred starting point for Step 6.
 
 Private test outputs are written under `private_outputs/` and are ignored by
 Git. Current FaceBuilder version outputs are written under the private Drive
@@ -86,6 +89,9 @@ layout:
 <drive_root>/output/facebuilder_semantic_v3/<person>/
 <drive_root>/output/_preprocess_review/<person>/
 <drive_root>/output/_comparison/facebuilder_semantic_v1_v3/
+<drive_root>/output/facebuilder_mask_aware_step3/<stamp>/
+<drive_root>/output/facebuilder_mask_aware_step4/<stamp>/
+<drive_root>/output/facebuilder_mask_aware_step5/<stamp>/
 ```
 
 ## Implemented Repository Pieces
@@ -112,6 +118,8 @@ Research-side implementation includes:
 - FaceBuilder semantic ablation scripts that reuse Pixel3DMM V4 crop/FaRL
   preprocessing and test raw versus cropped versus sentinel-colored texture
   inputs.
+- FaceBuilder mask-aware correction scripts for parser/object-mask comparison,
+  clean-pixel UV projection, raw-versus-clean arbitration, and review sheets.
 
 ## Not Implemented Yet
 
@@ -160,18 +168,17 @@ private_outputs/
 
 ## Next Immediate Work
 
-1. Review the private semantic v1/v2/v3 FaceBuilder sheets and GLBs.
-2. Treat semantic v3 as a diagnostic, not a final look: sentinel colors prove
-   that FaceBuilder blends raw pixel colors, so bad semantic regions must be
-   removed or repaired after bake rather than replaced with fake skin before
-   bake.
-3. Build semantic post-processing around the FaceBuilder output:
-   scalp/hair/skin/neck/ear/eye/mouth/occlusion masks, not only color
-   heuristics.
-4. Improve the bald-head substrate: remove remaining hair/background/shirt
-   leakage, fill scalp and rear head with plausible skin, and add clean
-   eye/mouth materials.
-5. Decide whether FaceBuilder exported mesh can be used directly for the hair
-   app, or whether a transfer/retopology step is required.
-6. After the bald head is credible, move to hair asset reconstruction/fitting,
-   collision, and mobile GLB viewer work.
+1. Start Step 6 from the Step 5 `blend` texture, one post-process element at a
+   time, with a review sheet after each element.
+2. Treat the current forehead issue as mostly valid skin with baked lighting and
+   tone mismatch, not as a confirmed hair-segmentation failure. Do not erase
+   forehead detail aggressively.
+3. Repair semantic regions in this order: hard black holes, forehead tone,
+   mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears, scalp/hairline,
+   and final global color smoothing.
+4. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+   candidate unless visual review proves otherwise.
+5. Preserve confidence/provenance maps so observed pixels, blended pixels, and
+   generated/fallback pixels remain distinguishable.
+6. After the bald head is credible, decide whether the FaceBuilder mesh can be
+   used directly for hair fitting or needs retopology/transfer.

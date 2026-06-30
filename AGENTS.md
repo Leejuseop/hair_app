@@ -14,7 +14,7 @@ Before changing code or docs:
 
 ## Current Direction
 
-As of 2026-06-27, the main head-generation candidate is FaceBuilder/KeenTools
+As of 2026-06-30, the main head-generation candidate is FaceBuilder/KeenTools
 automation through headless Blender.
 
 The intended product pipeline is:
@@ -24,10 +24,13 @@ ordinary selfies + in-app scan frames
   -> photo/frame scoring
   -> automated FaceBuilder solve in Blender
   -> private bald-head mesh and texture
-  -> Hair App post-processing
+  -> Hair App mask-aware texture correction and post-processing
   -> hair fitting/collision
   -> mobile GLB/viewer
 ```
+
+The immediate next technical step is Step 6 material-specific post-processing
+from the Step 5 `blend` texture in `experiments/facebuilder_mask_aware_correction/`.
 
 Pixel3DMM/FLAME and Texture Baker v1/v2/v3 are research baselines and fallback
 experiments. They are not the current main quality path unless the user asks to

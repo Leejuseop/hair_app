@@ -389,21 +389,25 @@ over-replacement.
 
 ## Next Work
 
-1. Review v1/v2/v3/v4 private sheets with the user.
-2. Replace heuristic input preprocessing and cleanup with semantic processing:
-   - face/skin/scalp/hair/background/neck/ear masks;
-   - eye, iris, eyelid, mouth, lip, brow, and nostril materials;
-   - confidence and provenance maps for observed versus filled regions.
-3. Reintroduce stronger input analysis before FaceBuilder after the current
-   ablation is understood:
-   - robust landmarks;
-   - pose/yaw;
-   - eye closed / mouth open;
-   - glasses, phone, hand, hair, and headwear occlusion;
-   - segmentation confidence;
-   - lighting and color normalization.
-4. Evaluate mesh strategy:
-   - use FaceBuilder mesh directly if scalp mapping and hair collision work;
-   - otherwise transfer/retopologize to a controlled app head mesh.
-5. After the bald-head substrate is credible, move to hair reconstruction,
-   hairline-aware fitting, collision correction, and mobile GLB/viewer work.
+The bridge automation itself is good enough for the current research loop. The
+active quality work has moved to:
+
+```text
+experiments/facebuilder_mask_aware_correction/
+```
+
+Current next step:
+
+1. Start Step 6 material-specific post-processing from the Step 5 `blend`
+   texture.
+2. Process one element at a time with review sheets after each repair:
+   hard skin holes, forehead tone, mouth/lips, eyes/brows, neck/lower leakage,
+   ears/side face, scalp/hairline, then mild final color smoothing.
+3. Keep FaceBuilder bridge scripts available for rerender/export/parity
+   debugging, but do not return to the retired v1-v4 heuristic cleanup path
+   unless the user explicitly asks for a comparison.
+4. After the bald-head substrate is credible, evaluate whether the FaceBuilder
+   mesh can be used directly for scalp mapping and hair collision or whether a
+   transfer/retopology step is required.
+5. Then move to hair reconstruction, hairline-aware fitting, collision
+   correction, and mobile GLB/viewer work.

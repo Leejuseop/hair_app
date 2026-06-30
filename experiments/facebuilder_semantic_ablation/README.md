@@ -57,6 +57,15 @@ semantic regions cannot be fixed simply by painting the input before bake.
 Future cleanup should mask or repair bad regions after bake and should use
 better hand/object/phone/perfume occlusion detection.
 
+Current project use:
+
+- `semantic_v2` is the controlled FaceBuilder source baseline for the active
+  mask-aware correction experiment.
+- Juseop scan rows remain alignment-only by default; texture correction should
+  use selfie/texture-enabled cameras, not scan/alignment-only frames.
+- The active post-bake path is now Step 3/4/5/6 under
+  `experiments/facebuilder_mask_aware_correction/`.
+
 ## Run
 
 ```powershell

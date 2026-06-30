@@ -1,6 +1,6 @@
 # Hair App 3D Master Plan
 
-Last synchronized: 2026-06-28
+Last synchronized: 2026-06-30
 Status: working architecture and experiment plan; not a frozen specification
 
 > 2026-06-28 update: FaceBuilder automation is now the active near-term
@@ -1457,7 +1457,7 @@ Current active references:
 The active correction experiment is
 `experiments/facebuilder_mask_aware_correction/`.
 
-Completed private checks:
+Historical private checks from the initial Step 0-3 scaffold:
 
 - Step 0 scene probe:
   `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step0/20260629_194117`
@@ -1468,7 +1468,7 @@ Completed private checks:
 - Step 3 mask ablation scaffold:
   `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3/20260629_203236`
 
-Current Step 3 state:
+Historical Step 3 scaffold state:
 
 - `v0_farl_only` is generated and ready for comparison for Juseop and Eunchae.
 - `v1_facexformer_only` waits for FaceXFormer Colab label masks.
@@ -1482,6 +1482,8 @@ experiments/facebuilder_mask_aware_correction/STEP3_COLAB.md
 ```
 
 Current 2026-06-29 update:
+
+The update below supersedes the scaffold state above.
 
 - Step 3 external FaceXFormer and Grounded SAM masks have been generated.
 - Current Step 3 output:
@@ -1562,3 +1564,57 @@ Step 6: completion/material-specific repair
 Step 6 should repair black completion-needed regions by semantic region:
 scalp/hairline, skin gaps, neck, ears, eyes, mouth, lips, nostrils, brows, and
 other material-specific areas.
+
+Detailed Step 6 plan:
+
+1. Baseline and review contract
+   - Use Step 5 `blend` as the main input texture.
+   - Keep Step 5 `select` only as a diagnostic comparison.
+   - For every sub-step, output texture atlas review, 0/+-15/+-30/+-45 render
+     sheet, and a changed-pixel mask.
+
+2. Hard-hole skin fill
+   - Target only black `COMPLETION_NEEDED` pixels that belong to skin-like
+     semantic regions.
+   - Fill from nearby reliable Step 5/Step 4 observed skin using distance
+     weighting and low-radius smoothing.
+   - Do not fill eyes, mouth, brows, nostrils, scalp, or clothing with face skin.
+
+3. Forehead tone repair
+   - Current visual read: the forehead issue is mostly valid skin with baked
+     lighting/tone mismatch, not confirmed hair leakage from the mask.
+   - Lift overly dark forehead skin toward nearby forehead/midface skin while
+     preserving local detail and avoiding a flat fake-skin patch.
+
+4. Mouth and lips
+   - Treat lip, mouth interior, teeth-like bright pixels, and nostril-like dark
+     pixels as separate material regions.
+   - Use controlled dark mouth material and lip color smoothing rather than
+     diffusing cheek skin into the mouth.
+
+5. Eyes and brows
+   - Use separate eye/eyelid/brow repair masks.
+   - Avoid blending eye whites or brow darkness into surrounding skin.
+   - Prefer simple stable materials over noisy photo fragments until geometry
+     or better eye assets are introduced.
+
+6. Neck, lower boundary, and clothing leakage
+   - Detect shirt/background remnants near the lower neck from decision/source
+     maps, color outliers, and semantic region location.
+   - Replace lower non-skin remnants with neck/scalp fallback only after a
+     review sheet confirms no useful observed skin is being removed.
+
+7. Ears and side face
+   - Fill low-confidence side/ear gaps conservatively.
+   - Use observed pixels first; use mirrored or neighboring fallback only for
+     truly missing regions.
+
+8. Scalp and hairline
+   - Create a plausible scalp material and hairline transition.
+   - Do not aggressively erase forehead detail. Treat hairline/scalp separately
+     from forehead skin.
+
+9. Final mild color pass
+   - Apply small, region-aware color smoothing after individual repairs.
+   - Avoid early global color correction because it can hide which sub-step
+     improved or damaged quality.

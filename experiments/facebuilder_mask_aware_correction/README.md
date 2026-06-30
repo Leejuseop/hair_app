@@ -1,23 +1,25 @@
 # FaceBuilder Mask-Aware Correction
 
 This experiment keeps FaceBuilder for geometry/camera alignment and replaces
-the weak part of the pipeline: texture pixel trust/selection.
+the weak part of the pipeline: texture pixel trust, repair, and completion.
 
 Private generated assets belong in Drive only. Do not commit photos, crops,
 masks, textures, renders, meshes, GLB/OBJ exports, or review sheets.
 
 ## Current Source Baseline
 
-The current source scene is:
+The current FaceBuilder source baseline is:
 
 ```text
-G:/내 드라이브/hair_app/output/facebuilder_semantic_v2
+<private_drive>/hair_app/output/facebuilder_semantic_v2
 ```
 
 That baseline uses Pixel3DMM V4 crops for FaceBuilder alignment and raw
 FaceBuilder texture baking.
 
-## Step 0: Scene Data Probe
+## Completed Steps
+
+### Step 0: Scene Data Probe
 
 Script:
 
@@ -27,18 +29,18 @@ experiments/facebuilder_mask_aware_correction/run_step0_probe.py
 
 Purpose:
 
-- open existing FaceBuilder `.blend` files
-- verify mesh, UV, raw texture, OBJ/GLB, camera image paths
-- extract camera projection/model matrices
-- export triangulated mesh/UV arrays for later rasterization
+- open existing FaceBuilder `.blend` files;
+- verify mesh, UV, raw texture, OBJ/GLB, camera image paths;
+- extract camera projection/model matrices;
+- export triangulated mesh/UV arrays for later rasterization.
 
 Latest private output:
 
 ```text
-G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step0/20260629_194117
+<private_drive>/hair_app/output/facebuilder_mask_aware_step0/20260629_194117
 ```
 
-## Step 1: Reprojection Smoke Test
+### Step 1: Reprojection Smoke Test
 
 Script:
 
@@ -48,16 +50,16 @@ experiments/facebuilder_mask_aware_correction/run_step1_reprojection.py
 
 Purpose:
 
-- project the solved FaceBuilder head mesh back onto each input crop image
-- verify that eyes/nose/mouth/jaw roughly line up
+- project the solved FaceBuilder head mesh back onto each input crop image;
+- verify that eyes/nose/mouth/jaw roughly line up.
 
 Latest private output:
 
 ```text
-G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step1/20260629_195513
+<private_drive>/hair_app/output/facebuilder_mask_aware_step1/20260629_195513
 ```
 
-## Step 2: UV Visibility
+### Step 2: UV Visibility
 
 Script:
 
@@ -67,17 +69,17 @@ experiments/facebuilder_mask_aware_correction/run_step2_uv_visibility.py
 
 Purpose:
 
-- compute which UV atlas regions each input image can see
-- estimate per-camera view-angle confidence
-- build per-camera and combined UV coverage/source-count maps
+- compute which UV atlas regions each input image can see;
+- estimate per-camera view-angle confidence;
+- build per-camera and combined UV coverage/source-count maps.
 
 Latest private output:
 
 ```text
-G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step2/20260629_200519
+<private_drive>/hair_app/output/facebuilder_mask_aware_step2/20260629_200519
 ```
 
-## Step 3: Parser/Object Mask Ablation
+### Step 3: Parser/Object Mask Ablation
 
 Script:
 
@@ -97,54 +99,25 @@ v3_facexformer_grounded_sam
 Current private output:
 
 ```text
-G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3/20260629_203236
+<private_drive>/hair_app/output/facebuilder_mask_aware_step3/20260629_212612
 ```
 
 Current state:
 
-- `v0_farl_only` is ready for Juseop/Eunchae.
-- `v1_facexformer_only` waits for Colab FaceXFormer label masks.
-- `v2_farl_grounded_sam` waits for Colab Grounded SAM object masks.
-- `v3_facexformer_grounded_sam` waits for both external outputs.
+- all four versions are generated;
+- current working parser/object-mask candidate is `v2_farl_grounded_sam`;
+- FaceXFormer remains experimental because it under-segments some nose/skin
+  regions compared with FaRL;
+- Grounded SAM is used conservatively: broad face/head/hair detections and
+  oversized masks are rejected before object masks enter `usable_skin`.
 
-Colab cells:
+Colab instructions for regenerating external masks:
 
 ```text
 experiments/facebuilder_mask_aware_correction/STEP3_COLAB.md
 ```
 
-After Colab writes external masks to:
-
-```text
-G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3_external
-```
-
-rerun:
-
-```powershell
-python experiments\facebuilder_mask_aware_correction\run_step3_masks.py --source-version facebuilder_semantic_v2
-```
-
-## Latest Status: Step 3 and Step 4
-
-The older Step 3 status above is retained as historical context. The current
-working Step 3 output is:
-
-```text
-G:/???쒕씪?대툕/hair_app/output/facebuilder_mask_aware_step3/20260629_212612
-```
-
-Current Step 3 state:
-
-- `v0_farl_only`, `v1_facexformer_only`, `v2_farl_grounded_sam`,
-  and `v3_facexformer_grounded_sam` are all ready for comparison.
-- Current working parser/object-mask candidate is `v2_farl_grounded_sam`.
-- FaceXFormer remains experimental because it under-segments some nose/skin
-  regions compared with FaRL.
-- Grounded SAM is used conservatively: broad face/head/hair detections and
-  oversized masks are rejected before object masks enter `usable_skin`.
-
-## Step 4: Clean-Pixel UV Projection
+### Step 4: Clean-Pixel UV Projection
 
 Scripts:
 
@@ -156,12 +129,14 @@ experiments/facebuilder_mask_aware_correction/run_step4_clean_projection.py
 
 Purpose:
 
-- keep FaceBuilder's solved head mesh and per-photo cameras
-- build UV texel to image-pixel coordinate maps in Blender
-- sample only Step 3 `v2_farl_grounded_sam` usable-skin pixels in host Python
-- write raw and median color-corrected clean projected textures
-- write diagnostic coverage, confidence, source-count, and best-source-camera maps
-- create atlas review sheets, source contribution sheets, and overlay render sheets
+- keep FaceBuilder's solved head mesh and per-photo cameras;
+- build UV texel to image-pixel coordinate maps in Blender;
+- sample only Step 3 `v2_farl_grounded_sam` usable-skin pixels in host Python;
+- write raw and median color-corrected clean projected textures;
+- write diagnostic coverage, confidence, source-count, and best-source-camera
+  maps;
+- create atlas review sheets, source contribution sheets, and overlay render
+  sheets.
 
 Current private outputs:
 
@@ -176,16 +151,17 @@ include-alignment-cameras, diagnostic only:
 Current observations:
 
 - Texture-camera-only Step 4 removes a lot of raw FaceBuilder contamination, but
-  coverage is still sparse: Juseop about 19.9%, Eunchae about 15.5% at 1024 atlas.
+  coverage is still sparse: Juseop about 19.9%, Eunchae about 15.5% at 1024
+  atlas.
 - Including Juseop alignment/scan cameras increases Juseop coverage to about
-  23.2% and gives stronger frontal evidence, but it is not the active texture
-  source because scan/alignment frames should not drive final texture.
+  23.2%, but it is not the active texture source because scan/alignment frames
+  should not drive final texture.
 - Eunchae has no extra alignment-only scan set in this baseline, so both Step 4
   variants are effectively the same for her.
-- The output is not a final texture. Eye, mouth, hairline/scalp, neck, and
+- Step 4 is not a final texture. Eye, mouth, hairline/scalp, neck, and
   low-confidence regions still need arbitration/completion.
 
-## Step 5: Raw-vs-Clean Arbitration
+### Step 5: Raw-vs-Clean Arbitration
 
 Script:
 
@@ -195,16 +171,16 @@ experiments/facebuilder_mask_aware_correction/run_step5_arbitration.py
 
 Purpose:
 
-- compare FaceBuilder raw texture against Step 4 `projected_clean_texture_raw`
-- do not use `facebuilder_texture_bald_cleanup.png`
-- do not use Step 4 `projected_clean_texture_color_corrected`
-- classify every UV texel into four decision categories
+- compare FaceBuilder raw texture against Step 4 `projected_clean_texture_raw`;
+- do not use `facebuilder_texture_bald_cleanup.png`;
+- do not use Step 4 `projected_clean_texture_color_corrected`;
+- classify every UV texel into four decision categories;
 - produce two outputs:
-  - `select`: BOTH_OK texels choose the higher-trust source
-  - `blend`: only BOTH_OK texels blend raw and Step 4 projected raw
-- leave COMPLETION_NEEDED texels black in both output textures
+  - `select`: BOTH_OK texels choose the higher-trust source;
+  - `blend`: only BOTH_OK texels blend raw and Step 4 projected raw;
+- leave COMPLETION_NEEDED texels black in both output textures;
 - render the select texture, blend texture, and decision color map on the
-  FaceBuilder mesh
+  FaceBuilder mesh.
 
 Decision colors:
 
@@ -246,13 +222,28 @@ Current Step 5 observations:
   - BOTH_OK: 0.103
   - COMPLETION_NEEDED: 0.862
   - BOTH_OK near-tie 40:60-60:40: 0.788 of BOTH_OK
+- Visual review favors `blend` over `select` as the Step 6 base.
 
-Current next step:
+Important visual interpretation:
 
-```text
-Step 6: completion/material-specific repair
-```
+- The selected Step 3 mask, `v2_farl_grounded_sam`, looks strong in review.
+- The current Juseop forehead artifact is not treated as confirmed hair leakage.
+- It is more likely valid skin with baked lighting/tone mismatch, darkened by
+  blending and render lighting.
 
-Step 6 should fill/repair the black completion-needed regions by semantic
-region: scalp/hairline, skin gaps, neck, ears, eyes, mouth, lips, nostrils,
-brows, and other material-specific areas.
+## Next Step: Step 6
+
+Step 6 is material-specific post-processing. It should be run one element at a
+time, with a fresh review sheet after each individual repair.
+
+Planned process:
+
+1. Start from Step 5 `blend`; keep `select` only for side-by-side diagnostics.
+2. Fill black skin holes first, but exclude eyes, mouth, brows, nostrils, scalp,
+   and clothing from skin diffusion.
+3. Repair forehead tone as lighting/tone mismatch, not as automatic hair
+   removal. Preserve valid forehead detail.
+4. Repair mouth/lips, eyes/brows, neck/lower leakage, ears/side-face, and
+   scalp/hairline as separate material regions.
+5. Apply only mild final color smoothing after the individual repairs are
+   visually accepted.

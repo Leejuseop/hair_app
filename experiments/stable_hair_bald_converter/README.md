@@ -146,22 +146,28 @@ Code extraction status:
   inspection only.
 - Juseop's 10 no-glasses images were copied to the private Drive input folder.
 
-Not yet validated:
+Visual probe status:
 
-- visual quality on Juseop/Eunchae unconstrained selfies;
-- whether the generated bald image preserves enough pixel alignment for
-  FaceBuilder texture bake.
+- A Colab/A100 probe was run on Juseop's 10 no-glasses images.
+- The output quality was judged too poor for the current FaceBuilder texture
+  path.
+- Stable-Hair stage-1 bald conversion remains a paused side experiment, not the
+  active pipeline.
+- The active path is still FaceBuilder raw texture plus mask-aware Step 4/Step 5
+  correction and Step 6 material-specific post-processing.
 
 ## Next Experiment
 
-1. Run the Colab A100 cells on Juseop's 10 no-glasses images.
-2. Review the bald outputs manually.
-3. If they preserve identity and alignment, create a new FaceBuilder version:
+Do not replace the current raw FaceBuilder baseline with Stable-Hair outputs
+unless a future visual probe is clearly better. If revisited later, the next
+experiment would be:
+
+1. Improve or replace the bald-conversion model/prompt/alignment setup.
+2. Re-run on Juseop and Eunchae private crops.
+3. Only if identity and alignment are preserved, create a new FaceBuilder
+   version:
 
 ```text
 v2b = original photos for auto-align + Stable-Hair bald photos for texture bake
 v4b = v2b + texture post-processing
 ```
-
-Do not replace the current raw FaceBuilder baseline until this visual probe
-looks clearly better.

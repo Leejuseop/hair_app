@@ -2,9 +2,11 @@
 
 These cells generate private external masks for:
 
-- `v1_facexformer_only`
-- `v2_farl_grounded_sam`
-- `v3_facexformer_grounded_sam`
+```text
+v1_facexformer_only
+v2_farl_grounded_sam
+v3_facexformer_grounded_sam
+```
 
 Run on Colab A100. Outputs go to:
 
@@ -15,14 +17,26 @@ Run on Colab A100. Outputs go to:
 Do not commit generated masks, photos, overlays, textures, renders, OBJ/GLB, or
 review sheets.
 
-## Cell 1. Mount Drive and prepare paths
+## Current Status
+
+This notebook has already been run successfully for the current private Step 3
+batch. The selected downstream mask version is currently:
+
+```text
+v2_farl_grounded_sam
+```
+
+FaceXFormer remains experimental because it under-segmented some nose/skin
+regions compared with FaRL on the current private photos.
+
+## Cell 1. Mount Drive and Prepare Paths
 
 ```python
 from google.colab import drive
 drive.mount("/content/drive")
 
 from pathlib import Path
-import json, os, shutil
+import json
 
 DRIVE_ROOT = Path("/content/drive/MyDrive/hair_app")
 SOURCE_VERSION = "facebuilder_semantic_v2"
@@ -31,6 +45,19 @@ EXTERNAL_ROOT = DRIVE_ROOT / "output" / "facebuilder_mask_aware_step3_external"
 EXTERNAL_ROOT.mkdir(parents=True, exist_ok=True)
 
 PERSONS = ["juseop", "eunchae"]
+
+def drive_path(path_text):
+    text = str(path_text).replace("\\", "/")
+    if text.startswith("/content/drive/MyDrive/hair_app"):
+        return Path(text)
+    marker = "/hair_app/"
+    if marker in text:
+        return DRIVE_ROOT / text.split(marker, 1)[1]
+    if text.startswith("G:/") or text.startswith("G:\\"):
+        parts = text.replace("\\", "/").split("/hair_app/", 1)
+        if len(parts) == 2:
+            return DRIVE_ROOT / parts[1]
+    return Path(text)
 
 def load_manifest(person):
     path = SOURCE_ROOT / person / "01_input_manifest" / "input_manifest.json"
@@ -44,61 +71,70 @@ def iter_items(person):
 print("external root:", EXTERNAL_ROOT)
 for person in PERSONS:
     items = list(iter_items(person))
-    print(person, len(items), items[0]["crop_path"])
+    print(person, len(items), drive_path(items[0]["crop_path"]))
 ```
 
 ## Cell 2. Install FaceXFormer
 
+This avoids `facenet-pytorch` and `torchvision` because those caused Colab
+Pillow/torchvision import conflicts during the successful run.
+
 ```python
 %cd /content
-!rm -rf /content/FaceXFormer
-!git clone https://github.com/Kartik-3004/FaceXFormer.git /content/FaceXFormer
-!pip install -q facenet-pytorch timm einops huggingface_hub
 
+from pathlib import Path
 import sys
+
+if not Path("/content/FaceXFormer").exists():
+    !git clone https://github.com/Kartik-3004/FaceXFormer.git /content/FaceXFormer
+
+!pip install -q --no-deps timm einops huggingface_hub
+
 sys.path.insert(0, "/content/FaceXFormer")
 
-from huggingface_hub import list_repo_files, hf_hub_download
+from huggingface_hub import hf_hub_download
+FACE_XFORMER_CKPT = hf_hub_download("kartiknarayan/facexformer", "ckpts/model.pt")
 
-files = list_repo_files("kartiknarayan/facexformer")
-print([f for f in files if f.lower().endswith((".pt", ".pth", ".bin", ".ckpt"))])
-
-checkpoint_candidates = [f for f in files if f.lower().endswith((".pt", ".pth", ".bin", ".ckpt"))]
-assert checkpoint_candidates, "No FaceXFormer checkpoint found in Hugging Face repo."
-FACE_XFORMER_CKPT = hf_hub_download("kartiknarayan/facexformer", checkpoint_candidates[0])
+import PIL
+print("Pillow:", PIL.__version__)
 print("checkpoint:", FACE_XFORMER_CKPT)
 ```
 
-## Cell 3. Run FaceXFormer parsing on existing FaceBuilder crops
+## Cell 3. Run FaceXFormer Parsing On Existing Crops
 
-This intentionally runs directly on our existing 512x512 FaceBuilder crop
-images. It does not re-detect/re-crop faces, because we need the output mask to
-stay in the same crop coordinate system.
+This runs directly on our existing FaceBuilder crop images. It does not
+re-detect or re-crop faces, because the output mask must stay in the same crop
+coordinate system.
 
 ```python
 import torch
 import numpy as np
 from PIL import Image
-import torchvision
-from torchvision.transforms import InterpolationMode
 from network import FaceXFormer
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print("device:", device)
+
 model = FaceXFormer().to(device)
 ckpt = torch.load(FACE_XFORMER_CKPT, map_location=device)
 state = ckpt.get("state_dict_backbone", ckpt)
-model.load_state_dict(state, strict=False)
+missing, unexpected = model.load_state_dict(state, strict=False)
+print("missing keys:", len(missing), "unexpected keys:", len(unexpected))
 model.eval()
 
-transform = torchvision.transforms.Compose([
-    torchvision.transforms.Resize(size=(224, 224), interpolation=InterpolationMode.BICUBIC),
-    torchvision.transforms.ToTensor(),
-    torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+def preprocess(image):
+    image224 = image.resize((224, 224), Image.Resampling.BICUBIC)
+    arr = np.asarray(image224).astype(np.float32) / 255.0
+    arr = (arr - MEAN) / STD
+    arr = arr.transpose(2, 0, 1)
+    return torch.from_numpy(arr).unsqueeze(0)
 
 def facexformer_parse_crop(crop_path):
     image = Image.open(crop_path).convert("RGB")
-    x = transform(image).unsqueeze(0).to(device)
+    x = preprocess(image).to(device)
     labels = {
         "segmentation": torch.zeros([1, 224, 224], device=device),
         "lnm_seg": torch.zeros([1, 5, 2], device=device),
@@ -108,7 +144,7 @@ def facexformer_parse_crop(crop_path):
         "a_g_e": torch.zeros([1, 3], device=device),
         "visibility": torch.zeros([1, 29], device=device),
     }
-    tasks = torch.tensor([0], device=device)  # Face parsing task
+    tasks = torch.tensor([0], device=device)
     with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.float16, enabled=(device == "cuda")):
         *_, seg_output = model(x, labels, tasks)
         mask = seg_output.softmax(dim=1).argmax(dim=1)[0].detach().cpu().numpy().astype(np.uint8)
@@ -127,9 +163,6 @@ for person in PERSONS:
 
 ## Cell 4. Install Grounded SAM2
 
-This uses the official Grounded SAM2 path with Hugging Face Grounding DINO and
-SAM2 image predictor.
-
 ```python
 %cd /content
 !rm -rf /content/Grounded-SAM-2
@@ -141,27 +174,28 @@ SAM2 image predictor.
 !pip install -q transformers supervision pycocotools
 %cd /content/Grounded-SAM-2/checkpoints
 !bash download_ckpts.sh
-!find /content/Grounded-SAM-2 -maxdepth 2 -name "sam2.1_hiera_*.pt" -print
 !ls -lh /content/Grounded-SAM-2/checkpoints/*.pt
 %cd /content/Grounded-SAM-2
 ```
 
-## Cell 5. Run Grounded SAM2 object/occlusion masks
+## Cell 5. Run Grounded SAM2 Object/Occlusion Masks
 
-The prompt is intentionally object-focused. Do not include `person` or `face`,
-because those would remove the actual face.
+The prompt is object-focused. Do not include `person` or `face`, because those
+would remove the actual face. The phrase list is intentionally broad enough to
+catch hand, phone, perfume/cosmetic bottles, glasses, headphones, and hair
+clips, but detections labeled as face/person/head/hair/skin are rejected.
 
 ```python
 %cd /content/Grounded-SAM-2
 
-import sys, json, torch, numpy as np
-from pathlib import Path
-from PIL import Image, ImageDraw
+import json, torch, numpy as np
+from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print("device:", device)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
@@ -217,6 +251,7 @@ def grounded_sam_object_mask(image_path, box_threshold=0.30, text_threshold=0.25
     boxes_all = results["boxes"].detach().cpu().numpy()
     labels_all = list(results["labels"])
     scores_all = results["scores"].detach().cpu().numpy().tolist()
+
     kept = []
     rejected = []
     for label, score, box in zip(labels_all, scores_all, boxes_all):
@@ -274,9 +309,7 @@ for person in PERSONS:
     print("saved Grounded SAM masks:", person, mask_dir)
 ```
 
-## Cell 6. After Colab finishes
-
-Back in Codex/local, run:
+## Cell 6. Back In Codex/Local
 
 ```powershell
 python experiments\facebuilder_mask_aware_correction\run_step3_masks.py `

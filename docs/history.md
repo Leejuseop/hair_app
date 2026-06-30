@@ -1,6 +1,6 @@
 # Hair App Project History
 
-Last synchronized: 2026-06-28
+Last synchronized: 2026-06-30
 Status: detailed project chronology and archive for retired engine paths
 
 ## How To Read This File
@@ -2686,3 +2686,51 @@ Interpretation:
   hides unknown regions with fake skin fill.
 - Step 6 must now perform semantic completion and material-specific repair for
   scalp/hairline, skin holes, neck, ears, eyes, mouth, lips, nostrils, and brows.
+
+### 27.6 Step 6 Planning Notes
+
+Date: 2026-06-30.
+
+The user reviewed Step 5 `select` and `blend` outputs and judged that the
+`blend` variant looks more promising than `select`. The working Step 6 base is
+therefore the Step 5 `blend` texture from:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_213625
+```
+
+Important correction from visual review:
+
+- The forehead artifact should not be assumed to be hair-mask leakage.
+- The selected Step 3 mask version, `v2_farl_grounded_sam`, appears visually
+  strong and does not obviously pass hair pixels into usable skin.
+- The current forehead problem is more likely valid skin pixels with baked
+  lighting/shadow/tone mismatch, made darker by texture blending and render
+  lighting.
+- Step 6 should therefore avoid aggressive forehead erasure. It should treat
+  forehead repair as tone and lighting normalization unless source maps prove
+  a true hair/occluder leak.
+
+Step 6 will be run one element at a time, with review sheets after each element:
+
+1. Establish baseline review sheets from Step 5 `blend`, with `select` kept
+   only for comparison.
+2. Fill hard black `COMPLETION_NEEDED` skin holes from nearby reliable observed
+   skin, excluding eyes, mouth, brows, nostrils, scalp, and clothing.
+3. Repair forehead tone by lifting dark valid skin toward nearby forehead and
+   midface skin while preserving detail.
+4. Repair mouth/lips as separate materials instead of diffusing face skin into
+   the mouth.
+5. Repair eyes, eyelids, and brows as separate materials so eye whites and brow
+   darkness do not contaminate skin.
+6. Remove neck/lower clothing leakage using semantic location, color outlier
+   checks, and decision/source maps.
+7. Fill ears and side-face gaps conservatively, using observed pixels first and
+   fallback only for truly missing regions.
+8. Build plausible scalp and hairline material, separate from forehead skin.
+9. Apply only mild final color smoothing after the element-by-element repairs
+   are visually accepted.
+
+The key process rule is diagnostic isolation: do not batch many post-process
+changes together. Each region-specific repair must produce before/after review
+sheets so quality changes can be attributed to one logic change.
