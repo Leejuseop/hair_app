@@ -1395,26 +1395,27 @@ occlusions.
 
 ### 21.4 New near-term milestones
 
-1. Human review of semantic v1/v2/v3:
-   - inspect private review sheets and GLBs;
-   - compare raw baseline, V4 crop baseline, and sentinel contamination;
-   - record what fails visually before changing more logic.
+1. Mask-aware FaceBuilder texture correction:
+   - keep FaceBuilder geometry/camera alignment;
+   - extract camera/mesh/UV data from the saved `.blend`;
+   - verify mesh reprojection over the input crops;
+   - compute UV visibility/source-count maps;
+   - build parser/object masks for `usable_skin`;
+   - use these maps later to project only clean skin pixels back into UV.
 
-2. Semantic post-bake processing:
+2. Parser and occlusion ablation:
+   - `v0_farl_only`: existing Pixel3DMM/FaRL parser baseline;
+   - `v1_facexformer_only`: FaceXFormer parser baseline from Colab;
+   - `v2_farl_grounded_sam`: FaRL plus object/occlusion masks from Grounded SAM2;
+   - `v3_facexformer_grounded_sam`: FaceXFormer plus Grounded SAM2.
+
+3. Semantic post-bake processing:
    - remove hair, headwear, glasses, hands, phones, perfume bottles, shirt, and
      background leakage;
    - fill scalp, neck, rear head, and low-confidence skin;
    - improve eyes, iris, eyelids, mouth interior, lips, ears, brows, and skin
      material;
    - preserve confidence/provenance maps.
-
-3. Stronger input analysis before FaceBuilder:
-   - robust landmarks;
-   - pose/yaw;
-   - eye closed / mouth open;
-   - glasses, phone, hand, hair, and headwear occlusion;
-   - segmentation confidence;
-   - lighting and color normalization.
 
 4. Mesh strategy decision:
    - use FaceBuilder mesh directly if it supports hair fitting, scalp mapping,
@@ -1447,4 +1448,112 @@ Current active references:
 - `newchat.md` for compact handoff;
 - `AGENTS.md` for agent rules;
 - `docs/history.md` for detailed project history and archived old-engine docs;
-- `experiments/facebuilder_bridge/README.md` for FaceBuilder automation tools.
+- `experiments/facebuilder_bridge/README.md` for FaceBuilder automation tools;
+- `experiments/facebuilder_mask_aware_correction/README.md` for the active
+  mask-aware correction experiment.
+
+### 21.7 FaceBuilder mask-aware correction status
+
+The active correction experiment is
+`experiments/facebuilder_mask_aware_correction/`.
+
+Completed private checks:
+
+- Step 0 scene probe:
+  `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step0/20260629_194117`
+- Step 1 reprojection smoke test:
+  `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step1/20260629_195513`
+- Step 2 UV visibility maps:
+  `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step2/20260629_200519`
+- Step 3 mask ablation scaffold:
+  `G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3/20260629_203236`
+
+Current Step 3 state:
+
+- `v0_farl_only` is generated and ready for comparison for Juseop and Eunchae.
+- `v1_facexformer_only` waits for FaceXFormer Colab label masks.
+- `v2_farl_grounded_sam` waits for Grounded SAM2 object masks.
+- `v3_facexformer_grounded_sam` waits for both external outputs.
+
+The Colab cells for external masks live in:
+
+```text
+experiments/facebuilder_mask_aware_correction/STEP3_COLAB.md
+```
+
+Current 2026-06-29 update:
+
+- Step 3 external FaceXFormer and Grounded SAM masks have been generated.
+- Current Step 3 output:
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step3/20260629_212612`
+- Current working mask candidate:
+  `v2_farl_grounded_sam`.
+- FaceXFormer remains experimental because it under-segments some nose/skin
+  regions on the current private photos.
+- Grounded SAM is used conservatively. Broad face/head/hair detections and
+  oversized masks are rejected before entering `usable_skin`.
+
+Step 4 clean-pixel UV projection has also been implemented. This stage uses
+FaceBuilder's solved mesh, camera, and UV data to project only Step 3
+`usable_skin` pixels into the texture atlas. It writes clean projected textures,
+coverage maps, confidence maps, source-count maps, per-camera contribution
+maps, atlas review sheets, and yaw render review sheets.
+
+Step 4 private outputs:
+
+```text
+texture-camera-only:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
+
+include-alignment-cameras:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
+```
+
+Observed Step 4 coverage:
+
+- Juseop texture-camera-only: about 19.9% clean atlas coverage.
+- Juseop with alignment/scan cameras: about 23.2% clean atlas coverage.
+- Eunchae: about 15.5% clean atlas coverage in both runs.
+
+Important interpretation:
+
+- Step 4 proves clean-pixel reprojection is feasible.
+- Step 4 is not a final texture. It intentionally leaves untrusted/unknown
+  regions sparse.
+- Step 5 now arbitrates raw FaceBuilder texture versus Step 4 projected raw
+  texture, then marks unresolved regions for completion.
+
+Current Step 5 status:
+
+- Script:
+  `experiments/facebuilder_mask_aware_correction/run_step5_arbitration.py`
+- Private output:
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156`
+- Cleanup texture is not used.
+- Step 4 color-corrected texture is not used.
+- Two texture variants are generated:
+  - `select`: BOTH_OK pixels choose the higher-trust source.
+  - `blend`: only BOTH_OK pixels blend raw and Step 4 projected raw.
+- COMPLETION_NEEDED pixels are black in actual output textures.
+- Decision-map colors:
+  - red = CLEAN_ONLY
+  - blue = RAW_ONLY
+  - green = BOTH_OK
+  - yellow = COMPLETION_NEEDED
+
+Observed Step 5 category ratios:
+
+| Person | CLEAN_ONLY | RAW_ONLY | BOTH_OK | COMPLETION_NEEDED | BOTH_OK near-tie share |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 0.030 | 0.028 | 0.165 | 0.777 | 0.797 |
+| Eunchae | 0.023 | 0.012 | 0.103 | 0.862 | 0.788 |
+
+Next active stage:
+
+```text
+Step 6: completion/material-specific repair
+```
+
+Step 6 should repair black completion-needed regions by semantic region:
+scalp/hairline, skin gaps, neck, ears, eyes, mouth, lips, nostrils, brows, and
+other material-specific areas.

@@ -2406,3 +2406,275 @@ needed step is semantic bald-head post-processing:
 
 After the bald-head substrate is credible, continue to hair reconstruction,
 hairline-aware fitting, collision correction, and mobile GLB viewer work.
+
+## 27. FaceBuilder Mask-Aware Correction Experiment
+
+Date: 2026-06-29.
+
+The next active path is not another raw FaceBuilder texture bake. The project
+now keeps FaceBuilder for what it does well, geometry/camera alignment, and
+builds a separate mask-aware texture correction path around it.
+
+Tracked experiment folder:
+
+```text
+experiments/facebuilder_mask_aware_correction/
+```
+
+### 27.1 Motivation
+
+FaceBuilder's UI `Create Texture` can produce a much better baseline than the
+earlier broken automated texture path, but its bake still blends whatever
+pixels are present in the selected images. This means hair, clothing,
+background, hands, phones, perfume bottles, cosmetics, headphones, and other
+occluders can enter the raw texture.
+
+The new plan is:
+
+1. use the saved FaceBuilder `.blend` for mesh/camera/UV alignment;
+2. prove that the mesh can be reprojected into each input crop;
+3. compute which UV regions each image can actually see;
+4. build `usable_skin` masks per image;
+5. later project only clean skin pixels back into UV and arbitrate against the
+   FaceBuilder raw texture.
+
+### 27.2 Implemented Step 0-2 Checks
+
+Step 0 extracted scene data from existing `facebuilder_semantic_v2` `.blend`
+files. It verified that Juseop and Eunchae both have:
+
+- FaceBuilder mesh object `FBHead`;
+- UV layer `UVMap`;
+- raw texture PNG;
+- OBJ/GLB exports;
+- camera image paths;
+- per-camera projection matrices;
+- per-camera model matrices;
+- triangulated mesh/UV arrays for rasterization.
+
+Private Step 0 output:
+
+```text
+G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step0/20260629_194117
+```
+
+Step 1 projected the solved FaceBuilder mesh back onto the input crop images as
+wireframe overlays. The visual result was good enough to proceed:
+
+- Juseop: 19 cameras projected;
+- Eunchae: 8 cameras projected, with one no-pin/failed align camera clearly
+  marked.
+
+Private Step 1 output:
+
+```text
+G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step1/20260629_195513
+```
+
+Step 2 computed UV visibility and source-count maps from the same cameras:
+
+- Juseop texture-enabled coverage: about 35.8% of the UV atlas;
+- Juseop max source count: 10 texture cameras;
+- Eunchae texture-enabled coverage: about 30.0% of the UV atlas;
+- Eunchae max source count: 7 texture cameras.
+
+Private Step 2 output:
+
+```text
+G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step2/20260629_200519
+```
+
+### 27.3 Step 3 Parser/Object Mask Ablation
+
+Step 3 creates per-image masks for four versions:
+
+```text
+v0_farl_only
+v1_facexformer_only
+v2_farl_grounded_sam
+v3_facexformer_grounded_sam
+```
+
+Current implementation:
+
+- `v0_farl_only` reads the existing Pixel3DMM V4 FaRL segmentation artifacts
+  and creates `usable_skin`, `bad_mask`, `object_mask`, parser visualizations,
+  overlays, per-image manifests, and review sheets.
+- `v1_facexformer_only` waits for Colab-generated FaceXFormer label masks.
+- `v2_farl_grounded_sam` waits for Colab-generated Grounded SAM2 object masks.
+- `v3_facexformer_grounded_sam` waits for both external outputs.
+
+Private Step 3 output:
+
+```text
+G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3/20260629_203236
+```
+
+The Colab instructions are tracked here:
+
+```text
+experiments/facebuilder_mask_aware_correction/STEP3_COLAB.md
+```
+
+Expected external mask root:
+
+```text
+G:/내 드라이브/hair_app/output/facebuilder_mask_aware_step3_external
+```
+
+Once Colab outputs exist, rerun:
+
+```powershell
+python experiments\facebuilder_mask_aware_correction\run_step3_masks.py --source-version facebuilder_semantic_v2
+```
+
+### 27.4 Step 3 Completion And Step 4 Clean-Pixel Projection
+
+Later on 2026-06-29, the external Colab masks were generated and Step 3 was
+rerun. The current Step 3 output is:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step3/20260629_212612
+```
+
+Current Step 3 interpretation:
+
+- `v0_farl_only`, `v1_facexformer_only`, `v2_farl_grounded_sam`, and
+  `v3_facexformer_grounded_sam` are all generated.
+- The best near-term candidate is `v2_farl_grounded_sam`.
+- FaceXFormer remains experimental because it under-segments some nose/skin
+  regions compared with FaRL on the current private photos.
+- Grounded SAM is used conservatively. Broad face/head/hair detections and
+  oversized masks are rejected before object masks enter `usable_skin`.
+
+Step 4 was then implemented as a diagnostic clean-pixel UV projection stage.
+It does not produce the final texture. Instead, it answers this question:
+
+```text
+Using FaceBuilder's solved mesh/cameras/UV, where can clean usable-skin pixels
+from each input image land on the texture atlas?
+```
+
+Tracked Step 4 scripts:
+
+```text
+experiments/facebuilder_mask_aware_correction/blender_step4_uv_sample_coords.py
+experiments/facebuilder_mask_aware_correction/blender_step4_render_texture.py
+experiments/facebuilder_mask_aware_correction/run_step4_clean_projection.py
+```
+
+Private Step 4 outputs:
+
+```text
+texture-camera-only:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
+
+include-alignment-cameras:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
+```
+
+Observed Step 4 numbers at 1024 atlas size:
+
+- Juseop texture-camera-only clean coverage: about 19.9%.
+- Juseop with alignment/scan cameras included: about 23.2%.
+- Eunchae clean coverage: about 15.5% in both runs because there is no extra
+  scan/alignment-only set in this baseline.
+
+Current Step 4 conclusion:
+
+- The FaceBuilder camera/mesh/UV data is usable for clean-pixel reprojection.
+- The generated clean projection reduces many raw texture contaminations, but
+  coverage is intentionally sparse because only trusted skin pixels are used.
+- Eyes, mouth, hairline/scalp, neck, ears, and low-confidence regions still
+  require arbitration and completion.
+- Juseop scan frames improve frontal coverage but add cooler lighting, so Step
+  5 must not blindly overwrite raw texture with all scan pixels.
+
+Next active technical step:
+
+```text
+Step 5: raw FaceBuilder texture vs clean projected texture arbitration.
+```
+
+Step 5 should decide per UV region whether to keep raw FaceBuilder pixels, use
+clean projected pixels, blend both, or mark the region for completion.
+
+### 27.5 Step 5 Raw-Vs-Clean Arbitration
+
+Date: 2026-06-30.
+
+Step 5 was implemented after the user clarified two important constraints:
+
+- do not use the old skin-filled cleanup texture;
+- do not use Step 4 color-corrected texture for arbitration.
+
+The active Step 5 script is:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step5_arbitration.py
+```
+
+Step 5 inputs:
+
+```text
+FaceBuilder raw texture
+Step 4 projected raw texture
+Step 4 coverage alpha
+Step 4 confidence
+Step 4 source count
+```
+
+Step 5 explicitly excludes:
+
+```text
+FaceBuilder cleanup texture
+Step 4 projected color-corrected texture
+Step 4 over-cleanup preview
+```
+
+Decision categories:
+
+```text
+red    = CLEAN_ONLY
+blue   = RAW_ONLY
+green  = BOTH_OK
+yellow = COMPLETION_NEEDED
+```
+
+Two output texture variants are generated:
+
+- `select`: BOTH_OK pixels choose the higher-trust source.
+- `blend`: only BOTH_OK pixels blend raw and Step 4 projected raw.
+
+COMPLETION_NEEDED pixels are black in the actual output textures. The yellow
+color is used only in the decision-map diagnostic.
+
+Private Step 5 output:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156
+```
+
+Important tuning note:
+
+The first Step 5 attempt trusted raw texture too much and let raw hair,
+clothing, and background leakage survive. The raw trust logic was then made
+more conservative: raw pixels are only accepted where Step 4 had at least some
+projected clean-skin support, and obvious non-skin color casts are penalized.
+
+Observed Step 5 category ratios at 1024 atlas:
+
+| Person | CLEAN_ONLY | RAW_ONLY | BOTH_OK | COMPLETION_NEEDED | BOTH_OK near-tie share |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 0.030 | 0.028 | 0.165 | 0.777 | 0.797 |
+| Eunchae | 0.023 | 0.012 | 0.103 | 0.862 | 0.788 |
+
+Interpretation:
+
+- Step 5 is a diagnostic arbitration layer, not a final production texture.
+- The high near-tie share means the blend variant is worth comparing visually
+  against the select variant.
+- The large completion-needed share is expected because the project no longer
+  hides unknown regions with fake skin fill.
+- Step 6 must now perform semantic completion and material-specific repair for
+  scalp/hairline, skin holes, neck, ears, eyes, mouth, lips, nostrils, and brows.
