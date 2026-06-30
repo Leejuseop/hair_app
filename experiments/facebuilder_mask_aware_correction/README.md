@@ -166,11 +166,11 @@ Purpose:
 Current private outputs:
 
 ```text
-texture-camera-only:
-G:/???쒕씪?대툕/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
+texture-camera-only, active for texture correction:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
 
-include-alignment-cameras:
-G:/???쒕씪?대툕/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
+include-alignment-cameras, diagnostic only:
+<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
 ```
 
 Current observations:
@@ -178,8 +178,8 @@ Current observations:
 - Texture-camera-only Step 4 removes a lot of raw FaceBuilder contamination, but
   coverage is still sparse: Juseop about 19.9%, Eunchae about 15.5% at 1024 atlas.
 - Including Juseop alignment/scan cameras increases Juseop coverage to about
-  23.2% and gives stronger frontal evidence, but also introduces cooler scan
-  lighting that must be handled in Step 5.
+  23.2% and gives stronger frontal evidence, but it is not the active texture
+  source because scan/alignment frames should not drive final texture.
 - Eunchae has no extra alignment-only scan set in this baseline, so both Step 4
   variants are effectively the same for her.
 - The output is not a final texture. Eye, mouth, hairline/scalp, neck, and
@@ -218,22 +218,28 @@ yellow = COMPLETION_NEEDED, neither source is trusted; output texture is black
 Current private Step 5 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156
+<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_213625
 ```
 
 Current Step 5 observations:
 
+- The active Step 5 run uses the texture-camera-only Step 4 root:
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621`.
+- The earlier run at
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156`
+  used the scan/alignment-included Step 4 root and is diagnostic/retired, not
+  the active texture result.
 - Cleanup texture is explicitly excluded.
 - Step 4 color-corrected texture is explicitly excluded.
 - Raw texture is only allowed where Step 4 had at least some projected clean
   skin support. This prevents raw hair/clothing/background from filling unknown
   UV regions too aggressively.
 - Juseop category ratios at 1024 atlas:
-  - CLEAN_ONLY: 0.030
-  - RAW_ONLY: 0.028
-  - BOTH_OK: 0.165
-  - COMPLETION_NEEDED: 0.777
-  - BOTH_OK near-tie 40:60-60:40: 0.797 of BOTH_OK
+  - CLEAN_ONLY: 0.007
+  - RAW_ONLY: 0.030
+  - BOTH_OK: 0.156
+  - COMPLETION_NEEDED: 0.807
+  - BOTH_OK near-tie 40:60-60:40: 0.781 of BOTH_OK
 - Eunchae category ratios at 1024 atlas:
   - CLEAN_ONLY: 0.023
   - RAW_ONLY: 0.012

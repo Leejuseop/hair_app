@@ -2566,10 +2566,10 @@ experiments/facebuilder_mask_aware_correction/run_step4_clean_projection.py
 Private Step 4 outputs:
 
 ```text
-texture-camera-only:
+texture-camera-only, active for texture correction:
 <private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
 
-include-alignment-cameras:
+include-alignment-cameras, diagnostic only:
 <private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
 ```
 
@@ -2587,8 +2587,8 @@ Current Step 4 conclusion:
   coverage is intentionally sparse because only trusted skin pixels are used.
 - Eyes, mouth, hairline/scalp, neck, ears, and low-confidence regions still
   require arbitration and completion.
-- Juseop scan frames improve frontal coverage but add cooler lighting, so Step
-  5 must not blindly overwrite raw texture with all scan pixels.
+- Juseop scan frames improve frontal coverage but are not allowed to drive the
+  active texture result. They remain diagnostic only.
 
 Next active technical step:
 
@@ -2652,10 +2652,18 @@ color is used only in the decision-map diagnostic.
 Private Step 5 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156
+<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_213625
 ```
 
 Important tuning note:
+
+The first documented Step 5 output at
+`<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156`
+used the scan/alignment-included Step 4 root
+`<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438`.
+That was corrected because scan/alignment frames should not drive final texture.
+The active Step 5 output now uses the texture-camera-only Step 4 root
+`<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621`.
 
 The first Step 5 attempt trusted raw texture too much and let raw hair,
 clothing, and background leakage survive. The raw trust logic was then made
@@ -2666,7 +2674,7 @@ Observed Step 5 category ratios at 1024 atlas:
 
 | Person | CLEAN_ONLY | RAW_ONLY | BOTH_OK | COMPLETION_NEEDED | BOTH_OK near-tie share |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Juseop | 0.030 | 0.028 | 0.165 | 0.777 | 0.797 |
+| Juseop | 0.007 | 0.030 | 0.156 | 0.807 | 0.781 |
 | Eunchae | 0.023 | 0.012 | 0.103 | 0.862 | 0.788 |
 
 Interpretation:

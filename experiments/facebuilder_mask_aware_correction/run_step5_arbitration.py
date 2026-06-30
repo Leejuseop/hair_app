@@ -90,9 +90,12 @@ def _find_latest_step4(drive_root: Path, people: list[str]) -> Path:
     root = drive_root / "output" / "facebuilder_mask_aware_step4"
     candidates = sorted([path for path in root.iterdir() if path.is_dir()], reverse=True)
     for candidate in candidates:
-        if all((candidate / person / "step4_person_summary.json").exists() for person in people):
+        if not all((candidate / person / "step4_person_summary.json").exists() for person in people):
+            continue
+        summaries = [_read_json(candidate / person / "step4_person_summary.json") for person in people]
+        if all(not bool(summary.get("include_align_only")) for summary in summaries):
             return candidate
-    raise FileNotFoundError(f"No ready Step 4 output found under {root}")
+    raise FileNotFoundError(f"No texture-camera-only Step 4 output found under {root}")
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:

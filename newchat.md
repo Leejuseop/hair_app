@@ -191,7 +191,9 @@ Current source of truth for the next task:
   regions on the current private photos.
 - Step 4 clean-pixel UV projection is complete at:
   - `<private_drive>\hair_app\output\facebuilder_mask_aware_step4\20260629_221621`
+    texture-camera-only, active for texture correction.
   - `<private_drive>\hair_app\output\facebuilder_mask_aware_step4\20260629_222438`
+    scan/alignment-included, diagnostic only.
 
 Step 4 meaning:
 
@@ -224,7 +226,7 @@ experiments/facebuilder_mask_aware_correction/run_step5_arbitration.py
 Current private Step 5 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step5\20260630_200156
+<private_drive>\hair_app\output\facebuilder_mask_aware_step5\20260630_213625
 ```
 
 Important constraints:
@@ -232,6 +234,11 @@ Important constraints:
 - Do not use FaceBuilder cleanup texture.
 - Do not use Step 4 color-corrected texture.
 - Use only FaceBuilder raw texture and Step 4 projected raw texture.
+- Use the texture-camera-only Step 4 root for active texture correction:
+  `<private_drive>\hair_app\output\facebuilder_mask_aware_step4\20260629_221621`.
+- The earlier Step 5 output
+  `<private_drive>\hair_app\output\facebuilder_mask_aware_step5\20260630_200156`
+  used the scan/alignment-included Step 4 root and is diagnostic/retired.
 - Completion-needed pixels are black in actual Step 5 output textures.
 
 Step 5 outputs:
@@ -253,8 +260,8 @@ Decision colors:
 
 Observed ratios:
 
-- Juseop: CLEAN_ONLY 0.030, RAW_ONLY 0.028, BOTH_OK 0.165,
-  COMPLETION_NEEDED 0.777, BOTH_OK near-tie share 0.797.
+- Juseop: CLEAN_ONLY 0.007, RAW_ONLY 0.030, BOTH_OK 0.156,
+  COMPLETION_NEEDED 0.807, BOTH_OK near-tie share 0.781.
 - Eunchae: CLEAN_ONLY 0.023, RAW_ONLY 0.012, BOTH_OK 0.103,
   COMPLETION_NEEDED 0.862, BOTH_OK near-tie share 0.788.
 

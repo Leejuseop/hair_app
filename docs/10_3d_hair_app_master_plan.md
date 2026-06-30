@@ -1502,10 +1502,10 @@ maps, atlas review sheets, and yaw render review sheets.
 Step 4 private outputs:
 
 ```text
-texture-camera-only:
+texture-camera-only, active for texture correction:
 <private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621
 
-include-alignment-cameras:
+include-alignment-cameras, diagnostic only:
 <private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_222438
 ```
 
@@ -1528,7 +1528,12 @@ Current Step 5 status:
 - Script:
   `experiments/facebuilder_mask_aware_correction/run_step5_arbitration.py`
 - Private output:
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_213625`
+- The active Step 5 output uses the texture-camera-only Step 4 root
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step4/20260629_221621`.
+- The earlier Step 5 output
   `<private_drive>/hair_app/output/facebuilder_mask_aware_step5/20260630_200156`
+  used the scan/alignment-included Step 4 root and is diagnostic/retired.
 - Cleanup texture is not used.
 - Step 4 color-corrected texture is not used.
 - Two texture variants are generated:
@@ -1545,7 +1550,7 @@ Observed Step 5 category ratios:
 
 | Person | CLEAN_ONLY | RAW_ONLY | BOTH_OK | COMPLETION_NEEDED | BOTH_OK near-tie share |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Juseop | 0.030 | 0.028 | 0.165 | 0.777 | 0.797 |
+| Juseop | 0.007 | 0.030 | 0.156 | 0.807 | 0.781 |
 | Eunchae | 0.023 | 0.012 | 0.103 | 0.862 | 0.788 |
 
 Next active stage:
