@@ -3067,7 +3067,7 @@ Date: 2026-07-01.
 Active private Step 6 output after v04b:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_140926
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_144553
 ```
 
 Implemented sub-step:
@@ -3093,14 +3093,19 @@ Accepted v04b logic:
 - use the same broader v04 forehead definition as the starting point;
 - build an initial eye/eyebrow guard;
 - find eyebrow-like dark horizontal components in the upper-face band;
-- compare left and right eyebrow areas, width, height, and position;
-- if one side is much weaker, mirror only the darker pixels from the stronger
-  side onto the weaker side;
-- use the mirrored eyebrow both as a no-fill guard and as a feature recovery
-  texture, so the weak side is not left skin-colored;
+- compare left and right eyebrow areas, width, height, and position with a
+  stricter asymmetry threshold;
+- if the two sides are imbalanced, select the stronger eyebrow side and redefine
+  both eyebrows as the same fixed black symmetric mask;
+- do not color-transfer eyebrow texture in this stage. The black eyebrow mask
+  is only a protection/placeholder boundary until a later eye/brow material
+  pass;
 - first fit the smooth hairline as in v04;
+- reduce the front hairline curvature so it is less like a perfect circular
+  arc;
 - then run a second pass: if reliable forehead-skin pixels are found above the
-  first curve, locally lift the hairline upward and smooth that lift;
+  first curve, broadly lift the front hairline segment instead of lifting only
+  isolated columns;
 - keep Juseop app-scan hairline frames as boundary hints only. Scan pixels are
   still never used as texture, color, or bake input.
 
@@ -3118,31 +3123,32 @@ v04b compact review colors:
   - orange = hair/black/non-skin leftovers filled as forehead;
   - yellow = final second-pass hairline;
   - blue = eye/brow guard;
-  - cyan = mirrored eyebrow recovery;
+  - cyan = fixed black symmetric eyebrow mask;
   - dark = untouched.
 - second-pass hairline row:
   - purple = first-pass smooth hairline;
   - yellow = second-pass lifted hairline;
-  - cyan = reliable forehead skin above the first line, which caused the lift;
+  - cyan = reliable forehead skin above the first line, used as broad-lift evidence;
   - green = final forehead region;
   - blue = eye/brow guard.
 
 Accepted v04b metrics at 1024 atlas:
 
-| Person | Forehead region texels | Filled hair/black texels | Mirrored eyebrow texels | Hairline lift columns | Max hairline lift px | Result |
+| Person | Forehead region texels | Filled hair/black texels | Symmetric eyebrow texels | Hairline lift columns | Max hairline lift px | Result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Juseop | 25,705 | 5,719 | 731 | 217 supported / 251 smoothed | 35.91 | Right eyebrow no longer disappears; forehead is broader and hairline respects observed skin better |
-| Eunchae | 23,510 | 7,378 | 649 | 135 supported / 198 smoothed | 32.42 | Forehead/hairline boundary is cleaner; lower-face/neck artifacts remain |
+| Juseop | 22,924 | 4,304 | 2,795 | 196 supported / 251 smoothed | 43.82 | Both brows are protected by a black symmetric mask; front hairline is flatter and broadly lifted |
+| Eunchae | 20,218 | 3,985 | 1,662 | 138 supported / 206 smoothed | 63.63 | Symmetric brow guard is active; lower-face/neck artifacts remain |
 
 Visual interpretation:
 
-- v04b is better than v04 for the specific eyebrow failure. Juseop's right
-  eyebrow is visible again instead of being filled as forehead skin.
-- The mirrored eyebrow can look slightly heavier than ideal. This is acceptable
-  for this sub-step because the goal was to prevent eyebrow deletion; final
-  eye/brow material cleanup remains a separate stage.
+- v04b is better than v04 for the specific eyebrow failure. Juseop's missing
+  eyebrow side is no longer filled as forehead skin.
+- The eyebrow shape is intentionally a black symmetric placeholder, not final
+  eyebrow texture. This is acceptable for this sub-step because the goal is to
+  prevent eyebrow deletion; final eye/brow material cleanup remains separate.
 - The second-pass hairline helps preserve real forehead-skin evidence above
-  the first smooth curve.
+  the first smooth curve while keeping the front line less circular and less
+  column-by-column jagged.
 - v04b is still not product quality. It leaves flat forehead material, neck and
   clothing leakage, mouth/eye material problems, and scalp/hairline material
   unfinished.

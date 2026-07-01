@@ -184,8 +184,9 @@ private_outputs/
    face tone, uses Juseop scan frames only as a hairline boundary hint, and
    produces compact before/after/area review sheets.
 5. Treat v04b forehead/eyebrow/hairline refinement as the current region
-   baseline: it keeps v04's broader forehead, restores weak eyebrow sides with
-   symmetry, adds a second-pass hairline lift, and still looks too flat.
+   baseline: it keeps v04's broader forehead, uses a fixed black symmetric
+   eyebrow mask as a protection placeholder, adds a flatter broad front-hairline
+   lift, and still looks too flat.
 6. Next, repair the v04b flat-patch artifact with edge blending/detail recovery,
    then repair mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears,
    scalp/hairline, and final mild color smoothing.

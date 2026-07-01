@@ -1170,46 +1170,71 @@ def _lift_hairline_over_observed_skin(
     y_bottom_px: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
     h, w = reliable_skin.shape
-    first_lookup = first_curve[np.clip(xx, 0, w - 1)]
+    span = max(1, x_max_px - x_min_px)
+    front_left = int(round(x_min_px + span * 0.16))
+    front_right = int(round(x_max_px - span * 0.16))
+    front_left = int(np.clip(front_left, x_min_px, x_max_px))
+    front_right = int(np.clip(front_right, front_left + 1, x_max_px))
+
+    natural_curve = first_curve.copy().astype(np.float32)
+    front_x = np.arange(front_left, front_right + 1)
+    if front_x.size >= 4:
+        # Frontal hairlines are usually flatter than a pure circular arc.
+        # Keep the first curve as the source shape, but reduce the front
+        # curvature by blending toward a low-slope line across the front.
+        left_y = float(np.percentile(first_curve[front_left : min(w, front_left + max(2, span // 18))], 45.0))
+        right_y = float(np.percentile(first_curve[max(0, front_right - max(2, span // 18)) : front_right + 1], 45.0))
+        low_curve_line = np.interp(front_x, [front_left, front_right], [left_y, right_y]).astype(np.float32)
+        natural_curve[front_x] = first_curve[front_x].astype(np.float32) * 0.34 + low_curve_line * 0.66
+        natural_curve[front_x] = ndimage.gaussian_filter1d(natural_curve[front_x], sigma=5.0)
+
+    first_lookup = natural_curve[np.clip(xx, 0, w - 1)]
     upper_limit = max(0, y_min_px - int(h * 0.030))
     skin_above_first = (
         reliable_skin
         & face_support
-        & (xx >= x_min_px)
-        & (xx <= x_max_px)
+        & (xx >= front_left)
+        & (xx <= front_right)
         & (yy >= upper_limit)
         & (yy < first_lookup - 2.0)
         & (yy <= y_bottom_px)
     )
     skin_above_first = ndimage.binary_opening(skin_above_first, structure=_disk(1))
 
-    supported = np.zeros(w, dtype=bool)
-    proposed = first_curve.copy().astype(np.float32)
     max_lift = float(h * 0.070)
-    min_window_pixels = max(8, int(h * 0.006))
-    for x in range(max(0, x_min_px), min(w, x_max_px + 1)):
-        x0 = max(0, x - 4)
-        x1 = min(w, x + 5)
-        local = skin_above_first[:, x0:x1]
-        if int(local.sum()) < min_window_pixels:
-            continue
-        local_y = np.where(local)[0]
-        if local_y.size == 0:
-            continue
-        # Use a low percentile, not the absolute top pixel, so one noisy skin
-        # dot above the hairline does not pull the line too far upward.
-        observed_top = float(np.percentile(local_y, 18.0))
-        candidate = max(float(y_min_px - int(h * 0.020)), observed_top - 2.0)
-        lift = float(first_curve[x] - candidate)
-        if lift >= 3.0:
-            proposed[x] = max(float(first_curve[x] - max_lift), candidate)
-            supported[x] = True
+    min_column_pixels = max(3, int(h * 0.003))
+    column_counts = skin_above_first.sum(axis=0)
+    supported = np.zeros(w, dtype=bool)
+    supported[front_left : front_right + 1] = column_counts[front_left : front_right + 1] >= min_column_pixels
 
-    lift_delta = np.clip(first_curve - proposed, 0.0, max_lift)
-    lift_delta[~supported] = 0.0
-    lift_delta = ndimage.gaussian_filter1d(lift_delta, sigma=5.5)
-    lifted_curve = first_curve.astype(np.float32) - lift_delta.astype(np.float32)
-    lifted_curve = np.minimum(lifted_curve, first_curve)
+    lift_delta = np.zeros(w, dtype=np.float32)
+    if np.any(supported):
+        ys, xs = np.where(skin_above_first & supported.reshape(1, -1))
+        if ys.size:
+            top_by_x: list[float] = []
+            for x in np.unique(xs):
+                y_values = ys[xs == x]
+                if y_values.size >= min_column_pixels:
+                    top_by_x.append(float(np.percentile(y_values, 8.0)))
+            if top_by_x:
+                observed_top = float(np.percentile(np.asarray(top_by_x, dtype=np.float32), 14.0))
+                curve_reference = float(np.percentile(natural_curve[supported], 42.0))
+                lift_amount = float(np.clip(curve_reference - (observed_top - 2.0), 0.0, max_lift))
+                if lift_amount >= 3.0:
+                    supported_x = np.where(supported)[0]
+                    margin = int(max(8, span * 0.08))
+                    lift_x0 = int(np.clip(supported_x.min() - margin, front_left, front_right))
+                    lift_x1 = int(np.clip(supported_x.max() + margin, front_left, front_right))
+                    center = (lift_x0 + lift_x1) * 0.5
+                    half = max(1.0, (lift_x1 - lift_x0) * 0.5)
+                    active_x = np.arange(lift_x0, lift_x1 + 1)
+                    distance = np.clip(np.abs(active_x - center) / half, 0.0, 1.0)
+                    profile = 0.5 + 0.5 * np.cos(distance * np.pi)
+                    lift_delta[active_x] = (lift_amount * profile).astype(np.float32)
+                    lift_delta = ndimage.gaussian_filter1d(lift_delta, sigma=7.5)
+
+    lifted_curve = natural_curve.astype(np.float32) - lift_delta.astype(np.float32)
+    lifted_curve = np.minimum(lifted_curve, natural_curve)
     lifted_curve = np.clip(lifted_curve, y_min_px - int(h * 0.030), y_bottom_px - int(h * 0.010))
 
     final_line = _line_from_curve(
@@ -1230,6 +1255,9 @@ def _lift_hairline_over_observed_skin(
             if np.any(lift_delta > 0.8)
             else 0.0
         ),
+        "hairline_front_left_px": int(front_left),
+        "hairline_front_right_px": int(front_right),
+        "hairline_shape_mode": "front_curve_flattened_then_broad_lifted",
     }
 
 
@@ -1324,58 +1352,70 @@ def _symmetrize_eyebrow_guard(
     min_reasonable_area = 28
     ratio = float(min(left_area, right_area) / max(1, max(left_area, right_area)))
 
-    mirrored_mask = np.zeros_like(guard, dtype=bool)
-    mirrored_rgb = np.zeros_like(texture, dtype=np.uint8)
+    symmetric_eyebrow_mask = np.zeros_like(guard, dtype=bool)
+    symmetric_eyebrow_rgb = np.zeros_like(texture, dtype=np.uint8)
     mirror_mode = "none"
-    if max(left_area, right_area) >= min_reasonable_area and (ratio < 0.66 or min(left_area, right_area) < min_reasonable_area):
+    mirror_source = np.zeros_like(guard, dtype=bool)
+    black_brow_rgb = np.asarray([16, 13, 12], dtype=np.uint8)
+    force_symmetric_brow = (
+        max(left_area, right_area) >= min_reasonable_area
+        and (
+            ratio < 0.90
+            or min(left_area, right_area) < min_reasonable_area
+            or abs(float(left_stats["height"] or 0) - float(right_stats["height"] or 0)) > h * 0.018
+            or abs(float(left_stats["width"] or 0) - float(right_stats["width"] or 0)) > w * 0.040
+        )
+    )
+    if force_symmetric_brow:
         if left_area >= right_area:
             strong = left
-            target_side = xx > center_x
             mirror_mode = "left_to_right"
         else:
             strong = right
-            target_side = xx < center_x
             mirror_mode = "right_to_left"
 
         strong_luma = luma[strong]
         if strong_luma.size:
-            dark_cutoff = min(92.0, max(44.0, float(np.percentile(strong_luma, 42.0))))
+            dark_cutoff = min(98.0, max(44.0, float(np.percentile(strong_luma, 62.0))))
             mirror_source = strong & (luma <= dark_cutoff)
             mirror_source = ndimage.binary_opening(mirror_source, structure=_disk(1))
             if int(mirror_source.sum()) < min_reasonable_area:
-                mirror_source = strong & (luma <= min(108.0, float(np.percentile(strong_luma, 58.0))))
+                mirror_source = strong & (luma <= min(112.0, float(np.percentile(strong_luma, 72.0))))
         else:
             mirror_source = strong
+
+        if np.any(mirror_source):
+            src_y, src_x = np.where(mirror_source)
+            y_lo = int(np.percentile(src_y, 8.0))
+            y_hi = int(np.percentile(src_y, 72.0))
+            max_height = int(max(12, h * 0.040))
+            y_hi = min(y_hi, y_lo + max_height)
+            mirror_source &= (yy >= y_lo) & (yy <= y_hi)
+            mirror_source = ndimage.binary_closing(mirror_source, structure=_disk(2))
+            mirror_source = ndimage.binary_opening(mirror_source, structure=_disk(1))
 
         ys, xs = np.where(mirror_source)
         mirrored_x = np.rint(2 * center_x - xs).astype(np.int32)
         valid = (mirrored_x >= x_min_px) & (mirrored_x <= x_max_px) & (mirrored_x >= 0) & (mirrored_x < w)
         ys = ys[valid]
-        src_xs = xs[valid]
         dst_xs = mirrored_x[valid]
         if ys.size:
-            mirrored_mask[ys, dst_xs] = True
-            mirrored_rgb[ys, dst_xs] = texture[ys, src_xs]
-        mirrored_mask &= brow_band & target_side
-        mirrored_mask = ndimage.binary_closing(mirrored_mask, structure=_disk(2))
-        mirrored_mask = ndimage.binary_dilation(mirrored_mask, structure=_disk(1)) & brow_band & target_side
+            symmetric_eyebrow_mask[ys, dst_xs] = True
+        symmetric_eyebrow_mask |= mirror_source
+        symmetric_eyebrow_mask &= brow_band
+        symmetric_eyebrow_mask = ndimage.binary_closing(symmetric_eyebrow_mask, structure=_disk(2))
+        symmetric_eyebrow_mask = ndimage.binary_dilation(symmetric_eyebrow_mask, structure=_disk(1)) & brow_band
+        symmetric_eyebrow_rgb[symmetric_eyebrow_mask] = black_brow_rgb
 
-        # Fill any pixels added by dilation from the average of mirrored source
-        # colors, keeping the recovery dark instead of skin-colored.
-        source_pixels = texture[mirror_source]
-        if source_pixels.size:
-            source_pixels = source_pixels.reshape(-1, 3).astype(np.float32)
-            source_luma = source_pixels[:, 0] * 0.2126 + source_pixels[:, 1] * 0.7152 + source_pixels[:, 2] * 0.0722
-            source_pixels = source_pixels[source_luma <= np.percentile(source_luma, 55.0)]
-            fill_rgb = np.median(source_pixels, axis=0).astype(np.uint8)
-        else:
-            fill_rgb = np.asarray([28, 24, 22], dtype=np.uint8)
-        empty = mirrored_mask & (mirrored_rgb.sum(axis=2) == 0)
-        mirrored_rgb[empty] = fill_rgb
+    if mirror_mode == "none":
+        symmetric_eyebrow_mask = eyebrow_seed
+        symmetric_eyebrow_rgb[symmetric_eyebrow_mask] = black_brow_rgb
 
-    final_guard = (guard | eyebrow_seed | mirrored_mask) & roi
+    eye_keep_y = y_min_px + int(h * 0.102)
+    eye_guard = guard & brow_band & (yy >= eye_keep_y)
+    final_guard = ((guard & ~brow_band) | eye_guard | symmetric_eyebrow_mask) & roi
     final_guard = ndimage.binary_dilation(final_guard, structure=_disk(1)) & roi
-    return final_guard, mirrored_mask, mirrored_rgb, {
+    return final_guard, symmetric_eyebrow_mask, symmetric_eyebrow_rgb, {
         "eyebrow_symmetry_component_count": int(count),
         "eyebrow_symmetry_components_kept": int(sum(1 for item in components if item["kept"])),
         "eyebrow_left_area_texels": left_area,
@@ -1384,8 +1424,9 @@ def _symmetrize_eyebrow_guard(
         "eyebrow_right_stats": right_stats,
         "eyebrow_area_ratio": ratio,
         "eyebrow_mirror_mode": mirror_mode,
-        "eyebrow_mirrored_texels": int(mirrored_mask.sum()),
+        "eyebrow_mirrored_texels": int(symmetric_eyebrow_mask.sum()),
         "eyebrow_mirror_source_texels": int(mirror_source.sum()) if mirror_mode != "none" else 0,
+        "eyebrow_symmetry_texture_mode": "fixed_black_mask_no_color_transfer",
         "eyebrow_symmetry_components_preview": components[:30],
     }
 
@@ -2326,7 +2367,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
             after_dir=_as_path(v04b_paths["after_refine_render"]["render_dir"]),
             area_dir=_as_path(v04b_paths["area_render"]["render_dir"]),
             output_path=v04b_dir / "step6_v04b_compact_review_sheet.png",
-            legend="Area row: green=forehead, orange=filled hair/black leftovers, yellow=final hairline, blue=eye/brow guard, cyan=mirrored brow. Bottom row: purple=1st hairline, yellow=2nd hairline, cyan=skin that lifted the line.",
+            legend="Area row: green=forehead, orange=filled hair/black leftovers, yellow=final hairline, blue=eye/brow guard, cyan=symmetric black brow mask. Bottom row: purple=1st hairline, yellow=2nd hairline, cyan=skin evidence for broad lift.",
             before_label="before v01",
             after_label="after v04b",
             area_label="area map",
@@ -2336,7 +2377,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
             v04b_paths["compact_review_sheet"] = compact_sheet
 
     person_summary["stages"]["v04b_eyebrow_hairline_refine"] = {
-        "logic": "start from v04 forehead redefinition, add symmetry eyebrow guard/recovery, then locally lift the hairline where reliable forehead skin exists above the first-pass curve",
+        "logic": "start from v04 forehead redefinition, redefine weak brows as a fixed black symmetric mask, flatten the front hairline shape, then broadly lift it from reliable forehead-skin evidence",
         "paths": v04b_paths,
         "metrics": v04b_meta,
     }
@@ -2467,9 +2508,9 @@ def _build_report(summary: dict[str, Any]) -> str:
         "## v04b_eyebrow_hairline_refine",
         "",
         "This stage keeps the v04 forehead definition idea, but fixes two issues seen in review.",
-        "First, eyebrow/eye protection is strengthened with a left-right symmetry check, and a weak eyebrow side can be restored by mirroring the stronger side.",
-        "Second, the first smooth hairline is locally lifted when reliable forehead skin appears above it, so real forehead pixels are not cut off by an over-smooth curve.",
-        "The compact sheet adds a bottom row for the secondary hairline correction: purple is the first line, yellow is the lifted line, and cyan is the skin evidence that caused the lift.",
+        "First, eyebrow/eye protection is strengthened with a left-right symmetry check. When eyebrow shape is imbalanced, both brows are redefined as a fixed black symmetric mask, not color-transferred texture.",
+        "Second, the first smooth hairline is reshaped to be less circular across the front, then broadly lifted when reliable forehead skin appears above it.",
+        "The compact sheet adds a bottom row for the secondary hairline correction: purple is the first line, yellow is the lifted line, and cyan is the skin evidence used for the broad lift.",
         "",
     ])
     for person in summary["people"]:
@@ -2488,7 +2529,7 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Filled hair/black/non-skin texels: {metrics['filled_non_skin_texels']}",
             f"- Observed forehead texels: {metrics['observed_forehead_texels']}",
             f"- Initial/final eye-brow guard texels: {metrics['initial_eye_brow_guard_texels']} / {metrics['eye_brow_guard_texels']}",
-            f"- Mirrored eyebrow texels: {metrics['mirrored_eyebrow_texels']} ({metrics['eyebrow_mirror_mode']})",
+            f"- Symmetric black eyebrow-mask texels: {metrics['mirrored_eyebrow_texels']} ({metrics['eyebrow_mirror_mode']})",
             f"- Hairline lift candidate texels: {metrics['hairline_lift_candidate_texels']}",
             f"- Hairline lift supported/smoothed columns: {metrics['hairline_lift_supported_columns']} / {metrics['hairline_lift_smoothed_columns']}",
             f"- Max hairline lift px: {round(metrics['hairline_lift_max_px'], 2)}",
