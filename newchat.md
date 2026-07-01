@@ -92,6 +92,7 @@ Completed:
 - Step 5: raw-versus-clean texture arbitration.
 - Step 6 v00/v01: baseline plus conservative hard black skin-hole fill.
 - Step 6 v02: central forehead tone normalization.
+- Step 6 v03: diagnostic forehead uniform-tone replacement.
 
 Current Step 3 winner:
 
@@ -160,10 +161,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_111008
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_122600
 ```
 
-Step 6 v01/v02 status:
+Step 6 v01/v02/v03 status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -186,8 +187,23 @@ Step 6 v01/v02 status:
     kept, 10,168 changed texels.
 - Visual judgment: v02 masks are much safer, but the forehead patch shape still
   remains. Tone correction alone is not enough.
+- `v03_forehead_uniform_tone` is complete as a diagnostic experiment.
+- v03 starts from v01, uses the Step 5 `blend` baseline, replaces selected
+  central forehead skin with the average tone of reliable non-forehead face
+  skin, and writes compact before/after/area review sheets.
+- Juseop scan hairline frames are used only as a hairline boundary hint. Scan
+  pixels are not used as texture, color reference, or texture bake input.
+- Accepted v03 metrics:
+  - Juseop: 14,974 edited forehead texels, 49,419 reference face texels.
+  - Eunchae: 13,566 edited forehead texels, 28,510 reference face texels.
+- Visual judgment: v03 reduces forehead patchiness, but the forehead becomes
+  too flat and the edit boundary remains too hard. Treat v03 as diagnostic, not
+  final quality.
+- Review-sheet rule going forward: main sheets should be simple. Show before
+  front/left45/right45, after front/left45/right45, and optionally area map
+  front/left45/right45. Keep UV maps/debug maps out of the main human review.
 
-## 6. Next Active Step: Step 6 v03
+## 6. Next Active Step: Step 6 v04
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -195,13 +211,13 @@ Do not batch many fixes together.
 
 Planned order:
 
-1. Forehead patch completion
-   - Use v02 central-forehead mask and yellow tone-candidate islands.
-   - Replace or locally inpaint patchy candidate islands instead of changing
-     the whole forehead.
-   - Prefer nearby reliable forehead pixels, symmetric forehead pixels, or
-     source-aware clean projections before generated fallback.
-   - Keep eyes, eyebrows, hairline, and scalp protected.
+1. Forehead edge/detail recovery
+   - Use v03 as a diagnostic baseline, not final output.
+   - Feather the boundary between edited forehead and unedited skin.
+   - Reintroduce subtle skin detail from nearby reliable forehead or source
+     projections where available.
+   - Avoid making the forehead one flat material.
+   - Keep eyes, eyebrows, hairline, scalp, mouth, and lower face protected.
 
 2. Mouth and lips
    - Repair mouth interior and lips as separate materials.

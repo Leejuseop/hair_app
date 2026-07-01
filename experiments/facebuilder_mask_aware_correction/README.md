@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_111008
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_122600
 ```
 
 Implemented sub-steps:
@@ -266,6 +266,7 @@ Implemented sub-steps:
 v00_baseline = Step 5 blend texture
 v01_hard_skin_holes = conservative black-hole skin fill
 v02_forehead_tone = central forehead tone normalization
+v03_forehead_uniform_tone = diagnostic forehead uniform-tone replacement
 ```
 
 v01 logic:
@@ -324,6 +325,45 @@ Interpretation:
 - Visual improvement is limited. The forehead patch shape remains visible
   because tone normalization changes color but does not replace the underlying
   contaminated/patchy texture structure.
-- The next useful Step 6 sub-step should be forehead patch replacement or
-  local inpainting/completion for the yellow v02 tone-candidate regions, then
-  mouth/lips and eye/brow material repair.
+
+v03 logic:
+
+- use the v01 output as the before baseline;
+- build a narrower forehead ROI and keep only the central forehead component;
+- exclude the lower eye/brow feature guard and hairline boundary from the
+  edited forehead skin;
+- for Juseop only, read app-scan hairline frames as a boundary hint only;
+  scan pixels are never used as texture/color/bake input;
+- compute the target color from reliable non-forehead face skin, mainly the
+  stable midface/cheek area;
+- replace selected forehead skin toward that uniform target color;
+- write a compact main review sheet with only before front/left45/right45,
+  after front/left45/right45, and area front/left45/right45. UV maps remain
+  debug-only and are not part of the main human review.
+
+v03 color legend in the compact review sheet:
+
+```text
+green  = edited forehead skin
+yellow = hairline edge visual hint
+blue   = eye/brow guard, not edited as forehead skin
+dark   = not touched by v03
+```
+
+Observed v03 metrics at 1024 atlas:
+
+| Person | Edited forehead texels | Reference face texels | Scan hairline hint | Read |
+| --- | ---: | ---: | --- | --- |
+| Juseop | 14,974 | 49,419 | yes, boundary only | Patchiness reduced, but forehead becomes too flat |
+| Eunchae | 13,566 | 28,510 | no | Patchiness reduced, but flat patch/edge remains visible |
+
+v03 interpretation:
+
+- v03 confirms that forcing the forehead to a single non-forehead skin tone can
+  remove much of the noisy patch structure.
+- It is not final quality. The result looks artificial because the forehead
+  loses local detail and the boundary between edited/un-edited skin remains too
+  hard.
+- The next useful Step 6 sub-step should keep v03 as a diagnostic reference,
+  then add edge blending/detail recovery or region-aware inpainting before
+  moving to mouth/lips and eye/brow material repair.

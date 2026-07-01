@@ -2888,3 +2888,101 @@ Suggested v03 direction:
 - keep eyes, eyebrows, hairline, and scalp under the existing guard;
 - compare against the v02 `medium` texture in review sheets before moving on to
   mouth/lips.
+
+### 27.9 Step 6 v03 Forehead Uniform Tone
+
+Date: 2026-07-01.
+
+Active private Step 6 output after v03:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_122600
+```
+
+Implemented sub-step:
+
+```text
+v03_forehead_uniform_tone
+```
+
+Why this version exists:
+
+- The user rejected the broad v02-style guard visualization because it marked
+  too much right forehead, eyebrow, and hairline area as protected.
+- The user specifically requested a more direct experiment: if cheek/midface
+  tone looks acceptable, set the forehead to the average tone of the rest of
+  the face skin rather than gently pulling it toward that tone.
+- The user also requested that app-scan frames be used for Juseop hairline
+  boundary understanding only. Scan frames must not enter texture bake, color
+  sampling, or photo identity/skin texture decisions because production scan
+  conditions can differ from uploaded selfie appearance.
+
+Review-sheet contract changed:
+
+- Main review sheets should be simple visual sheets, not forensic atlas dumps.
+- Each Step 6 sub-step should show:
+  - before render at front, left 45, right 45;
+  - after render at front, left 45, right 45;
+  - if needed, one area/changed-mask render at front, left 45, right 45.
+- UV atlases, confidence maps, and other debug maps may still be saved in
+  private Drive, but they should not dominate the main human-facing review
+  sheet.
+- v03 compact review sheet colors:
+  - green = edited forehead skin;
+  - yellow = hairline edge visual hint;
+  - blue = eye/brow guard, not edited as forehead skin;
+  - dark = not touched by v03.
+
+Accepted v03 logic:
+
+- start from the Step 5 `blend` texture with accepted v01 hard-hole fill;
+- build reliable observed skin from Step 5 decisions plus broad skin-color
+  gates;
+- set a narrower forehead ROI and keep only the central forehead connected
+  component;
+- build a lower feature guard from dark eye/brow-like completion regions near
+  reliable skin, instead of using the overbroad v02 guard as a global
+  "do-not-touch" semantic;
+- for Juseop only, estimate a hairline boundary hint from local app-scan
+  hairline frames, and use it only to shift the forehead ROI slightly;
+- compute a target skin tone from reliable non-forehead face skin, focused on
+  stable midface/cheek texture rather than neck/shadow regions;
+- replace selected forehead texels toward that target tone;
+- output compact before/after/area render sheets and keep UV/debug maps as
+  private diagnostics.
+
+Accepted v03 metrics at 1024 atlas:
+
+| Person | Edited forehead texels | Reference face texels | Eye/brow guard texels | Scan hairline hint | Result |
+| --- | ---: | ---: | ---: | --- | --- |
+| Juseop | 14,974 | 49,419 | 8,602 | yes, boundary only | Forehead patchiness reduced, but the edited region looks flat and has a hard edge |
+| Eunchae | 13,566 | 28,510 | 7,512 | no | Forehead patchiness reduced, but a flat patch/edge remains visible |
+
+Visual interpretation:
+
+- v03 is useful as a diagnostic: it proves that a strong forehead replacement
+  can suppress the visible noisy forehead texture better than v02's mild tone
+  pull.
+- v03 is not product-quality. It removes too much local detail, creates a
+  flat single-tone forehead region, and still leaves a visible boundary where
+  edited and unedited skin meet.
+- The right next step is not to widen the mask. The next step should blend
+  the edited boundary, reintroduce believable skin detail, or locally inpaint
+  only the patchy islands while keeping the new compact review-sheet format.
+
+Next Step 6 sub-step:
+
+```text
+v04_forehead_edge_detail_recovery
+```
+
+Suggested v04 direction:
+
+- keep v03 as a diagnostic baseline, not as the final forehead;
+- feather the edited forehead boundary against adjacent reliable skin;
+- restore subtle local texture/detail from clean nearby forehead or source
+  projections where available;
+- avoid making the forehead a single flat material;
+- keep eye/brow, hairline, scalp, mouth, and lower face out of this pass;
+- after forehead edge/detail recovery is visually accepted, move to
+  mouth/lips, eyes/brows, neck/lower leakage, ears/side face, and scalp/hairline.

@@ -76,9 +76,9 @@ machine:
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02 postprocess passes. `v2_farl_grounded_sam`
-  is the current mask candidate, and Step 6 is using the Step 5 `blend` texture
-  as its fixed baseline.
+  arbitration, and Step 6 v01/v02/v03 postprocess passes.
+  `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
+  the Step 5 `blend` texture as its fixed baseline.
 
 Private test outputs are written under `private_outputs/` and are ignored by
 Git. Current FaceBuilder version outputs are written under the private Drive
@@ -177,14 +177,18 @@ private_outputs/
    only tiny dot-like holes and protects eyes, mouth, brows, nostrils, scalp,
    and clothing.
 3. Keep v02 forehead tone as a safe but weak pass. It now uses only the central
-   forehead component, but tone correction alone does not remove the visible
+   forehead component, but tone correction alone did not remove the visible
    patch structure.
-4. Next, try v03 forehead patch completion/inpainting on the v02 yellow
-   candidate islands, then repair mouth/lips, eyes/eyebrows, neck/lower
-   clothing leakage, ears, scalp/hairline, and final global color smoothing.
-5. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+4. Treat v03 forehead uniform tone as a diagnostic experiment, not final
+   quality: it replaces selected forehead skin with the average non-forehead
+   face tone, uses Juseop scan frames only as a hairline boundary hint, and
+   produces compact before/after/area review sheets.
+5. Next, repair the v03 flat-patch artifact with edge blending/detail recovery,
+   then repair mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears,
+   scalp/hairline, and final mild color smoothing.
+6. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
    candidate unless visual review proves otherwise.
-6. Preserve confidence/provenance maps so observed pixels, blended pixels, and
+7. Preserve confidence/provenance maps so observed pixels, blended pixels, and
    generated/fallback pixels remain distinguishable.
-7. After the bald head is credible, decide whether the FaceBuilder mesh can be
+8. After the bald head is credible, decide whether the FaceBuilder mesh can be
    used directly for hair fitting or needs retopology/transfer.

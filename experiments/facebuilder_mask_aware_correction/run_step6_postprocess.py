@@ -5,6 +5,7 @@ and produces diagnostic review sheets. Implemented stages:
 
 - `v01_hard_skin_holes`: only tiny black COMPLETION_NEEDED skin holes.
 - `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
+- `v03_forehead_uniform_tone`: unify forehead skin to non-forehead face skin tone.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -56,6 +57,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--forehead-x-min", type=float, default=0.28)
     parser.add_argument("--forehead-x-max", type=float, default=0.72)
     parser.add_argument("--skip-baseline-renders", action="store_true")
+    parser.add_argument("--skip-v02-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -181,6 +183,67 @@ def _make_render_sheet(person: str, stage: str, render_dir: Path, path: Path) ->
     return _safe_path(path)
 
 
+def _make_compact_before_after_sheet(
+    *,
+    person: str,
+    title_stage: str,
+    before_dir: Path,
+    after_dir: Path,
+    area_dir: Path | None,
+    output_path: Path,
+    legend: str,
+) -> str | None:
+    yaw_items = [
+        ("front", "+00"),
+        ("left 45", "-45"),
+        ("right 45", "+45"),
+    ]
+    rows: list[tuple[str, Path]] = [
+        ("before v01", before_dir),
+        ("after v03", after_dir),
+    ]
+    if area_dir is not None:
+        rows.append(("area map", area_dir))
+
+    tile_w = 300
+    band_h = 34
+    row_label_w = 190
+    gap = 12
+    header_h = 96
+    rendered_rows: list[tuple[str, list[Image.Image]]] = []
+    for row_label, directory in rows:
+        row_images: list[Image.Image] = []
+        for col_label, yaw in yaw_items:
+            image_path = directory / f"render_yaw_{yaw}.png"
+            if not image_path.exists():
+                return None
+            image = Image.open(image_path).convert("RGB")
+            row_images.append(_make_tile(col_label, image, width=tile_w))
+        rendered_rows.append((row_label, row_images))
+
+    tile_h = max(tile.height for _, row in rendered_rows for tile in row)
+    width = row_label_w + len(yaw_items) * tile_w + (len(yaw_items) + 2) * gap
+    height = header_h + len(rendered_rows) * tile_h + (len(rendered_rows) + 1) * gap
+    sheet = Image.new("RGB", (width, height), (18, 18, 18))
+    draw = ImageDraw.Draw(sheet)
+    draw.text((16, 12), f"{person} Step 6 {title_stage} compact review", fill=(245, 245, 245), font=_font(24))
+    draw.text((16, 48), "Rows: before / after / area. " + legend, fill=(190, 190, 190), font=_font(14))
+    draw.text((16, 70), "Main review sheet intentionally avoids UV atlas/debug maps.", fill=(160, 160, 160), font=_font(13))
+
+    y = header_h + gap
+    for row_label, row_images in rendered_rows:
+        draw.text((gap, y + 12), row_label, fill=(235, 235, 235), font=_font(15))
+        x = row_label_w + gap
+        for tile in row_images:
+            sheet.paste(tile, (x, y))
+            x += tile_w + gap
+        y += tile_h + gap
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(output_path, quality=95)
+    return _safe_path(output_path)
+
+
 def _render_texture(
     *,
     blender_exe: Path,
@@ -220,6 +283,35 @@ def _render_texture(
         "render_dir": _safe_path(output_dir),
         "log": _safe_path(log_path),
     }
+
+
+def _render_stage_raw(
+    *,
+    person: str,
+    stage: str,
+    texture_path: Path,
+    source_person_dir: Path,
+    output_dir: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    render_script = REPO_ROOT / "experiments" / "facebuilder_mask_aware_correction" / "blender_step4_render_texture.py"
+    blend = _find_one(source_person_dir / "03_facebuilder_scene", "*.blend")
+    render_dir = output_dir / "renders" / stage
+    render_json = render_dir / "render_summary.json"
+    render_log = output_dir / "logs" / f"blender_step6_render_{stage}_stdout_stderr.txt"
+    result = _render_texture(
+        blender_exe=args.blender_exe,
+        blend=blend,
+        render_script=render_script,
+        texture=texture_path,
+        output_dir=render_dir,
+        output_json=render_json,
+        log_path=render_log,
+        headnum=args.headnum,
+    )
+    result["stage"] = stage
+    result["person"] = person
+    return result
 
 
 def _disk(radius: int) -> np.ndarray:
@@ -699,6 +791,288 @@ def _step_v02_forehead_tone(
     return maps, meta
 
 
+def _estimate_scan_hairline_ratio(image_path: Path, bounds: dict[str, Any] | None) -> dict[str, Any]:
+    image = _load_rgb(image_path)
+    arr = np.asarray(image, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    if bounds:
+        x0 = int(np.clip(float(bounds.get("minX", 0.28)) * w, 0, w - 1))
+        x1 = int(np.clip(float(bounds.get("maxX", 0.72)) * w, x0 + 1, w))
+        y0 = int(np.clip(float(bounds.get("minY", 0.18)) * h, 0, h - 1))
+        y1 = int(np.clip(float(bounds.get("maxY", 0.88)) * h, y0 + 1, h))
+    else:
+        x0, x1 = int(w * 0.28), int(w * 0.72)
+        y0, y1 = int(h * 0.18), int(h * 0.88)
+
+    crop = arr[y0:y1, x0:x1]
+    if crop.size == 0:
+        return {"ok": False, "reason": "empty_crop"}
+
+    rgb = crop.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    cb = 128.0 - 0.168736 * rgb[..., 0] - 0.331264 * rgb[..., 1] + 0.5 * rgb[..., 2]
+    cr = 128.0 + 0.5 * rgb[..., 0] - 0.418688 * rgb[..., 1] - 0.081312 * rgb[..., 2]
+    skin = (luma > 72.0) & (cb > 72.0) & (cb < 154.0) & (cr > 112.0) & (cr < 190.0)
+    skin = ndimage.binary_opening(skin, structure=_disk(2))
+    skin = ndimage.binary_closing(skin, structure=_disk(3))
+
+    ch, cw = skin.shape
+    x_start = int(cw * 0.18)
+    x_stop = int(cw * 0.82)
+    y_stop = int(ch * 0.42)
+    samples: list[float] = []
+    for x in range(x_start, x_stop, max(1, cw // 90)):
+        column = skin[:y_stop, max(0, x - 2) : min(cw, x + 3)]
+        if column.size == 0:
+            continue
+        row_scores = column.mean(axis=1)
+        stable = ndimage.uniform_filter1d(row_scores.astype(np.float32), size=7)
+        hits = np.where(stable > 0.42)[0]
+        if hits.size:
+            samples.append(float(hits[0]) / max(1, ch))
+
+    if not samples:
+        return {
+            "ok": False,
+            "reason": "no_skin_transition",
+            "image_path": _safe_path(image_path),
+            "crop_bounds_px": [x0, y0, x1, y1],
+        }
+
+    ratio = float(np.median(np.asarray(samples, dtype=np.float32)))
+    spread = float(np.percentile(samples, 75) - np.percentile(samples, 25))
+    return {
+        "ok": True,
+        "image_path": _safe_path(image_path),
+        "crop_bounds_px": [x0, y0, x1, y1],
+        "estimated_hairline_skin_start_ratio": ratio,
+        "sample_count": len(samples),
+        "sample_iqr": spread,
+        "usage": "hairline boundary hint only; never used as texture/color source",
+    }
+
+
+def _find_scan_hairline_hint(person: str, drive_root: Path) -> dict[str, Any]:
+    if person != "juseop":
+        return {"used": False, "reason": "no_scan_hairline_reference_for_person"}
+
+    candidates: list[tuple[Path, dict[str, Any] | None, str]] = []
+    input_root = drive_root / "input"
+    person_tokens = ("juseop", "\uc8fc\uc12d")
+    if input_root.exists():
+        for image_path in sorted(input_root.rglob("*hairline*.*")):
+            suffix = image_path.suffix.lower()
+            if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+                continue
+            path_text = str(image_path).lower()
+            if not any(token.lower() in path_text for token in person_tokens):
+                continue
+            candidates.append((image_path, None, "drive_input_hairline_scan"))
+
+    best: dict[str, Any] | None = None
+    for image_path, bounds, source in candidates:
+        estimate = _estimate_scan_hairline_ratio(image_path, bounds)
+        estimate["source"] = source
+        if not estimate.get("ok"):
+            continue
+        if best is None or int(estimate.get("sample_count", 0)) > int(best.get("sample_count", 0)):
+            best = estimate
+
+    if best is None:
+        return {
+            "used": False,
+            "reason": "no_valid_hairline_scan_hint_found",
+            "candidate_count": len(candidates),
+        }
+
+    best["used"] = True
+    best["candidate_count"] = len(candidates)
+    return best
+
+
+def _trimmed_mean_rgb(texture: np.ndarray, mask: np.ndarray, fallback: np.ndarray) -> tuple[np.ndarray, int]:
+    pixels = texture[mask].astype(np.float32)
+    if pixels.shape[0] == 0:
+        return fallback.astype(np.float32), 0
+    luma = pixels[:, 0] * 0.2126 + pixels[:, 1] * 0.7152 + pixels[:, 2] * 0.0722
+    lo = np.percentile(luma, 30.0)
+    hi = np.percentile(luma, 92.0)
+    keep = (luma >= lo) & (luma <= hi)
+    if int(keep.sum()) >= 32:
+        pixels = pixels[keep]
+    return pixels.mean(axis=0).astype(np.float32), int(pixels.shape[0])
+
+
+def _lower_feature_guard(
+    texture: np.ndarray,
+    decision: np.ndarray,
+    reliable_skin: np.ndarray,
+    roi: np.ndarray,
+    yy: np.ndarray,
+    y_min: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    h = decision.shape[0]
+    rgb = texture.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    lower_band = yy >= int(h * (y_min + 0.055))
+    skin_near = ndimage.binary_dilation(reliable_skin, structure=_disk(9))
+    dark = (decision == COMPLETION_NEEDED) & (luma < 70.0) & roi & lower_band & skin_near
+    dark = ndimage.binary_closing(dark, structure=_disk(2))
+    labels, count = ndimage.label(dark)
+    guard = np.zeros(dark.shape, dtype=bool)
+    components: list[dict[str, Any]] = []
+    for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
+        if slices is None:
+            continue
+        ys, xs = slices
+        component = labels[slices] == label_id
+        area = int(component.sum())
+        width = int(xs.stop - xs.start)
+        height = int(ys.stop - ys.start)
+        aspect = max(width / max(1, height), height / max(1, width))
+        kept = area >= 20 and (width >= 7 or height >= 4)
+        if kept:
+            guard[slices][component] = True
+        components.append({
+            "label": label_id,
+            "area": area,
+            "width": width,
+            "height": height,
+            "aspect": float(aspect),
+            "kept": bool(kept),
+            "bbox": [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)],
+        })
+    guard = ndimage.binary_dilation(guard, structure=_disk(1))
+    return guard, {
+        "lower_feature_component_count": int(count),
+        "lower_feature_components_kept": int(sum(1 for item in components if item["kept"])),
+        "lower_feature_guard_texels": int(guard.sum()),
+        "lower_feature_components_preview": components[:30],
+    }
+
+
+def _top_boundary(mask: np.ndarray) -> np.ndarray:
+    if not np.any(mask):
+        return np.zeros(mask.shape, dtype=bool)
+    eroded = ndimage.binary_erosion(mask, structure=np.ones((5, 1), dtype=bool))
+    boundary = mask & ~eroded
+    y_indices, _ = np.indices(mask.shape)
+    ys = np.where(mask, y_indices, mask.shape[0])
+    top_y = ys.min(axis=0)
+    near_top = y_indices <= (top_y.reshape(1, -1) + 5)
+    return boundary & near_top
+
+
+def _step_v03_forehead_uniform_tone(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    source_count: np.ndarray,
+    *,
+    forehead_y_min: float,
+    forehead_y_max: float,
+    forehead_x_min: float,
+    forehead_x_max: float,
+    scan_hairline_hint: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    y_shift = 0.0
+    if scan_hairline_hint.get("used"):
+        ratio = float(scan_hairline_hint.get("estimated_hairline_skin_start_ratio", 0.16))
+        y_shift = float(np.clip((ratio - 0.16) * 0.08, -0.012, 0.014))
+    y_min = float(np.clip(forehead_y_min + y_shift, 0.24, 0.38))
+    y_max = float(np.clip(max(forehead_y_max - 0.005, y_min + 0.08), y_min + 0.08, 0.46))
+    x_min = float(max(0.26, forehead_x_min))
+    x_max = float(min(0.74, forehead_x_max))
+    roi = (
+        (xx >= int(w * x_min))
+        & (xx <= int(w * x_max))
+        & (yy >= int(h * y_min))
+        & (yy <= int(h * y_max))
+    )
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+    lower_guard, lower_meta = _lower_feature_guard(base, decision, reliable_skin, roi, yy, y_min)
+
+    forehead_skin = reliable_skin & roi & ~lower_guard
+    forehead_skin = ndimage.binary_closing(forehead_skin, structure=_disk(2)) & reliable_skin & roi & ~lower_guard
+    forehead_skin, component_meta = _keep_central_forehead_components(forehead_skin)
+    hairline_edge = _top_boundary(forehead_skin)
+
+    ref_roi = (
+        reliable_skin
+        & ~forehead_skin
+        & ~lower_guard
+        & (xx >= int(w * 0.24))
+        & (xx <= int(w * 0.76))
+        & (yy >= int(h * 0.44))
+        & (yy <= int(h * 0.62))
+        & (max_score > 0.22)
+        & (source_count.astype(np.float32) >= 1.0)
+    )
+    fallback = np.asarray([150.0, 105.0, 88.0], dtype=np.float32)
+    face_mean, face_ref_count = _trimmed_mean_rgb(base, ref_roi, fallback)
+
+    edge_feather = np.clip(ndimage.distance_transform_edt(forehead_skin).astype(np.float32) / 6.0, 0.0, 1.0)
+    weight = np.where(forehead_skin, np.clip(0.32 + 0.68 * edge_feather, 0.0, 1.0), 0.0).astype(np.float32)
+    uniform = base.copy()
+    rgb = base.astype(np.float32)
+    target = face_mean.reshape(1, 1, 3)
+    mixed = rgb * (1.0 - weight[..., None]) + target * weight[..., None]
+    uniform[forehead_skin] = np.clip(mixed[forehead_skin], 0.0, 255.0).astype(np.uint8)
+
+    changed = np.any(uniform != base, axis=2)
+    area_rgb = np.full_like(base, 28, dtype=np.uint8)
+    area_rgb[forehead_skin] = (40, 210, 95)
+    area_rgb[hairline_edge] = (245, 218, 38)
+    area_rgb[lower_guard] = (58, 130, 245)
+    area_overlay = base.copy()
+    for mask, color, alpha in [
+        (forehead_skin, (40, 210, 95), 0.48),
+        (hairline_edge, (245, 218, 38), 0.78),
+        (lower_guard, (58, 130, 245), 0.70),
+    ]:
+        area_overlay = _blend_overlay(area_overlay, mask, color, alpha=alpha)
+
+    maps = {
+        "texture": uniform,
+        "forehead_mask": forehead_skin.astype(np.uint8) * 255,
+        "hairline_edge_mask": hairline_edge.astype(np.uint8) * 255,
+        "lower_feature_guard_mask": lower_guard.astype(np.uint8) * 255,
+        "changed_mask": changed.astype(np.uint8) * 255,
+        "weight": np.clip(weight * 255.0, 0, 255).astype(np.uint8),
+        "area_render_texture": area_rgb,
+        "area_overlay": area_overlay,
+        "reference_skin_rgb": _mask_rgb(ref_roi, (80, 160, 255)),
+    }
+    meta = {
+        "forehead_roi_normalized": {
+            "x_min": x_min,
+            "x_max": x_max,
+            "y_min": y_min,
+            "y_max": y_max,
+            "scan_y_shift": y_shift,
+        },
+        "scan_hairline_hint": scan_hairline_hint,
+        "target_non_forehead_face_mean_rgb": [float(x) for x in face_mean.tolist()],
+        "target_reference_texels": int(face_ref_count),
+        "forehead_skin_texels": int(forehead_skin.sum()),
+        "hairline_edge_texels": int(hairline_edge.sum()),
+        "lower_feature_guard_texels": int(lower_guard.sum()),
+        "changed_texels": int(changed.sum()),
+        "mean_abs_rgb_delta_on_changed": (
+            float(np.abs(uniform.astype(np.int16) - base.astype(np.int16)).sum(axis=2)[changed].mean())
+            if np.any(changed)
+            else 0.0
+        ),
+    }
+    meta.update(lower_meta)
+    meta.update(component_meta)
+    return maps, meta
+
+
 def _render_stage(
     *,
     person: str,
@@ -917,7 +1291,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
     )
     v02_paths["uv_review_sheet"] = _safe_path(v02_uv_review)
 
-    if not args.skip_render:
+    if not args.skip_render and not args.skip_v02_renders:
         forehead_mask_texture_path = v02_maps_dir / "v02_forehead_skin_render_texture.png"
         _save_rgb(forehead_mask_texture_path, v02_maps["combined_mask_rgb"])
         v02_paths["forehead_mask_render"] = _render_stage(
@@ -942,6 +1316,77 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "logic": "protect facial/hairline boundaries, select forehead skin, then gently normalize forehead tone in light/medium/strong variants",
         "paths": v02_paths,
         "metrics": v02_meta,
+    }
+
+    scan_hairline_hint = _find_scan_hairline_hint(person, args.drive_root)
+    v03_maps, v03_meta = _step_v03_forehead_uniform_tone(
+        v01_texture,
+        decision,
+        clean_score,
+        raw_score,
+        source_count,
+        forehead_y_min=args.forehead_y_min,
+        forehead_y_max=args.forehead_y_max,
+        forehead_x_min=args.forehead_x_min,
+        forehead_x_max=args.forehead_x_max,
+        scan_hairline_hint=scan_hairline_hint,
+    )
+    v03_dir = output_dir / "v03_forehead_uniform_tone"
+    v03_maps_dir = v03_dir / "maps"
+    v03_texture_path = v03_maps_dir / "v03_forehead_uniform_tone_texture.png"
+    v03_area_texture_path = v03_maps_dir / "v03_forehead_uniform_area_render_texture.png"
+    v03_paths: dict[str, Any] = {
+        "texture": _save_rgb(v03_texture_path, v03_maps["texture"]),
+        "forehead_mask": _save_l(v03_maps_dir / "v03_forehead_mask.png", v03_maps["forehead_mask"]),
+        "hairline_edge_mask": _save_l(v03_maps_dir / "v03_hairline_edge_mask.png", v03_maps["hairline_edge_mask"]),
+        "lower_feature_guard_mask": _save_l(v03_maps_dir / "v03_eye_brow_guard_mask.png", v03_maps["lower_feature_guard_mask"]),
+        "changed_mask": _save_l(v03_maps_dir / "v03_changed_mask.png", v03_maps["changed_mask"]),
+        "weight": _save_l(v03_maps_dir / "v03_uniform_weight.png", v03_maps["weight"]),
+        "area_render_texture": _save_rgb(v03_area_texture_path, v03_maps["area_render_texture"]),
+        "area_overlay": _save_rgb(v03_maps_dir / "v03_area_overlay.png", v03_maps["area_overlay"]),
+        "reference_skin_rgb": _save_rgb(v03_maps_dir / "v03_non_forehead_reference_skin_debug_rgb.png", v03_maps["reference_skin_rgb"]),
+    }
+    if not args.skip_render:
+        v03_paths["before_v01_render"] = _render_stage_raw(
+            person=person,
+            stage="v03_before_v01_skin_holes",
+            texture_path=v01_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v03_dir,
+            args=args,
+        )
+        v03_paths["after_uniform_render"] = _render_stage_raw(
+            person=person,
+            stage="v03_after_forehead_uniform",
+            texture_path=v03_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v03_dir,
+            args=args,
+        )
+        v03_paths["area_render"] = _render_stage_raw(
+            person=person,
+            stage="v03_area_map",
+            texture_path=v03_area_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v03_dir,
+            args=args,
+        )
+        compact_sheet = _make_compact_before_after_sheet(
+            person=person,
+            title_stage="v03_forehead_uniform_tone",
+            before_dir=_as_path(v03_paths["before_v01_render"]["render_dir"]),
+            after_dir=_as_path(v03_paths["after_uniform_render"]["render_dir"]),
+            area_dir=_as_path(v03_paths["area_render"]["render_dir"]),
+            output_path=v03_dir / "step6_v03_compact_review_sheet.png",
+            legend="Green=edited forehead, yellow=hairline edge, blue=eye/brow guard, dark=not touched.",
+        )
+        if compact_sheet:
+            v03_paths["compact_review_sheet"] = compact_sheet
+
+    person_summary["stages"]["v03_forehead_uniform_tone"] = {
+        "logic": "use scan hairline only as a boundary hint, then set forehead skin to non-forehead face-skin mean tone with thin feature guards",
+        "paths": v03_paths,
+        "metrics": v03_meta,
     }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
@@ -1010,6 +1455,34 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Changed texels light/medium/strong: {variant_metrics['light']['changed_texels']} / {variant_metrics['medium']['changed_texels']} / {variant_metrics['strong']['changed_texels']}",
             "",
         ])
+    lines.extend([
+        "## v03_forehead_uniform_tone",
+        "",
+        "This stage uses v01 as the before state. It does not use scan frames as texture.",
+        "For Juseop, available hairline scan frames are used only as a thin hairline-boundary hint.",
+        "The edited forehead skin is set toward the mean tone of non-forehead face skin.",
+        "The main review sheet is compact: before v01, after v03, and area map at front/+-45 only.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v03_forehead_uniform_tone", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- Compact review: `{paths.get('compact_review_sheet')}`",
+            f"- Texture: `{paths.get('texture')}`",
+            f"- Target non-forehead face mean RGB: {[round(x, 2) for x in metrics['target_non_forehead_face_mean_rgb']]}",
+            f"- Forehead skin texels: {metrics['forehead_skin_texels']}",
+            f"- Hairline edge texels: {metrics['hairline_edge_texels']}",
+            f"- Eye/brow guard texels: {metrics['lower_feature_guard_texels']}",
+            f"- Changed texels: {metrics['changed_texels']}",
+            f"- Scan hairline hint used: {metrics['scan_hairline_hint'].get('used')}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -1034,7 +1507,7 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": _safe_path(output_root),
         "blender_exe": _safe_path(args.blender_exe),
         "people": [],
-        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone"],
+        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone", "v03_forehead_uniform_tone"],
         "parameters": {
             "close_radius": int(args.close_radius),
             "max_fill_distance": float(args.max_fill_distance),
@@ -1046,6 +1519,7 @@ def main(argv: list[str] | None = None) -> int:
             "forehead_y_min": float(args.forehead_y_min),
             "forehead_y_max": float(args.forehead_y_max),
             "skip_baseline_renders": bool(args.skip_baseline_renders),
+            "skip_v02_renders": bool(args.skip_v02_renders),
         },
     }
 
@@ -1071,6 +1545,8 @@ def main(argv: list[str] | None = None) -> int:
                 "v02_uv_review": item["stages"].get("v02_forehead_tone", {}).get("paths", {}).get("uv_review_sheet"),
                 "v02_medium_render": item["stages"].get("v02_forehead_tone", {}).get("paths", {}).get("medium_render", {}).get("render_review_sheet"),
                 "v02_metrics": _compact_metrics(item["stages"].get("v02_forehead_tone", {}).get("metrics", {})),
+                "v03_compact_review": item["stages"].get("v03_forehead_uniform_tone", {}).get("paths", {}).get("compact_review_sheet"),
+                "v03_metrics": _compact_metrics(item["stages"].get("v03_forehead_uniform_tone", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],

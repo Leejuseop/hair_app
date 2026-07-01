@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_111008
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_122600
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1569,6 +1569,7 @@ Completed Step 6 sub-steps:
 - `v00_baseline`: Step 5 `blend` render baseline.
 - `v01_hard_skin_holes`: conservative black-hole skin fill.
 - `v02_forehead_tone`: central forehead tone normalization.
+- `v03_forehead_uniform_tone`: diagnostic uniform forehead replacement.
 
 Important Step 6 v01 result:
 
@@ -1594,10 +1595,28 @@ Important Step 6 v02 result:
 - Visual review says v02 is safer but not enough. It softens tone slightly, but
   it does not remove the patch shape in the forehead texture.
 
+Important Step 6 v03 result:
+
+- v03 starts from v01 and replaces selected central forehead skin with the
+  average tone of reliable non-forehead face skin.
+- Juseop app-scan hairline frames are used only as a hairline boundary hint.
+  Scan pixels are not used as texture, color reference, or bake input.
+- The main review-sheet contract changed: show only before front/left45/right45,
+  after front/left45/right45, and an optional area map front/left45/right45.
+  UV/debug maps remain private diagnostics, not the main visual sheet.
+- v03 metrics:
+  - Juseop: 14,974 edited forehead texels, 49,419 reference face texels,
+    scan hairline hint used as boundary-only.
+  - Eunchae: 13,566 edited forehead texels, 28,510 reference face texels,
+    no scan hairline hint.
+- Visual review says v03 reduces forehead patch noise, but it creates a flat
+  single-tone forehead region with a hard boundary. Treat it as a diagnostic
+  reference, not final quality.
+
 Remaining Step 6 should repair completion-needed and contaminated regions by
-semantic/material region: forehead patch completion, mouth/lips, eyes/brows,
-neck/lower leakage, ears/side face, scalp/hairline, and only then final color
-smoothing.
+semantic/material region: forehead edge/detail recovery, mouth/lips,
+eyes/brows, neck/lower leakage, ears/side face, scalp/hairline, and only then
+final color smoothing.
 
 Detailed Step 6 plan:
 
@@ -1623,12 +1642,13 @@ Detailed Step 6 plan:
      preserving local detail and avoiding a flat fake-skin patch.
    - Current v02 is complete as a safe but weak tone pass.
 
-4. Forehead patch completion
-   - Use the v02 central-forehead mask and yellow tone-candidate islands.
-   - Replace only patchy candidate islands, not the whole forehead.
-   - Prefer nearby reliable forehead pixels, symmetric forehead pixels, or
-     source-aware clean projections before generated fallback.
-   - Keep eyes, eyebrows, hairline, and scalp protected.
+4. Forehead edge/detail recovery
+   - Use v03 as a diagnostic baseline, not as the final forehead.
+   - Feather the boundary between edited forehead and unedited skin.
+   - Restore subtle skin detail from clean nearby forehead or source-aware
+     projections where available.
+   - Avoid turning the forehead into one flat material.
+   - Keep eyes, eyebrows, hairline, scalp, mouth, and lower face protected.
    - This is the next active sub-step before moving to mouth/lips.
 
 5. Mouth and lips
