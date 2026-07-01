@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_131820
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_140926
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1572,6 +1572,8 @@ Completed Step 6 sub-steps:
 - `v03_forehead_uniform_tone`: diagnostic uniform forehead replacement.
 - `v04_forehead_redefined_region`: broader forehead definition plus
   hair/black leftover fill.
+- `v04b_eyebrow_hairline_refine`: eyebrow symmetry recovery plus second-pass
+  hairline lift.
 
 Important Step 6 v01 result:
 
@@ -1634,8 +1636,29 @@ Important Step 6 v04 result:
   around Juseop's right eyebrow-side hair remnant. It still looks too flat and
   needs edge/detail recovery.
 
+Important Step 6 v04b result:
+
+- v04b keeps the v04 forehead-region idea but fixes the obvious Juseop eyebrow
+  failure seen in review.
+- It strengthens the eye/eyebrow guard with a left-right eyebrow symmetry
+  check. If one eyebrow side is much weaker, darker pixels from the stronger
+  side are mirrored onto the weak side as a recovery texture and guard.
+- It also runs a second-pass hairline correction: if reliable forehead-skin
+  pixels exist above the first smooth hairline, the line is locally lifted so
+  valid forehead skin is not cut off.
+- Juseop scan hairline frames remain boundary-only. Scan pixels are still
+  never used as texture/color/bake input.
+- v04b metrics:
+  - Juseop: 25,705 forehead-region texels, 5,719 hair/black fill texels,
+    731 mirrored eyebrow texels, max hairline lift 35.91 px.
+  - Eunchae: 23,510 forehead-region texels, 7,378 hair/black fill texels,
+    649 mirrored eyebrow texels, max hairline lift 32.42 px.
+- Visual review says v04b prevents Juseop's right eyebrow from disappearing
+  and places the hairline more respectfully around observed forehead skin. It
+  still looks too flat and needs edge/detail recovery.
+
 Remaining Step 6 should repair completion-needed and contaminated regions by
-semantic/material region: forehead edge/detail recovery from the v04 region,
+semantic/material region: forehead edge/detail recovery from the v04b region,
 mouth/lips,
 eyes/brows, neck/lower leakage, ears/side face, scalp/hairline, and only then
 final color smoothing.
@@ -1665,7 +1688,8 @@ Detailed Step 6 plan:
    - Current v02 is complete as a safe but weak tone pass.
 
 4. Forehead edge/detail recovery
-   - Use v04's broader forehead region as the working definition.
+   - Use v04b's broader forehead region and stronger eye/eyebrow/hairline
+     guards as the working definition.
    - Feather the boundary between edited forehead and unedited skin.
    - Restore subtle skin detail from clean nearby forehead or source-aware
      projections where available.

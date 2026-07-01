@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_131820
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_140926
 ```
 
 Implemented sub-steps:
@@ -268,6 +268,7 @@ v01_hard_skin_holes = conservative black-hole skin fill
 v02_forehead_tone = central forehead tone normalization
 v03_forehead_uniform_tone = diagnostic forehead uniform-tone replacement
 v04_forehead_redefined_region = forehead region redefinition plus hair-leftover fill
+v04b_eyebrow_hairline_refine = eyebrow symmetry recovery plus second-pass hairline lift
 ```
 
 v01 logic:
@@ -415,3 +416,54 @@ v04 interpretation:
   but it increases the flat-forehead/material problem. The next pass should
   focus on edge blending, skin-detail recovery, and making the filled forehead
   look less like one flat patch.
+
+v04b logic:
+
+- restart from v01, like v04;
+- keep the v04 broader forehead definition;
+- strengthen eye/eyebrow protection with a left-right eyebrow symmetry check;
+- if one eyebrow side is much weaker or missing, mirror only the darker pixels
+  from the stronger eyebrow side onto the weak side;
+- keep Juseop app-scan frames as hairline-boundary hints only, never as
+  texture/color/bake input;
+- first fit the smooth predicted hairline, then perform a second pass: if
+  reliable forehead-skin pixels exist above that first line, locally lift the
+  hairline upward so real forehead skin is not cut off by an over-smooth curve;
+- keep the main review sheet compact: before v01, after v04b, area map, and a
+  bottom row for the second-pass hairline correction at front/left45/right45.
+
+v04b compact review colors:
+
+```text
+area row:
+green  = redefined forehead region
+orange = hair/black/non-skin leftovers filled as forehead
+yellow = final second-pass hairline
+blue   = eye/brow guard
+cyan   = mirrored eyebrow recovery
+dark   = not touched by v04b
+
+2nd hairline row:
+purple = first-pass smooth hairline
+yellow = second-pass lifted hairline
+cyan   = reliable forehead skin that caused the line to lift
+green  = resulting forehead region
+blue   = eye/brow guard
+```
+
+Observed v04b metrics at 1024 atlas:
+
+| Person | Forehead region texels | Filled hair/black texels | Mirrored eyebrow texels | Hairline lift columns | Max hairline lift px | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Juseop | 25,705 | 5,719 | 731 | 217 supported / 251 smoothed | 35.91 | Right eyebrow no longer disappears; forehead is broader but still flat |
+| Eunchae | 23,510 | 7,378 | 649 | 135 supported / 198 smoothed | 32.42 | Hairline/forehead boundary is cleaner; lower face and neck still need separate repair |
+
+v04b interpretation:
+
+- v04b fixes the specific failure seen after v04: Juseop's right eyebrow side
+  is no longer eaten by the forehead fill.
+- The second-pass hairline better respects observed forehead skin above the
+  first smooth curve, so the line is less likely to cut away valid forehead.
+- This is still not final quality. The forehead repair remains a broad tone
+  replacement and needs edge blending plus skin-detail recovery before moving
+  on to mouth, eyes, neck, ears, and scalp.

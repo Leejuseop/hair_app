@@ -7,6 +7,7 @@ and produces diagnostic review sheets. Implemented stages:
 - `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
 - `v03_forehead_uniform_tone`: unify forehead skin to non-forehead face skin tone.
 - `v04_forehead_redefined_region`: redefine forehead by position, then fill hair leftovers.
+- `v04b_eyebrow_hairline_refine`: symmetry eyebrow guard plus local hairline lift.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -60,6 +61,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-baseline-renders", action="store_true")
     parser.add_argument("--skip-v02-renders", action="store_true")
     parser.add_argument("--skip-v03-renders", action="store_true")
+    parser.add_argument("--skip-v04-renders", action="store_true")
+    parser.add_argument("--skip-v04b-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -197,6 +200,7 @@ def _make_compact_before_after_sheet(
     before_label: str = "before v01",
     after_label: str = "after v03",
     area_label: str = "area map",
+    extra_rows: list[tuple[str, Path]] | None = None,
 ) -> str | None:
     yaw_items = [
         ("front", "+00"),
@@ -209,6 +213,8 @@ def _make_compact_before_after_sheet(
     ]
     if area_dir is not None:
         rows.append((area_label, area_dir))
+    if extra_rows:
+        rows.extend(extra_rows)
 
     tile_w = 300
     band_h = 34
@@ -232,7 +238,10 @@ def _make_compact_before_after_sheet(
     sheet = Image.new("RGB", (width, height), (18, 18, 18))
     draw = ImageDraw.Draw(sheet)
     draw.text((16, 12), f"{person} Step 6 {title_stage} compact review", fill=(245, 245, 245), font=_font(24))
-    draw.text((16, 48), "Rows: before / after / area. " + legend, fill=(190, 190, 190), font=_font(14))
+    row_text = "Rows: before / after / area"
+    if extra_rows:
+        row_text += " / extra"
+    draw.text((16, 48), row_text + ". " + legend, fill=(190, 190, 190), font=_font(14))
     draw.text((16, 70), "Main review sheet intentionally avoids UV atlas/debug maps.", fill=(160, 160, 160), font=_font(13))
 
     y = header_h + gap
@@ -1131,6 +1140,256 @@ def _eye_brow_guard_for_redefined_forehead(
     }
 
 
+def _line_from_curve(
+    curve: np.ndarray,
+    shape: tuple[int, int],
+    *,
+    x_min_px: int,
+    x_max_px: int,
+    thickness: int = 1,
+) -> np.ndarray:
+    h, w = shape
+    line = np.zeros((h, w), dtype=bool)
+    radius = max(0, int(thickness))
+    for x in range(max(0, x_min_px), min(w, x_max_px + 1)):
+        y = int(np.clip(round(float(curve[x])), 0, h - 1))
+        line[max(0, y - radius) : min(h, y + radius + 1), x] = True
+    return line
+
+
+def _lift_hairline_over_observed_skin(
+    first_curve: np.ndarray,
+    reliable_skin: np.ndarray,
+    face_support: np.ndarray,
+    yy: np.ndarray,
+    xx: np.ndarray,
+    *,
+    x_min_px: int,
+    x_max_px: int,
+    y_min_px: int,
+    y_bottom_px: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    h, w = reliable_skin.shape
+    first_lookup = first_curve[np.clip(xx, 0, w - 1)]
+    upper_limit = max(0, y_min_px - int(h * 0.030))
+    skin_above_first = (
+        reliable_skin
+        & face_support
+        & (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & (yy >= upper_limit)
+        & (yy < first_lookup - 2.0)
+        & (yy <= y_bottom_px)
+    )
+    skin_above_first = ndimage.binary_opening(skin_above_first, structure=_disk(1))
+
+    supported = np.zeros(w, dtype=bool)
+    proposed = first_curve.copy().astype(np.float32)
+    max_lift = float(h * 0.070)
+    min_window_pixels = max(8, int(h * 0.006))
+    for x in range(max(0, x_min_px), min(w, x_max_px + 1)):
+        x0 = max(0, x - 4)
+        x1 = min(w, x + 5)
+        local = skin_above_first[:, x0:x1]
+        if int(local.sum()) < min_window_pixels:
+            continue
+        local_y = np.where(local)[0]
+        if local_y.size == 0:
+            continue
+        # Use a low percentile, not the absolute top pixel, so one noisy skin
+        # dot above the hairline does not pull the line too far upward.
+        observed_top = float(np.percentile(local_y, 18.0))
+        candidate = max(float(y_min_px - int(h * 0.020)), observed_top - 2.0)
+        lift = float(first_curve[x] - candidate)
+        if lift >= 3.0:
+            proposed[x] = max(float(first_curve[x] - max_lift), candidate)
+            supported[x] = True
+
+    lift_delta = np.clip(first_curve - proposed, 0.0, max_lift)
+    lift_delta[~supported] = 0.0
+    lift_delta = ndimage.gaussian_filter1d(lift_delta, sigma=5.5)
+    lifted_curve = first_curve.astype(np.float32) - lift_delta.astype(np.float32)
+    lifted_curve = np.minimum(lifted_curve, first_curve)
+    lifted_curve = np.clip(lifted_curve, y_min_px - int(h * 0.030), y_bottom_px - int(h * 0.010))
+
+    final_line = _line_from_curve(
+        lifted_curve,
+        reliable_skin.shape,
+        x_min_px=x_min_px,
+        x_max_px=x_max_px,
+        thickness=1,
+    )
+    lifted_columns = int(np.count_nonzero(lift_delta[max(0, x_min_px) : min(w, x_max_px + 1)] > 0.8))
+    return lifted_curve, final_line, skin_above_first, {
+        "hairline_lift_candidate_texels": int(skin_above_first.sum()),
+        "hairline_lift_supported_columns": int(np.count_nonzero(supported)),
+        "hairline_lift_smoothed_columns": lifted_columns,
+        "hairline_lift_max_px": float(lift_delta.max()) if lift_delta.size else 0.0,
+        "hairline_lift_mean_px_on_lifted_columns": (
+            float(lift_delta[lift_delta > 0.8].mean())
+            if np.any(lift_delta > 0.8)
+            else 0.0
+        ),
+    }
+
+
+def _eyebrow_side_stats(mask: np.ndarray) -> dict[str, Any]:
+    if not np.any(mask):
+        return {
+            "area": 0,
+            "width": 0,
+            "height": 0,
+            "bbox": None,
+            "center_x": None,
+            "center_y": None,
+        }
+    ys, xs = np.where(mask)
+    return {
+        "area": int(mask.sum()),
+        "width": int(xs.max() - xs.min() + 1),
+        "height": int(ys.max() - ys.min() + 1),
+        "bbox": [int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1)],
+        "center_x": float(xs.mean()),
+        "center_y": float(ys.mean()),
+    }
+
+
+def _symmetrize_eyebrow_guard(
+    texture: np.ndarray,
+    decision: np.ndarray,
+    reliable_skin: np.ndarray,
+    guard: np.ndarray,
+    roi: np.ndarray,
+    yy: np.ndarray,
+    xx: np.ndarray,
+    *,
+    x_min_px: int,
+    x_max_px: int,
+    y_min_px: int,
+    y_bottom_px: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    h, w = guard.shape
+    rgb = texture.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    center_x = int(round((x_min_px + x_max_px) * 0.5))
+    brow_top = max(0, y_min_px + int(h * 0.035))
+    brow_bottom = min(h - 1, y_min_px + int(h * 0.135))
+    brow_band = (
+        (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & (yy >= brow_top)
+        & (yy <= brow_bottom)
+        & roi
+    )
+    skin_context = ndimage.binary_dilation(reliable_skin, structure=_disk(16))
+    dark_seed = (((decision == COMPLETION_NEEDED) & (luma < 104.0)) | (luma < 78.0)) & brow_band & skin_context
+    seed = ((guard & brow_band) | dark_seed)
+    seed = ndimage.binary_closing(seed, structure=_disk(2))
+    seed = ndimage.binary_opening(seed, structure=_disk(1))
+
+    labels, count = ndimage.label(seed)
+    eyebrow_seed = np.zeros_like(seed, dtype=bool)
+    components: list[dict[str, Any]] = []
+    for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
+        if slices is None:
+            continue
+        ys, xs = slices
+        component = labels[slices] == label_id
+        area = int(component.sum())
+        width = int(xs.stop - xs.start)
+        height = int(ys.stop - ys.start)
+        aspect = float(width / max(1, height))
+        center_y = float((ys.start + ys.stop) * 0.5)
+        kept = area >= 18 and width >= 8 and height <= max(18, int(h * 0.040)) and aspect >= 1.35
+        if kept:
+            eyebrow_seed[slices][component] = True
+        components.append({
+            "label": int(label_id),
+            "area": area,
+            "width": width,
+            "height": height,
+            "aspect": aspect,
+            "center_y": center_y,
+            "kept": bool(kept),
+            "bbox": [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)],
+        })
+
+    eyebrow_seed = ndimage.binary_dilation(eyebrow_seed, structure=_disk(2)) & brow_band
+    left = eyebrow_seed & (xx < center_x)
+    right = eyebrow_seed & (xx > center_x)
+    left_stats = _eyebrow_side_stats(left)
+    right_stats = _eyebrow_side_stats(right)
+    left_area = int(left_stats["area"])
+    right_area = int(right_stats["area"])
+    min_reasonable_area = 28
+    ratio = float(min(left_area, right_area) / max(1, max(left_area, right_area)))
+
+    mirrored_mask = np.zeros_like(guard, dtype=bool)
+    mirrored_rgb = np.zeros_like(texture, dtype=np.uint8)
+    mirror_mode = "none"
+    if max(left_area, right_area) >= min_reasonable_area and (ratio < 0.66 or min(left_area, right_area) < min_reasonable_area):
+        if left_area >= right_area:
+            strong = left
+            target_side = xx > center_x
+            mirror_mode = "left_to_right"
+        else:
+            strong = right
+            target_side = xx < center_x
+            mirror_mode = "right_to_left"
+
+        strong_luma = luma[strong]
+        if strong_luma.size:
+            dark_cutoff = min(92.0, max(44.0, float(np.percentile(strong_luma, 42.0))))
+            mirror_source = strong & (luma <= dark_cutoff)
+            mirror_source = ndimage.binary_opening(mirror_source, structure=_disk(1))
+            if int(mirror_source.sum()) < min_reasonable_area:
+                mirror_source = strong & (luma <= min(108.0, float(np.percentile(strong_luma, 58.0))))
+        else:
+            mirror_source = strong
+
+        ys, xs = np.where(mirror_source)
+        mirrored_x = np.rint(2 * center_x - xs).astype(np.int32)
+        valid = (mirrored_x >= x_min_px) & (mirrored_x <= x_max_px) & (mirrored_x >= 0) & (mirrored_x < w)
+        ys = ys[valid]
+        src_xs = xs[valid]
+        dst_xs = mirrored_x[valid]
+        if ys.size:
+            mirrored_mask[ys, dst_xs] = True
+            mirrored_rgb[ys, dst_xs] = texture[ys, src_xs]
+        mirrored_mask &= brow_band & target_side
+        mirrored_mask = ndimage.binary_closing(mirrored_mask, structure=_disk(2))
+        mirrored_mask = ndimage.binary_dilation(mirrored_mask, structure=_disk(1)) & brow_band & target_side
+
+        # Fill any pixels added by dilation from the average of mirrored source
+        # colors, keeping the recovery dark instead of skin-colored.
+        source_pixels = texture[mirror_source]
+        if source_pixels.size:
+            source_pixels = source_pixels.reshape(-1, 3).astype(np.float32)
+            source_luma = source_pixels[:, 0] * 0.2126 + source_pixels[:, 1] * 0.7152 + source_pixels[:, 2] * 0.0722
+            source_pixels = source_pixels[source_luma <= np.percentile(source_luma, 55.0)]
+            fill_rgb = np.median(source_pixels, axis=0).astype(np.uint8)
+        else:
+            fill_rgb = np.asarray([28, 24, 22], dtype=np.uint8)
+        empty = mirrored_mask & (mirrored_rgb.sum(axis=2) == 0)
+        mirrored_rgb[empty] = fill_rgb
+
+    final_guard = (guard | eyebrow_seed | mirrored_mask) & roi
+    final_guard = ndimage.binary_dilation(final_guard, structure=_disk(1)) & roi
+    return final_guard, mirrored_mask, mirrored_rgb, {
+        "eyebrow_symmetry_component_count": int(count),
+        "eyebrow_symmetry_components_kept": int(sum(1 for item in components if item["kept"])),
+        "eyebrow_left_area_texels": left_area,
+        "eyebrow_right_area_texels": right_area,
+        "eyebrow_left_stats": left_stats,
+        "eyebrow_right_stats": right_stats,
+        "eyebrow_area_ratio": ratio,
+        "eyebrow_mirror_mode": mirror_mode,
+        "eyebrow_mirrored_texels": int(mirrored_mask.sum()),
+        "eyebrow_mirror_source_texels": int(mirror_source.sum()) if mirror_mode != "none" else 0,
+        "eyebrow_symmetry_components_preview": components[:30],
+    }
+
+
 def _step_v03_forehead_uniform_tone(
     base: np.ndarray,
     decision: np.ndarray,
@@ -1393,6 +1652,210 @@ def _step_v04_forehead_redefined_region(
     }
     meta.update(hairline_meta)
     meta.update(guard_meta)
+    meta.update(component_meta)
+    return maps, meta
+
+
+def _step_v04b_eyebrow_hairline_refine(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    source_count: np.ndarray,
+    *,
+    forehead_y_min: float,
+    forehead_y_max: float,
+    forehead_x_min: float,
+    forehead_x_max: float,
+    scan_hairline_hint: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    y_shift = 0.0
+    if scan_hairline_hint.get("used"):
+        ratio = float(scan_hairline_hint.get("estimated_hairline_skin_start_ratio", 0.16))
+        y_shift = float(np.clip((ratio - 0.16) * 0.08, -0.012, 0.014))
+
+    y_min = float(np.clip(forehead_y_min + y_shift, 0.24, 0.38))
+    y_bottom = float(np.clip(max(forehead_y_max + 0.010, y_min + 0.105), y_min + 0.095, 0.475))
+    x_min = float(max(0.25, forehead_x_min - 0.015))
+    x_max = float(min(0.75, forehead_x_max + 0.015))
+    x_min_px = int(w * x_min)
+    x_max_px = int(w * x_max)
+    y_min_px = int(h * y_min)
+    y_bottom_px = int(h * y_bottom)
+
+    coarse_roi = (
+        (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & (yy >= max(0, y_min_px - int(h * 0.020)))
+        & (yy <= y_bottom_px)
+    )
+    first_curve, first_pass_hairline, hairline_meta = _predict_smooth_hairline(
+        reliable_skin,
+        coarse_roi,
+        x_min_px=x_min_px,
+        x_max_px=x_max_px,
+        y_min_px=y_min_px,
+        y_max_px=y_bottom_px,
+    )
+    face_support = ndimage.binary_dilation(reliable_skin & coarse_roi, structure=_disk(24))
+    lifted_curve, final_hairline, lift_skin_mask, lift_meta = _lift_hairline_over_observed_skin(
+        first_curve,
+        reliable_skin,
+        face_support,
+        yy,
+        xx,
+        x_min_px=x_min_px,
+        x_max_px=x_max_px,
+        y_min_px=y_min_px,
+        y_bottom_px=y_bottom_px,
+    )
+    curve_lookup = lifted_curve[np.clip(xx, 0, w - 1)]
+    below_final_hairline = yy >= curve_lookup
+    position_forehead = (
+        (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & below_final_hairline
+        & (yy <= y_bottom_px)
+    )
+    position_forehead &= face_support
+    first_pass_hairline &= ndimage.binary_dilation(face_support, structure=_disk(4))
+    final_hairline &= ndimage.binary_dilation(face_support, structure=_disk(4))
+
+    initial_eye_brow_guard, guard_meta = _eye_brow_guard_for_redefined_forehead(
+        base,
+        decision,
+        reliable_skin,
+        position_forehead,
+        yy,
+        y_min_px=y_min_px,
+        y_bottom_px=y_bottom_px,
+    )
+    eye_brow_guard, mirrored_eyebrow_mask, mirrored_eyebrow_rgb, eyebrow_meta = _symmetrize_eyebrow_guard(
+        base,
+        decision,
+        reliable_skin,
+        initial_eye_brow_guard,
+        position_forehead,
+        yy,
+        xx,
+        x_min_px=x_min_px,
+        x_max_px=x_max_px,
+        y_min_px=y_min_px,
+        y_bottom_px=y_bottom_px,
+    )
+
+    forehead_region = position_forehead & ~eye_brow_guard
+    forehead_region = ndimage.binary_closing(forehead_region, structure=_disk(2)) & position_forehead & ~eye_brow_guard
+    forehead_region, component_meta = _keep_central_forehead_components(forehead_region)
+
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+    ref_roi = (
+        reliable_skin
+        & ~forehead_region
+        & ~eye_brow_guard
+        & (xx >= int(w * 0.24))
+        & (xx <= int(w * 0.76))
+        & (yy >= int(h * 0.44))
+        & (yy <= int(h * 0.62))
+        & (max_score > 0.22)
+        & (source_count.astype(np.float32) >= 1.0)
+    )
+    fallback = np.asarray([150.0, 105.0, 88.0], dtype=np.float32)
+    face_mean, face_ref_count = _trimmed_mean_rgb(base, ref_roi, fallback)
+
+    rgb = base.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    non_skin_forehead = forehead_region & (~reliable_skin | (decision == COMPLETION_NEEDED) | (luma < 56.0))
+    observed_forehead = forehead_region & ~non_skin_forehead
+
+    edge_feather = np.clip(ndimage.distance_transform_edt(forehead_region).astype(np.float32) / 7.0, 0.0, 1.0)
+    weight = np.where(forehead_region, np.clip(0.34 + 0.66 * edge_feather, 0.0, 1.0), 0.0).astype(np.float32)
+    weight[non_skin_forehead] = np.maximum(weight[non_skin_forehead], 0.96)
+
+    uniform = base.copy()
+    target = face_mean.reshape(1, 1, 3)
+    mixed = rgb * (1.0 - weight[..., None]) + target * weight[..., None]
+    uniform[forehead_region] = np.clip(mixed[forehead_region], 0.0, 255.0).astype(np.uint8)
+    if np.any(mirrored_eyebrow_mask):
+        uniform[mirrored_eyebrow_mask] = mirrored_eyebrow_rgb[mirrored_eyebrow_mask]
+
+    changed = np.any(uniform != base, axis=2)
+    area_rgb = np.full_like(base, 28, dtype=np.uint8)
+    area_rgb[forehead_region] = (40, 210, 95)
+    area_rgb[non_skin_forehead] = (255, 142, 42)
+    area_rgb[final_hairline] = (245, 218, 38)
+    area_rgb[eye_brow_guard] = (58, 130, 245)
+    area_rgb[mirrored_eyebrow_mask] = (70, 230, 245)
+
+    area_overlay = base.copy()
+    for mask, color, alpha in [
+        (forehead_region, (40, 210, 95), 0.42),
+        (non_skin_forehead, (255, 142, 42), 0.72),
+        (final_hairline, (245, 218, 38), 0.86),
+        (eye_brow_guard, (58, 130, 245), 0.70),
+        (mirrored_eyebrow_mask, (70, 230, 245), 0.80),
+    ]:
+        area_overlay = _blend_overlay(area_overlay, mask, color, alpha=alpha)
+
+    hairline_lift_rgb = np.full_like(base, 22, dtype=np.uint8)
+    hairline_lift_rgb[forehead_region] = (38, 175, 86)
+    hairline_lift_rgb[lift_skin_mask] = (70, 235, 245)
+    hairline_lift_rgb[first_pass_hairline] = (176, 72, 224)
+    hairline_lift_rgb[final_hairline] = (245, 218, 38)
+    hairline_lift_rgb[eye_brow_guard] = (58, 130, 245)
+    hairline_lift_rgb[mirrored_eyebrow_mask] = (90, 245, 255)
+
+    maps = {
+        "texture": uniform,
+        "forehead_region_mask": forehead_region.astype(np.uint8) * 255,
+        "filled_non_skin_mask": non_skin_forehead.astype(np.uint8) * 255,
+        "observed_forehead_mask": observed_forehead.astype(np.uint8) * 255,
+        "first_pass_hairline_mask": first_pass_hairline.astype(np.uint8) * 255,
+        "final_hairline_mask": final_hairline.astype(np.uint8) * 255,
+        "hairline_lift_skin_mask": lift_skin_mask.astype(np.uint8) * 255,
+        "initial_eye_brow_guard_mask": initial_eye_brow_guard.astype(np.uint8) * 255,
+        "eye_brow_guard_mask": eye_brow_guard.astype(np.uint8) * 255,
+        "mirrored_eyebrow_guard_mask": mirrored_eyebrow_mask.astype(np.uint8) * 255,
+        "changed_mask": changed.astype(np.uint8) * 255,
+        "weight": np.clip(weight * 255.0, 0, 255).astype(np.uint8),
+        "area_render_texture": area_rgb,
+        "hairline_lift_render_texture": hairline_lift_rgb,
+        "area_overlay": area_overlay,
+        "reference_skin_rgb": _mask_rgb(ref_roi, (80, 160, 255)),
+    }
+    meta = {
+        "forehead_roi_normalized": {
+            "x_min": x_min,
+            "x_max": x_max,
+            "y_min": y_min,
+            "y_bottom": y_bottom,
+            "scan_y_shift": y_shift,
+        },
+        "scan_hairline_hint": scan_hairline_hint,
+        "target_non_forehead_face_mean_rgb": [float(x) for x in face_mean.tolist()],
+        "target_reference_texels": int(face_ref_count),
+        "forehead_region_texels": int(forehead_region.sum()),
+        "observed_forehead_texels": int(observed_forehead.sum()),
+        "filled_non_skin_texels": int(non_skin_forehead.sum()),
+        "first_pass_hairline_texels": int(first_pass_hairline.sum()),
+        "final_hairline_texels": int(final_hairline.sum()),
+        "eye_brow_guard_texels": int(eye_brow_guard.sum()),
+        "initial_eye_brow_guard_texels": int(initial_eye_brow_guard.sum()),
+        "mirrored_eyebrow_texels": int(mirrored_eyebrow_mask.sum()),
+        "changed_texels": int(changed.sum()),
+        "mean_abs_rgb_delta_on_changed": (
+            float(np.abs(uniform.astype(np.int16) - base.astype(np.int16)).sum(axis=2)[changed].mean())
+            if np.any(changed)
+            else 0.0
+        ),
+    }
+    meta.update(hairline_meta)
+    meta.update(lift_meta)
+    meta.update(guard_meta)
+    meta.update(eyebrow_meta)
     meta.update(component_meta)
     return maps, meta
 
@@ -1742,7 +2205,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "area_overlay": _save_rgb(v04_maps_dir / "v04_area_overlay.png", v04_maps["area_overlay"]),
         "reference_skin_rgb": _save_rgb(v04_maps_dir / "v04_non_forehead_reference_skin_debug_rgb.png", v04_maps["reference_skin_rgb"]),
     }
-    if not args.skip_render:
+    if not args.skip_render and not args.skip_v04_renders:
         v04_paths["before_v01_render"] = _render_stage_raw(
             person=person,
             stage="v04_before_v01_skin_holes",
@@ -1786,6 +2249,96 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "logic": "redefine upper-face forehead by smooth predicted hairline and eye/brow guard, then fill hair/black leftovers as forehead skin",
         "paths": v04_paths,
         "metrics": v04_meta,
+    }
+
+    v04b_maps, v04b_meta = _step_v04b_eyebrow_hairline_refine(
+        v01_texture,
+        decision,
+        clean_score,
+        raw_score,
+        source_count,
+        forehead_y_min=args.forehead_y_min,
+        forehead_y_max=args.forehead_y_max,
+        forehead_x_min=args.forehead_x_min,
+        forehead_x_max=args.forehead_x_max,
+        scan_hairline_hint=scan_hairline_hint,
+    )
+    v04b_dir = output_dir / "v04b_eyebrow_hairline_refine"
+    v04b_maps_dir = v04b_dir / "maps"
+    v04b_texture_path = v04b_maps_dir / "v04b_eyebrow_hairline_refine_texture.png"
+    v04b_area_texture_path = v04b_maps_dir / "v04b_area_render_texture.png"
+    v04b_hairline_texture_path = v04b_maps_dir / "v04b_hairline_lift_render_texture.png"
+    v04b_paths: dict[str, Any] = {
+        "texture": _save_rgb(v04b_texture_path, v04b_maps["texture"]),
+        "forehead_region_mask": _save_l(v04b_maps_dir / "v04b_forehead_region_mask.png", v04b_maps["forehead_region_mask"]),
+        "filled_non_skin_mask": _save_l(v04b_maps_dir / "v04b_filled_non_skin_mask.png", v04b_maps["filled_non_skin_mask"]),
+        "observed_forehead_mask": _save_l(v04b_maps_dir / "v04b_observed_forehead_mask.png", v04b_maps["observed_forehead_mask"]),
+        "first_pass_hairline_mask": _save_l(v04b_maps_dir / "v04b_first_pass_hairline_mask.png", v04b_maps["first_pass_hairline_mask"]),
+        "final_hairline_mask": _save_l(v04b_maps_dir / "v04b_final_hairline_mask.png", v04b_maps["final_hairline_mask"]),
+        "hairline_lift_skin_mask": _save_l(v04b_maps_dir / "v04b_hairline_lift_skin_mask.png", v04b_maps["hairline_lift_skin_mask"]),
+        "initial_eye_brow_guard_mask": _save_l(v04b_maps_dir / "v04b_initial_eye_brow_guard_mask.png", v04b_maps["initial_eye_brow_guard_mask"]),
+        "eye_brow_guard_mask": _save_l(v04b_maps_dir / "v04b_eye_brow_guard_mask.png", v04b_maps["eye_brow_guard_mask"]),
+        "mirrored_eyebrow_guard_mask": _save_l(v04b_maps_dir / "v04b_mirrored_eyebrow_guard_mask.png", v04b_maps["mirrored_eyebrow_guard_mask"]),
+        "changed_mask": _save_l(v04b_maps_dir / "v04b_changed_mask.png", v04b_maps["changed_mask"]),
+        "weight": _save_l(v04b_maps_dir / "v04b_uniform_weight.png", v04b_maps["weight"]),
+        "area_render_texture": _save_rgb(v04b_area_texture_path, v04b_maps["area_render_texture"]),
+        "hairline_lift_render_texture": _save_rgb(v04b_hairline_texture_path, v04b_maps["hairline_lift_render_texture"]),
+        "area_overlay": _save_rgb(v04b_maps_dir / "v04b_area_overlay.png", v04b_maps["area_overlay"]),
+        "reference_skin_rgb": _save_rgb(v04b_maps_dir / "v04b_non_forehead_reference_skin_debug_rgb.png", v04b_maps["reference_skin_rgb"]),
+    }
+    if not args.skip_render and not args.skip_v04b_renders:
+        v04b_paths["before_v01_render"] = _render_stage_raw(
+            person=person,
+            stage="v04b_before_v01_skin_holes",
+            texture_path=v01_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04b_dir,
+            args=args,
+        )
+        v04b_paths["after_refine_render"] = _render_stage_raw(
+            person=person,
+            stage="v04b_after_eyebrow_hairline_refine",
+            texture_path=v04b_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04b_dir,
+            args=args,
+        )
+        v04b_paths["area_render"] = _render_stage_raw(
+            person=person,
+            stage="v04b_area_map",
+            texture_path=v04b_area_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04b_dir,
+            args=args,
+        )
+        v04b_paths["hairline_lift_render"] = _render_stage_raw(
+            person=person,
+            stage="v04b_hairline_lift_map",
+            texture_path=v04b_hairline_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04b_dir,
+            args=args,
+        )
+        compact_sheet = _make_compact_before_after_sheet(
+            person=person,
+            title_stage="v04b_eyebrow_hairline_refine",
+            before_dir=_as_path(v04b_paths["before_v01_render"]["render_dir"]),
+            after_dir=_as_path(v04b_paths["after_refine_render"]["render_dir"]),
+            area_dir=_as_path(v04b_paths["area_render"]["render_dir"]),
+            output_path=v04b_dir / "step6_v04b_compact_review_sheet.png",
+            legend="Area row: green=forehead, orange=filled hair/black leftovers, yellow=final hairline, blue=eye/brow guard, cyan=mirrored brow. Bottom row: purple=1st hairline, yellow=2nd hairline, cyan=skin that lifted the line.",
+            before_label="before v01",
+            after_label="after v04b",
+            area_label="area map",
+            extra_rows=[("2nd hairline", _as_path(v04b_paths["hairline_lift_render"]["render_dir"]))],
+        )
+        if compact_sheet:
+            v04b_paths["compact_review_sheet"] = compact_sheet
+
+    person_summary["stages"]["v04b_eyebrow_hairline_refine"] = {
+        "logic": "start from v04 forehead redefinition, add symmetry eyebrow guard/recovery, then locally lift the hairline where reliable forehead skin exists above the first-pass curve",
+        "paths": v04b_paths,
+        "metrics": v04b_meta,
     }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
@@ -1910,6 +2463,39 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Changed texels: {metrics['changed_texels']}",
             "",
         ])
+    lines.extend([
+        "## v04b_eyebrow_hairline_refine",
+        "",
+        "This stage keeps the v04 forehead definition idea, but fixes two issues seen in review.",
+        "First, eyebrow/eye protection is strengthened with a left-right symmetry check, and a weak eyebrow side can be restored by mirroring the stronger side.",
+        "Second, the first smooth hairline is locally lifted when reliable forehead skin appears above it, so real forehead pixels are not cut off by an over-smooth curve.",
+        "The compact sheet adds a bottom row for the secondary hairline correction: purple is the first line, yellow is the lifted line, and cyan is the skin evidence that caused the lift.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v04b_eyebrow_hairline_refine", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- Compact review: `{paths.get('compact_review_sheet')}`",
+            f"- Texture: `{paths.get('texture')}`",
+            f"- Target non-forehead face mean RGB: {[round(x, 2) for x in metrics['target_non_forehead_face_mean_rgb']]}",
+            f"- Forehead region texels: {metrics['forehead_region_texels']}",
+            f"- Filled hair/black/non-skin texels: {metrics['filled_non_skin_texels']}",
+            f"- Observed forehead texels: {metrics['observed_forehead_texels']}",
+            f"- Initial/final eye-brow guard texels: {metrics['initial_eye_brow_guard_texels']} / {metrics['eye_brow_guard_texels']}",
+            f"- Mirrored eyebrow texels: {metrics['mirrored_eyebrow_texels']} ({metrics['eyebrow_mirror_mode']})",
+            f"- Hairline lift candidate texels: {metrics['hairline_lift_candidate_texels']}",
+            f"- Hairline lift supported/smoothed columns: {metrics['hairline_lift_supported_columns']} / {metrics['hairline_lift_smoothed_columns']}",
+            f"- Max hairline lift px: {round(metrics['hairline_lift_max_px'], 2)}",
+            f"- Hairline fit mode: {metrics['hairline_fit_mode']}",
+            f"- Changed texels: {metrics['changed_texels']}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -1934,7 +2520,14 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": _safe_path(output_root),
         "blender_exe": _safe_path(args.blender_exe),
         "people": [],
-        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone", "v03_forehead_uniform_tone", "v04_forehead_redefined_region"],
+        "stages": [
+            "v00_baseline",
+            "v01_hard_skin_holes",
+            "v02_forehead_tone",
+            "v03_forehead_uniform_tone",
+            "v04_forehead_redefined_region",
+            "v04b_eyebrow_hairline_refine",
+        ],
         "parameters": {
             "close_radius": int(args.close_radius),
             "max_fill_distance": float(args.max_fill_distance),
@@ -1948,6 +2541,8 @@ def main(argv: list[str] | None = None) -> int:
             "skip_baseline_renders": bool(args.skip_baseline_renders),
             "skip_v02_renders": bool(args.skip_v02_renders),
             "skip_v03_renders": bool(args.skip_v03_renders),
+            "skip_v04_renders": bool(args.skip_v04_renders),
+            "skip_v04b_renders": bool(args.skip_v04b_renders),
         },
     }
 
@@ -1977,6 +2572,8 @@ def main(argv: list[str] | None = None) -> int:
                 "v03_metrics": _compact_metrics(item["stages"].get("v03_forehead_uniform_tone", {}).get("metrics", {})),
                 "v04_compact_review": item["stages"].get("v04_forehead_redefined_region", {}).get("paths", {}).get("compact_review_sheet"),
                 "v04_metrics": _compact_metrics(item["stages"].get("v04_forehead_redefined_region", {}).get("metrics", {})),
+                "v04b_compact_review": item["stages"].get("v04b_eyebrow_hairline_refine", {}).get("paths", {}).get("compact_review_sheet"),
+                "v04b_metrics": _compact_metrics(item["stages"].get("v04b_eyebrow_hairline_refine", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],

@@ -94,6 +94,7 @@ Completed:
 - Step 6 v02: central forehead tone normalization.
 - Step 6 v03: diagnostic forehead uniform-tone replacement.
 - Step 6 v04: forehead region redefinition plus hair/black leftover fill.
+- Step 6 v04b: eyebrow symmetry recovery plus second-pass hairline lift.
 
 Current Step 3 winner:
 
@@ -162,10 +163,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_131820
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_140926
 ```
 
-Step 6 v01/v02/v03/v04 status:
+Step 6 v01/v02/v03/v04/v04b status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -217,6 +218,23 @@ Step 6 v01/v02/v03/v04 status:
 - Visual judgment: v04 better matches the bald-head goal and includes Juseop's
   right eyebrow-side hair remnant as forehead, but the result is still too flat
   and the edited boundary is still visible.
+- `v04b_eyebrow_hairline_refine` is complete and is now the current Step 6
+  region/guard baseline.
+- v04b strengthens the eye/eyebrow guard with left-right eyebrow symmetry. If
+  one side is weak, darker pixels from the stronger eyebrow side are mirrored
+  onto the weak side as recovery texture and guard.
+- v04b also runs a second-pass hairline lift: reliable forehead-skin pixels
+  above the first smooth hairline curve can locally lift the line so valid
+  forehead is not cut off.
+- Accepted v04b metrics:
+  - Juseop: 25,705 forehead-region texels, 5,719 filled hair/black texels,
+    731 mirrored eyebrow texels, max hairline lift 35.91 px.
+  - Eunchae: 23,510 forehead-region texels, 7,378 filled hair/black texels,
+    649 mirrored eyebrow texels, max hairline lift 32.42 px.
+- Visual judgment: v04b fixes the obvious Juseop eyebrow-loss failure and
+  improves hairline placement. It still leaves flat forehead material and
+  visible boundaries, so v05 should recover edge/detail rather than widen the
+  region again.
 
 ## 6. Next Active Step: Step 6 v05
 
@@ -227,7 +245,8 @@ Do not batch many fixes together.
 Planned order:
 
 1. Forehead edge/detail recovery
-   - Use v04's broader forehead region as the working definition.
+   - Use v04b's broader forehead region and stronger eye/eyebrow/hairline
+     guards as the working definition.
    - Feather the boundary between edited forehead and unedited skin.
    - Reintroduce subtle skin detail from nearby reliable forehead or source
      projections where available.
