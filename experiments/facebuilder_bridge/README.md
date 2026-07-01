@@ -401,8 +401,9 @@ Current next step:
 1. Start Step 6 material-specific post-processing from the Step 5 `blend`
    texture.
 2. Process one element at a time with review sheets after each repair:
-   hard skin holes, forehead tone, mouth/lips, eyes/brows, neck/lower leakage,
-   ears/side face, scalp/hairline, then mild final color smoothing.
+   hard skin holes, forehead tone, forehead patch completion, mouth/lips,
+   eyes/brows, neck/lower leakage, ears/side face, scalp/hairline, then mild
+   final color smoothing.
 3. Keep FaceBuilder bridge scripts available for rerender/export/parity
    debugging, but do not return to the retired v1-v4 heuristic cleanup path
    unless the user explicitly asks for a comparison.

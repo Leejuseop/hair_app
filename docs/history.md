@@ -2804,3 +2804,87 @@ v02_forehead_tone
 
 v02 should treat the forehead artifact as a tone/lighting mismatch in valid
 skin unless masks/source maps prove true occluder leakage.
+
+### 27.8 Step 6 v02 Forehead Tone
+
+Date: 2026-07-01.
+
+Active private Step 6 output after v02:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_111008
+```
+
+Implemented sub-step:
+
+```text
+v02_forehead_tone
+```
+
+Goal:
+
+- start from the accepted Step 5 `blend` texture plus v01 hard-hole fill;
+- repair only forehead tone/lighting mismatch;
+- protect eyes, eyebrows, mouth, nostrils, scalp, hairline, clothing, and lower
+  face from being treated as forehead skin;
+- output UV review sheets, render review sheets, and `light`/`medium`/`strong`
+  variants.
+
+Important iteration:
+
+- The first v02 ROI was too broad. It selected an atlas rectangle that rendered
+  onto forehead plus upper face/ears.
+- The ROI was narrowed from a broad atlas range to a central upper-forehead
+  range.
+- A connected-component filter was then added so only the component overlapping
+  the central forehead is kept. Side UV islands are rejected instead of being
+  tone-normalized.
+
+Accepted v02 logic:
+
+- build reliable skin from the v01 texture and Step 5 decision map;
+- build a magenta guard from dark feature-like completion regions near skin;
+- create a central forehead candidate window;
+- remove guard regions from the forehead candidate;
+- keep only the central connected forehead component;
+- derive a target tone from reliable forehead pixels and stable midface pixels;
+- produce three strengths:
+  - `light`: small tone nudge;
+  - `medium`: default diagnostic candidate;
+  - `strong`: aggressive diagnostic candidate;
+- save changed masks, weight maps, UV sheets, and 0/+-15/+-30/+-45 render
+  sheets.
+
+Accepted v02 metrics at 1024 atlas:
+
+| Person | Forehead skin texels | Tone candidates | Components kept | Medium changed texels | Strong changed texels |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 13,220 | 4,309 | 1 / 9 | 10,157 | 10,939 |
+| Eunchae | 11,468 | 6,514 | 1 / 3 | 10,168 | 10,679 |
+
+Visual read:
+
+- The v02 mask is much safer than the first ROI attempt. It no longer tries to
+  repair the whole upper face as forehead.
+- The actual visible improvement is small. Juseop's forehead patch shape
+  remains visible in `medium` and `strong`; Eunchae's major quality issues are
+  still lower-face/neck/occlusion related.
+- This means simple tone correction is not enough for the forehead patches.
+  The next useful repair should replace or locally inpaint the contaminated
+  yellow v02 candidate regions while preserving nearby reliable skin detail.
+
+Next Step 6 sub-step:
+
+```text
+v03_forehead_patch_completion
+```
+
+Suggested v03 direction:
+
+- use the accepted v02 central-forehead mask and tone-candidate mask;
+- replace only the yellow candidate islands, not the whole forehead;
+- prefer nearby reliable forehead pixels, symmetric forehead pixels, or
+  source-aware clean projections before generated fallback;
+- keep eyes, eyebrows, hairline, and scalp under the existing guard;
+- compare against the v02 `medium` texture in review sheets before moving on to
+  mouth/lips.

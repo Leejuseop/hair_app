@@ -91,6 +91,7 @@ Completed:
 - Step 4: clean-pixel UV projection.
 - Step 5: raw-versus-clean texture arbitration.
 - Step 6 v00/v01: baseline plus conservative hard black skin-hole fill.
+- Step 6 v02: central forehead tone normalization.
 
 Current Step 3 winner:
 
@@ -159,10 +160,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_084010
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_111008
 ```
 
-Step 6 v01 status:
+Step 6 v01/v02 status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -175,8 +176,18 @@ Step 6 v01 status:
   - Eunchae: 13
 - This tiny visible change is intentional. Do not widen v01 before handling the
   bigger visible artifacts as separate material-specific repairs.
+- `v02_forehead_tone` is complete as a safe but weak tone pass.
+- v02 first used a too-broad forehead ROI, then was corrected by narrowing the
+  ROI and keeping only the central connected forehead component.
+- Accepted v02 medium metrics:
+  - Juseop: 13,220 forehead skin texels, 4,309 tone candidates, 1/9 components
+    kept, 10,157 changed texels.
+  - Eunchae: 11,468 forehead skin texels, 6,514 tone candidates, 1/3 components
+    kept, 10,168 changed texels.
+- Visual judgment: v02 masks are much safer, but the forehead patch shape still
+  remains. Tone correction alone is not enough.
 
-## 6. Next Active Step: Step 6 v02
+## 6. Next Active Step: Step 6 v03
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -184,11 +195,13 @@ Do not batch many fixes together.
 
 Planned order:
 
-1. Forehead tone
-   - Treat dark forehead patches as valid skin with baked lighting/tone
-     mismatch unless masks/source maps prove otherwise.
-   - Lift/smooth tone from nearby forehead and midface skin.
-   - Preserve detail; do not flatten into fake skin.
+1. Forehead patch completion
+   - Use v02 central-forehead mask and yellow tone-candidate islands.
+   - Replace or locally inpaint patchy candidate islands instead of changing
+     the whole forehead.
+   - Prefer nearby reliable forehead pixels, symmetric forehead pixels, or
+     source-aware clean projections before generated fallback.
+   - Keep eyes, eyebrows, hairline, and scalp protected.
 
 2. Mouth and lips
    - Repair mouth interior and lips as separate materials.

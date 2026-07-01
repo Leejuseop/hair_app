@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_084010
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_111008
 ```
 
 Implemented sub-steps:
@@ -265,6 +265,7 @@ Implemented sub-steps:
 ```text
 v00_baseline = Step 5 blend texture
 v01_hard_skin_holes = conservative black-hole skin fill
+v02_forehead_tone = central forehead tone normalization
 ```
 
 v01 logic:
@@ -295,5 +296,34 @@ Interpretation:
 - The accepted v01 is deliberately conservative. It does not materially improve
   the current look, but it establishes a safe rule: skin-hole filling must not
   leak into eyes, lips, brows, nostrils, scalp, or clothing.
-- The next useful Step 6 sub-step is forehead tone repair, because the biggest
-  visible artifact is not a small black skin hole.
+
+v02 logic:
+
+- keep Step 5 `blend` as the baseline and apply v01 first;
+- build a feature guard for eyes, brows, mouth/lip gaps, nostrils, hairline,
+  scalp boundary, and other dark feature-like islands;
+- select only the central forehead component, instead of every skin-colored UV
+  island inside a rectangular atlas window;
+- reject side/ear islands with a connected-component filter;
+- estimate a target forehead tone from reliable forehead skin, tempered by
+  midface skin;
+- write `light`, `medium`, and `strong` texture variants plus UV and render
+  review sheets.
+
+Observed v02 metrics at 1024 atlas:
+
+| Person | Forehead skin texels | Tone candidates | Forehead components kept | Medium changed texels | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Juseop | 13,220 | 4,309 | 1 / 9 | 10,157 | Safe mask, small visual gain |
+| Eunchae | 11,468 | 6,514 | 1 / 3 | 10,168 | Safe mask, small visual gain |
+
+Interpretation:
+
+- v02 successfully narrowed the repair region to the central forehead and
+  stopped the earlier broad ROI from touching ears, nose, cheeks, or lower face.
+- Visual improvement is limited. The forehead patch shape remains visible
+  because tone normalization changes color but does not replace the underlying
+  contaminated/patchy texture structure.
+- The next useful Step 6 sub-step should be forehead patch replacement or
+  local inpainting/completion for the yellow v02 tone-candidate regions, then
+  mouth/lips and eye/brow material repair.

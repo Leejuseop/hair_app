@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_084010
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_111008
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1568,6 +1568,7 @@ Completed Step 6 sub-steps:
 
 - `v00_baseline`: Step 5 `blend` render baseline.
 - `v01_hard_skin_holes`: conservative black-hole skin fill.
+- `v02_forehead_tone`: central forehead tone normalization.
 
 Important Step 6 v01 result:
 
@@ -1579,9 +1580,24 @@ Important Step 6 v01 result:
 - This is acceptable for v01 because the rule is safety first: eyes, mouth,
   brows, nostrils, scalp, and clothing must not be filled as skin.
 
+Important Step 6 v02 result:
+
+- The first broad forehead ROI was rejected because it also selected upper-face
+  and side/ear UV islands.
+- The accepted v02 narrows the ROI and keeps only the central connected
+  forehead component.
+- Accepted v02 metrics at the 1024 atlas:
+  - Juseop: 13,220 forehead-skin texels, 4,309 tone candidates, 1 of 9
+    forehead components kept, 10,157 medium-variant changed texels.
+  - Eunchae: 11,468 forehead-skin texels, 6,514 tone candidates, 1 of 3
+    forehead components kept, 10,168 medium-variant changed texels.
+- Visual review says v02 is safer but not enough. It softens tone slightly, but
+  it does not remove the patch shape in the forehead texture.
+
 Remaining Step 6 should repair completion-needed and contaminated regions by
-semantic/material region: forehead tone, mouth/lips, eyes/brows, neck/lower
-leakage, ears/side face, scalp/hairline, and only then final color smoothing.
+semantic/material region: forehead patch completion, mouth/lips, eyes/brows,
+neck/lower leakage, ears/side face, scalp/hairline, and only then final color
+smoothing.
 
 Detailed Step 6 plan:
 
@@ -1605,37 +1621,45 @@ Detailed Step 6 plan:
      lighting/tone mismatch, not confirmed hair leakage from the mask.
    - Lift overly dark forehead skin toward nearby forehead/midface skin while
      preserving local detail and avoiding a flat fake-skin patch.
-   - This is the next active sub-step.
+   - Current v02 is complete as a safe but weak tone pass.
 
-4. Mouth and lips
+4. Forehead patch completion
+   - Use the v02 central-forehead mask and yellow tone-candidate islands.
+   - Replace only patchy candidate islands, not the whole forehead.
+   - Prefer nearby reliable forehead pixels, symmetric forehead pixels, or
+     source-aware clean projections before generated fallback.
+   - Keep eyes, eyebrows, hairline, and scalp protected.
+   - This is the next active sub-step before moving to mouth/lips.
+
+5. Mouth and lips
    - Treat lip, mouth interior, teeth-like bright pixels, and nostril-like dark
      pixels as separate material regions.
    - Use controlled dark mouth material and lip color smoothing rather than
      diffusing cheek skin into the mouth.
 
-5. Eyes and brows
+6. Eyes and brows
    - Use separate eye/eyelid/brow repair masks.
    - Avoid blending eye whites or brow darkness into surrounding skin.
    - Prefer simple stable materials over noisy photo fragments until geometry
      or better eye assets are introduced.
 
-6. Neck, lower boundary, and clothing leakage
+7. Neck, lower boundary, and clothing leakage
    - Detect shirt/background remnants near the lower neck from decision/source
      maps, color outliers, and semantic region location.
    - Replace lower non-skin remnants with neck/scalp fallback only after a
      review sheet confirms no useful observed skin is being removed.
 
-7. Ears and side face
+8. Ears and side face
    - Fill low-confidence side/ear gaps conservatively.
    - Use observed pixels first; use mirrored or neighboring fallback only for
      truly missing regions.
 
-8. Scalp and hairline
+9. Scalp and hairline
    - Create a plausible scalp material and hairline transition.
    - Do not aggressively erase forehead detail. Treat hairline/scalp separately
      from forehead skin.
 
-9. Final mild color pass
+10. Final mild color pass
    - Apply small, region-aware color smoothing after individual repairs.
    - Avoid early global color correction because it can hide which sub-step
      improved or damaged quality.

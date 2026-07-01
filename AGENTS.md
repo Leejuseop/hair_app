@@ -29,10 +29,11 @@ ordinary selfies + in-app scan frames
   -> mobile GLB/viewer
 ```
 
-The immediate next technical step is Step 6 v02 forehead tone repair from the
-Step 5 `blend` baseline in
+The immediate next technical step is Step 6 v03 forehead patch completion from
+the Step 5 `blend` baseline in
 `experiments/facebuilder_mask_aware_correction/`. Step 6 v01 hard black
-skin-hole fill is already complete as a conservative safety pass.
+skin-hole fill is complete as a conservative safety pass, and Step 6 v02
+forehead tone repair is complete as a safe but visually weak tone pass.
 
 Pixel3DMM/FLAME and Texture Baker v1/v2/v3 are research baselines and fallback
 experiments. They are not the current main quality path unless the user asks to

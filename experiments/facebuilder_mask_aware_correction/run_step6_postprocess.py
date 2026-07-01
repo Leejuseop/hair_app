@@ -1,9 +1,10 @@
 """Run Step 6 material-specific texture post-processing.
 
-Step 6 starts from the Step 5 blend texture. The first implemented stage,
-`v01_hard_skin_holes`, only fills small black COMPLETION_NEEDED holes that are
-surrounded by reliable skin-like pixels. It intentionally does not fill eyes,
-mouth, brows, nostrils, scalp, or clothing regions.
+Step 6 starts from the Step 5 blend texture. Each stage is intentionally narrow
+and produces diagnostic review sheets. Implemented stages:
+
+- `v01_hard_skin_holes`: only tiny black COMPLETION_NEEDED skin holes.
+- `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -50,6 +51,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-component-area", type=int, default=180)
     parser.add_argument("--max-component-width", type=int, default=24)
     parser.add_argument("--max-component-height", type=int, default=20)
+    parser.add_argument("--forehead-y-min", type=float, default=0.30)
+    parser.add_argument("--forehead-y-max", type=float, default=0.45)
+    parser.add_argument("--forehead-x-min", type=float, default=0.28)
+    parser.add_argument("--forehead-x-max", type=float, default=0.72)
+    parser.add_argument("--skip-baseline-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -416,6 +422,283 @@ def _step_v01_hard_skin_holes(
     return filled, maps, meta
 
 
+def _mask_rgb(mask: np.ndarray, color: tuple[int, int, int]) -> np.ndarray:
+    out = np.zeros((*mask.shape, 3), dtype=np.uint8)
+    out[mask] = color
+    return out
+
+
+def _blend_overlay(base: np.ndarray, mask: np.ndarray, color: tuple[int, int, int], alpha: float = 0.65) -> np.ndarray:
+    out = base.copy()
+    if np.any(mask):
+        color_arr = np.asarray(color, dtype=np.float32)
+        out[mask] = np.clip(
+            base[mask].astype(np.float32) * (1.0 - alpha) + color_arr.reshape(1, 3) * alpha,
+            0,
+            255,
+        ).astype(np.uint8)
+    return out
+
+
+def _safe_percentile(values: np.ndarray, percentile: float, fallback: float) -> float:
+    if values.size == 0:
+        return fallback
+    return float(np.percentile(values, percentile))
+
+
+def _masked_median_rgb(texture: np.ndarray, mask: np.ndarray, fallback: np.ndarray) -> tuple[np.ndarray, int]:
+    pixels = texture[mask].astype(np.float32)
+    if pixels.shape[0] == 0:
+        return fallback.astype(np.float32), 0
+    return np.median(pixels, axis=0).astype(np.float32), int(pixels.shape[0])
+
+
+def _keep_central_forehead_components(mask: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+    h, w = mask.shape
+    labels, count = ndimage.label(mask)
+    filtered = np.zeros(mask.shape, dtype=bool)
+    components: list[dict[str, Any]] = []
+    central_min = int(w * 0.38)
+    central_max = int(w * 0.62)
+
+    for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
+        if slices is None:
+            continue
+        ys, xs = slices
+        component = labels[slices] == label_id
+        area = int(component.sum())
+        width = int(xs.stop - xs.start)
+        height = int(ys.stop - ys.start)
+        center_x = float((xs.start + xs.stop) * 0.5 / max(1, w))
+        overlaps_central_forehead = xs.start <= central_max and xs.stop >= central_min
+        large_enough = area >= 24 and width >= 4 and height >= 3
+        kept = bool(overlaps_central_forehead and large_enough)
+        if kept:
+            filtered[slices][component] = True
+        components.append({
+            "label": label_id,
+            "area": area,
+            "width": width,
+            "height": height,
+            "center_x": center_x,
+            "overlaps_central_forehead": bool(overlaps_central_forehead),
+            "kept": kept,
+            "bbox": [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)],
+        })
+
+    # If the UV layout changes enough that this filter removes almost
+    # everything, fall back to the original mask and make that visible in
+    # metrics instead of silently disabling the stage.
+    fallback_used = bool(mask.sum() > 0 and filtered.sum() < max(256, int(mask.sum() * 0.18)))
+    if fallback_used:
+        filtered = mask.copy()
+
+    return filtered, {
+        "forehead_component_count": int(count),
+        "forehead_components_kept": int(sum(1 for item in components if item["kept"])),
+        "forehead_components_rejected": int(sum(1 for item in components if not item["kept"])),
+        "forehead_component_filter_fallback_used": fallback_used,
+        "forehead_components_preview": components[:30],
+    }
+
+
+def _step_v02_forehead_tone(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    confidence: np.ndarray,
+    source_count: np.ndarray,
+    *,
+    forehead_y_min: float,
+    forehead_y_max: float,
+    forehead_x_min: float,
+    forehead_x_max: float,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    feature_protect, feature_meta = _feature_protect_mask(base, decision, reliable_skin)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    roi = (
+        (xx >= int(w * forehead_x_min))
+        & (xx <= int(w * forehead_x_max))
+        & (yy >= int(h * forehead_y_min))
+        & (yy <= int(h * forehead_y_max))
+    )
+
+    rgb = base.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+
+    skin_near = ndimage.binary_dilation(reliable_skin, structure=_disk(14))
+    very_dark_feature = (luma < 36.0) & skin_near & roi
+    guard = ndimage.binary_dilation(feature_protect | very_dark_feature, structure=_disk(2))
+
+    forehead_skin = reliable_skin & roi & ~guard
+    if int(forehead_skin.sum()) < 256:
+        # Fallback for unusual UV/raster outputs: still exclude explicit guard
+        # regions, but loosen the color gate so the review sheet exposes the
+        # failed mask instead of silently doing nothing.
+        foreground = (decision != COMPLETION_NEEDED) & (luma > 38.0)
+        forehead_skin = foreground & roi & ~guard
+    forehead_skin, component_meta = _keep_central_forehead_components(forehead_skin)
+
+    ref_roi = (
+        reliable_skin
+        & ~guard
+        & (xx >= int(w * 0.24))
+        & (xx <= int(w * 0.76))
+        & (yy >= int(h * 0.44))
+        & (yy <= int(h * 0.68))
+        & (max_score > 0.28)
+    )
+    if int(ref_roi.sum()) < 512:
+        ref_roi = reliable_skin & ~guard & (max_score > 0.20)
+
+    default_skin = np.asarray([155.0, 122.0, 108.0], dtype=np.float32)
+    face_median, face_ref_count = _masked_median_rgb(base, ref_roi, default_skin)
+
+    forehead_good = forehead_skin & (max_score > 0.30)
+    forehead_luma_values = luma[forehead_good]
+    luma_floor = _safe_percentile(forehead_luma_values, 35.0, float(np.dot(face_median, [0.2126, 0.7152, 0.0722])))
+    luma_ceiling = _safe_percentile(forehead_luma_values, 90.0, float(np.dot(face_median, [0.2126, 0.7152, 0.0722]) + 28.0))
+    forehead_good = forehead_good & (luma >= max(42.0, luma_floor - 12.0)) & (luma <= min(235.0, luma_ceiling + 22.0))
+    forehead_median, forehead_ref_count = _masked_median_rgb(base, forehead_good, face_median)
+
+    # Do not replace the forehead with cheek color. The target is a tempered
+    # mix: mostly the best forehead pixels, partially stable midface skin.
+    target_rgb = np.clip(forehead_median * 0.68 + face_median * 0.32, 0, 255)
+    target_luma = float(target_rgb[0] * 0.2126 + target_rgb[1] * 0.7152 + target_rgb[2] * 0.0722)
+    current_forehead_luma = luma[forehead_skin]
+    current_median_luma = _safe_percentile(current_forehead_luma, 50.0, target_luma)
+    dark_deficit = np.maximum(0.0, target_luma - luma - 6.0)
+    bright_excess = np.maximum(0.0, luma - target_luma - 14.0)
+    color_dist = np.sqrt(np.mean(((rgb - target_rgb.reshape(1, 1, 3)) / 42.0) ** 2.0, axis=2))
+    color_outlier = np.clip((color_dist - 0.72) / 1.45, 0.0, 1.0)
+    low_trust = np.clip((0.38 - max_score) / 0.38, 0.0, 1.0)
+    source_sparse = np.clip((2.0 - source_count.astype(np.float32)) / 2.0, 0.0, 1.0)
+    tone_candidate = forehead_skin & (
+        (dark_deficit > 10.0)
+        | (bright_excess > 12.0)
+        | (color_outlier > 0.30)
+        | (low_trust > 0.38)
+        | (source_sparse > 0.55)
+    )
+
+    variants: dict[str, np.ndarray] = {}
+    overlays: dict[str, np.ndarray] = {}
+    weight_maps: dict[str, np.ndarray] = {}
+    changed_masks: dict[str, np.ndarray] = {}
+    variant_metrics: dict[str, Any] = {}
+    edge_feather = np.clip(ndimage.distance_transform_edt(forehead_skin).astype(np.float32) / 14.0, 0.0, 1.0)
+    strengths = {
+        "light": 0.38,
+        "medium": 0.78,
+        "strong": 1.08,
+    }
+
+    delta = np.clip(target_rgb.reshape(1, 1, 3) - forehead_median.reshape(1, 1, 3), -36.0, 36.0)
+    for label, strength in strengths.items():
+        repaired = base.copy()
+        base_weight = 0.08 * strength
+        dark_weight = np.clip(dark_deficit / 44.0, 0.0, 1.0) * (0.74 * strength)
+        bright_weight = np.clip(bright_excess / 42.0, 0.0, 1.0) * (0.54 * strength)
+        outlier_weight = color_outlier * (0.62 * strength)
+        trust_weight = np.maximum(low_trust * 0.20 * strength, source_sparse * 0.16 * strength)
+        weight = np.clip(base_weight + dark_weight + bright_weight + outlier_weight + trust_weight, 0.0, 0.90)
+        weight *= edge_feather
+        weight[~forehead_skin] = 0.0
+
+        luma_shift = np.clip(dark_deficit * 0.95 * strength - bright_excess * 0.42 * strength, -36.0, 72.0)
+        target = rgb + delta * (0.70 * strength)
+        target += luma_shift[..., None] * np.asarray([1.0, 0.94, 0.88], dtype=np.float32).reshape(1, 1, 3)
+        target_pull = np.clip(outlier_weight * edge_feather, 0.0, min(0.78, 0.58 * strength))
+        target = target * (1.0 - target_pull[..., None]) + target_rgb.reshape(1, 1, 3) * target_pull[..., None]
+        target = np.clip(target, 0.0, 255.0)
+        mixed = rgb * (1.0 - weight[..., None]) + target * weight[..., None]
+        repaired[forehead_skin] = np.clip(mixed[forehead_skin], 0.0, 255.0).astype(np.uint8)
+
+        changed = np.any(repaired != base, axis=2)
+        variants[label] = repaired
+        changed_masks[label] = changed.astype(np.uint8) * 255
+        weight_maps[label] = np.clip(weight * 255.0, 0, 255).astype(np.uint8)
+        overlays[label] = _blend_overlay(base, changed, (255, 176, 32), alpha=0.62)
+        if np.any(changed):
+            abs_delta = np.abs(repaired.astype(np.int16) - base.astype(np.int16)).sum(axis=2)
+            variant_metrics[label] = {
+                "changed_texels": int(changed.sum()),
+                "mean_abs_rgb_delta_on_changed": float(abs_delta[changed].mean()),
+                "max_abs_rgb_delta_on_changed": int(abs_delta[changed].max()),
+            }
+        else:
+            variant_metrics[label] = {
+                "changed_texels": 0,
+                "mean_abs_rgb_delta_on_changed": 0.0,
+                "max_abs_rgb_delta_on_changed": 0,
+            }
+
+    guard_rgb = _mask_rgb(guard, (255, 82, 210))
+    forehead_rgb = _mask_rgb(forehead_skin, (58, 220, 105))
+    tone_candidate_rgb = _mask_rgb(tone_candidate, (255, 218, 45))
+    combined_rgb = np.zeros_like(base, dtype=np.uint8)
+    combined_rgb[forehead_skin] = (58, 220, 105)
+    combined_rgb[tone_candidate] = (255, 218, 45)
+    combined_rgb[guard] = (255, 82, 210)
+    combined_overlay = base.copy()
+    for mask, color, alpha in [
+        (forehead_skin, (58, 220, 105), 0.42),
+        (tone_candidate, (255, 218, 45), 0.62),
+        (guard, (255, 82, 210), 0.72),
+    ]:
+        combined_overlay = _blend_overlay(combined_overlay, mask, color, alpha=alpha)
+
+    maps: dict[str, np.ndarray] = {
+        "guard_mask": guard.astype(np.uint8) * 255,
+        "guard_rgb": guard_rgb,
+        "forehead_skin_mask": forehead_skin.astype(np.uint8) * 255,
+        "forehead_skin_rgb": forehead_rgb,
+        "tone_candidate_mask": tone_candidate.astype(np.uint8) * 255,
+        "tone_candidate_rgb": tone_candidate_rgb,
+        "combined_mask_rgb": combined_rgb,
+        "combined_overlay": combined_overlay,
+        "reference_skin_rgb": _mask_rgb(ref_roi, (80, 160, 255)),
+        "forehead_good_rgb": _mask_rgb(forehead_good, (120, 255, 185)),
+        "edge_feather": np.clip(edge_feather * 255.0, 0, 255).astype(np.uint8),
+    }
+    for label in variants:
+        maps[f"{label}_texture"] = variants[label]
+        maps[f"{label}_changed_mask"] = changed_masks[label]
+        maps[f"{label}_changed_overlay"] = overlays[label]
+        maps[f"{label}_weight"] = weight_maps[label]
+
+    meta = {
+        "forehead_roi_normalized": {
+            "x_min": float(forehead_x_min),
+            "x_max": float(forehead_x_max),
+            "y_min": float(forehead_y_min),
+            "y_max": float(forehead_y_max),
+        },
+        "guard_texels": int(guard.sum()),
+        "forehead_skin_texels": int(forehead_skin.sum()),
+        "tone_candidate_texels": int(tone_candidate.sum()),
+        "reference_skin_texels": int(ref_roi.sum()),
+        "forehead_reference_texels": int(forehead_good.sum()),
+        "face_reference_sample_count": int(face_ref_count),
+        "forehead_reference_sample_count": int(forehead_ref_count),
+        "face_reference_median_rgb": [float(x) for x in face_median.tolist()],
+        "forehead_reference_median_rgb": [float(x) for x in forehead_median.tolist()],
+        "target_rgb": [float(x) for x in target_rgb.tolist()],
+        "target_luma": float(target_luma),
+        "current_forehead_median_luma": float(current_median_luma),
+        "feature_protected_texels": int(feature_protect.sum()),
+        "feature_protected_components": feature_meta["feature_protected_components"],
+        "edge_feather_mean_on_forehead": float(edge_feather[forehead_skin].mean()) if np.any(forehead_skin) else 0.0,
+        "variant_metrics": variant_metrics,
+    }
+    meta.update(component_meta)
+    return maps, meta
+
+
 def _render_stage(
     *,
     person: str,
@@ -456,6 +739,10 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         baseline = data["blend_texture"].astype(np.uint8)
         select_texture = data["select_texture"].astype(np.uint8)
         decision = data["decision"].astype(np.uint8)
+        clean_score = data["clean_score"].astype(np.float32)
+        raw_score = data["raw_score"].astype(np.float32)
+        confidence = data["confidence"].astype(np.uint8)
+        source_count = data["source_count"].astype(np.uint16)
 
     person_summary: dict[str, Any] = {
         "schema_version": "facebuilder_mask_aware_step6_person_v1",
@@ -475,7 +762,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "baseline_blend_texture": _save_rgb(v00_texture, baseline),
         "diagnostic_select_texture": _save_rgb(v00_maps / "v00_diagnostic_select_texture.png", select_texture),
     }
-    if not args.skip_render:
+    if not args.skip_render and not args.skip_baseline_renders:
         v00_paths["baseline_render"] = _render_stage(
             person=person,
             stage="v00_baseline",
@@ -534,7 +821,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
     )
     v01_paths["uv_review_sheet"] = _safe_path(uv_review)
 
-    if not args.skip_render:
+    if not args.skip_render and not args.skip_baseline_renders:
         v01_paths["v01_render"] = _render_stage(
             person=person,
             stage="v01_hard_skin_holes",
@@ -558,6 +845,103 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "logic": "small closed reliable-skin holes only; nearest reliable skin fill plus local smoothing",
         "paths": v01_paths,
         "metrics": v01_meta,
+    }
+
+    v02_maps, v02_meta = _step_v02_forehead_tone(
+        v01_texture,
+        decision,
+        clean_score,
+        raw_score,
+        confidence,
+        source_count,
+        forehead_y_min=args.forehead_y_min,
+        forehead_y_max=args.forehead_y_max,
+        forehead_x_min=args.forehead_x_min,
+        forehead_x_max=args.forehead_x_max,
+    )
+    v02_dir = output_dir / "v02_forehead_tone"
+    v02_maps_dir = v02_dir / "maps"
+    v02_paths: dict[str, Any] = {
+        "guard_mask": _save_l(v02_maps_dir / "v02_guard_mask.png", v02_maps["guard_mask"]),
+        "guard_rgb": _save_rgb(v02_maps_dir / "v02_guard_debug_rgb.png", v02_maps["guard_rgb"]),
+        "forehead_skin_mask": _save_l(v02_maps_dir / "v02_forehead_skin_mask.png", v02_maps["forehead_skin_mask"]),
+        "forehead_skin_rgb": _save_rgb(v02_maps_dir / "v02_forehead_skin_debug_rgb.png", v02_maps["forehead_skin_rgb"]),
+        "tone_candidate_mask": _save_l(v02_maps_dir / "v02_tone_candidate_mask.png", v02_maps["tone_candidate_mask"]),
+        "tone_candidate_rgb": _save_rgb(v02_maps_dir / "v02_tone_candidate_debug_rgb.png", v02_maps["tone_candidate_rgb"]),
+        "combined_mask_rgb": _save_rgb(v02_maps_dir / "v02_combined_mask_rgb.png", v02_maps["combined_mask_rgb"]),
+        "combined_overlay": _save_rgb(v02_maps_dir / "v02_combined_overlay.png", v02_maps["combined_overlay"]),
+        "reference_skin_rgb": _save_rgb(v02_maps_dir / "v02_reference_skin_debug_rgb.png", v02_maps["reference_skin_rgb"]),
+        "forehead_good_rgb": _save_rgb(v02_maps_dir / "v02_forehead_reference_debug_rgb.png", v02_maps["forehead_good_rgb"]),
+        "edge_feather": _save_l(v02_maps_dir / "v02_forehead_edge_feather.png", v02_maps["edge_feather"]),
+    }
+    for label in ("light", "medium", "strong"):
+        v02_paths[f"{label}_texture"] = _save_rgb(
+            v02_maps_dir / f"v02_forehead_tone_{label}_texture.png",
+            v02_maps[f"{label}_texture"],
+        )
+        v02_paths[f"{label}_changed_mask"] = _save_l(
+            v02_maps_dir / f"v02_forehead_tone_{label}_changed_mask.png",
+            v02_maps[f"{label}_changed_mask"],
+        )
+        v02_paths[f"{label}_changed_overlay"] = _save_rgb(
+            v02_maps_dir / f"v02_forehead_tone_{label}_changed_overlay.png",
+            v02_maps[f"{label}_changed_overlay"],
+        )
+        v02_paths[f"{label}_weight"] = _save_l(
+            v02_maps_dir / f"v02_forehead_tone_{label}_weight.png",
+            v02_maps[f"{label}_weight"],
+        )
+
+    v02_review_tiles = [
+        ("v01 input", Image.fromarray(v01_texture, mode="RGB")),
+        ("guard magenta", Image.fromarray(v02_maps["guard_rgb"], mode="RGB")),
+        ("forehead skin green", Image.fromarray(v02_maps["forehead_skin_rgb"], mode="RGB")),
+        ("tone candidates yellow", Image.fromarray(v02_maps["tone_candidate_rgb"], mode="RGB")),
+        ("combined overlay", Image.fromarray(v02_maps["combined_overlay"], mode="RGB")),
+        ("reference skin blue", Image.fromarray(v02_maps["reference_skin_rgb"], mode="RGB")),
+        ("forehead reference", Image.fromarray(v02_maps["forehead_good_rgb"], mode="RGB")),
+        ("edge feather", Image.fromarray(v02_maps["edge_feather"], mode="L").convert("RGB")),
+        ("v02 light", Image.fromarray(v02_maps["light_texture"], mode="RGB")),
+        ("v02 medium", Image.fromarray(v02_maps["medium_texture"], mode="RGB")),
+        ("v02 strong", Image.fromarray(v02_maps["strong_texture"], mode="RGB")),
+        ("medium changed orange", Image.fromarray(v02_maps["medium_changed_overlay"], mode="RGB")),
+        ("medium weight", Image.fromarray(v02_maps["medium_weight"], mode="L").convert("RGB")),
+    ]
+    v02_uv_review = v02_dir / "step6_v02_forehead_tone_uv_review_sheet.png"
+    _make_grid_sheet(
+        f"{person} Step 6 v02 forehead tone UV review",
+        "Magenta=guard, green=forehead skin to repair, yellow=stronger tone candidates. Eyes/brows/hairline are excluded.",
+        v02_review_tiles,
+        v02_uv_review,
+        columns=4,
+    )
+    v02_paths["uv_review_sheet"] = _safe_path(v02_uv_review)
+
+    if not args.skip_render:
+        forehead_mask_texture_path = v02_maps_dir / "v02_forehead_skin_render_texture.png"
+        _save_rgb(forehead_mask_texture_path, v02_maps["combined_mask_rgb"])
+        v02_paths["forehead_mask_render"] = _render_stage(
+            person=person,
+            stage="v02_forehead_mask",
+            texture_path=forehead_mask_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v02_dir,
+            args=args,
+        )
+        for label in ("light", "medium", "strong"):
+            v02_paths[f"{label}_render"] = _render_stage(
+                person=person,
+                stage=f"v02_forehead_{label}",
+                texture_path=_as_path(v02_paths[f"{label}_texture"]),
+                source_person_dir=source_person_dir,
+                output_dir=v02_dir,
+                args=args,
+            )
+
+    person_summary["stages"]["v02_forehead_tone"] = {
+        "logic": "protect facial/hairline boundaries, select forehead skin, then gently normalize forehead tone in light/medium/strong variants",
+        "paths": v02_paths,
+        "metrics": v02_meta,
     }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
@@ -597,6 +981,35 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Largest kept component area: {metrics['largest_kept_component_area']}",
             "",
         ])
+    lines.extend([
+        "## v02_forehead_tone",
+        "",
+        "Eyes, brows, mouth-like dark features, and hairline/scalp boundaries are protected first.",
+        "The remaining forehead skin is repaired in three strengths: light, medium, and strong.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v02_forehead_tone", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        variant_metrics = metrics["variant_metrics"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- UV review: `{paths.get('uv_review_sheet')}`",
+            f"- Forehead mask render: `{paths.get('forehead_mask_render', {}).get('render_review_sheet')}`",
+            f"- Light render: `{paths.get('light_render', {}).get('render_review_sheet')}`",
+            f"- Medium render: `{paths.get('medium_render', {}).get('render_review_sheet')}`",
+            f"- Strong render: `{paths.get('strong_render', {}).get('render_review_sheet')}`",
+            f"- Forehead skin texels: {metrics['forehead_skin_texels']}",
+            f"- Guard texels: {metrics['guard_texels']}",
+            f"- Tone candidate texels: {metrics['tone_candidate_texels']}",
+            f"- Target RGB: {[round(x, 2) for x in metrics['target_rgb']]}",
+            f"- Changed texels light/medium/strong: {variant_metrics['light']['changed_texels']} / {variant_metrics['medium']['changed_texels']} / {variant_metrics['strong']['changed_texels']}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -621,13 +1034,18 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": _safe_path(output_root),
         "blender_exe": _safe_path(args.blender_exe),
         "people": [],
-        "stages": ["v00_baseline", "v01_hard_skin_holes"],
+        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone"],
         "parameters": {
             "close_radius": int(args.close_radius),
             "max_fill_distance": float(args.max_fill_distance),
             "max_component_area": int(args.max_component_area),
             "max_component_width": int(args.max_component_width),
             "max_component_height": int(args.max_component_height),
+            "forehead_x_min": float(args.forehead_x_min),
+            "forehead_x_max": float(args.forehead_x_max),
+            "forehead_y_min": float(args.forehead_y_min),
+            "forehead_y_max": float(args.forehead_y_max),
+            "skip_baseline_renders": bool(args.skip_baseline_renders),
         },
     }
 
@@ -650,6 +1068,9 @@ def main(argv: list[str] | None = None) -> int:
                 "render_review": item["stages"]["v01_hard_skin_holes"]["paths"].get("v01_render", {}).get("render_review_sheet"),
                 "changed_render": item["stages"]["v01_hard_skin_holes"]["paths"].get("changed_overlay_render", {}).get("render_review_sheet"),
                 "metrics": _compact_metrics(item["stages"]["v01_hard_skin_holes"]["metrics"]),
+                "v02_uv_review": item["stages"].get("v02_forehead_tone", {}).get("paths", {}).get("uv_review_sheet"),
+                "v02_medium_render": item["stages"].get("v02_forehead_tone", {}).get("paths", {}).get("medium_render", {}).get("render_review_sheet"),
+                "v02_metrics": _compact_metrics(item["stages"].get("v02_forehead_tone", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],
