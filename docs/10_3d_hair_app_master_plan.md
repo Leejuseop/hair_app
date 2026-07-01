@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_144553
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_153519
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1572,8 +1572,8 @@ Completed Step 6 sub-steps:
 - `v03_forehead_uniform_tone`: diagnostic uniform forehead replacement.
 - `v04_forehead_redefined_region`: broader forehead definition plus
   hair/black leftover fill.
-- `v04b_eyebrow_hairline_refine`: fixed black symmetric eyebrow mask plus
-  flatter broad hairline lift.
+- `v04b_eyebrow_hairline_refine`: component-scored fixed black eyebrow mask
+  plus symmetric broad hairline lift.
 
 Important Step 6 v01 result:
 
@@ -1640,24 +1640,28 @@ Important Step 6 v04b result:
 
 - v04b keeps the v04 forehead-region idea but fixes the obvious Juseop eyebrow
   failure seen in review.
-- It strengthens the eye/eyebrow guard with a stricter left-right eyebrow
-  symmetry check. If eyebrow shape is imbalanced, both eyebrows are redefined
-  as a fixed black symmetric mask. This stage does not attempt final eyebrow
-  texture or color transfer.
+- It strengthens the eye/eyebrow guard with component-scored source selection
+  instead of area-based left/right selection. If one side is good and the other
+  side is bad or missing, the bad/missing side is discarded and the good
+  component is mirrored as a fixed black symmetric mask. This stage does not
+  attempt final eyebrow texture or color transfer.
 - It also runs a second-pass hairline correction: the front hairline curvature
   is reduced so it is less circular, and if reliable forehead-skin pixels exist
-  above the first smooth hairline, the front segment is broadly lifted so valid
-  forehead skin is not cut off.
+  above the first smooth hairline, the front segment is broadly lifted
+  symmetrically so valid forehead skin is not cut off on only one side.
 - Juseop scan hairline frames remain boundary-only. Scan pixels are still
   never used as texture/color/bake input.
 - v04b metrics:
-  - Juseop: 22,924 forehead-region texels, 4,304 hair/black fill texels,
-    2,795 symmetric eyebrow texels, max hairline lift 43.82 px.
-  - Eunchae: 20,218 forehead-region texels, 3,985 hair/black fill texels,
-    1,662 symmetric eyebrow texels, max hairline lift 63.63 px.
+  - Juseop: 26,448 forehead-region texels, 6,428 hair/black fill texels,
+    1,708 symmetric eyebrow texels, max hairline lift 43.61 px. The selected
+    brow source is the left `61x16` component with score `4.85`.
+  - Eunchae: 22,146 forehead-region texels, 6,104 hair/black fill texels,
+    1,838 symmetric eyebrow texels, max hairline lift 63.43 px. The selected
+    brow source is the right `63x16` component with score `5.00`.
 - Visual review says v04b prevents Juseop's missing eyebrow side from being
-  swallowed by forehead fill and places the front hairline as a flatter broad
-  lift instead of isolated bumps. It still looks too flat and needs edge/detail
+  swallowed by forehead fill without copying the larger bad blob as the source,
+  and places the front hairline as a flatter symmetric broad lift instead of
+  isolated one-sided bumps. It still looks too flat and needs edge/detail
   recovery.
 
 Remaining Step 6 should repair completion-needed and contaminated regions by

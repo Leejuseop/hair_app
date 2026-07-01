@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_144553
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_153519
 ```
 
 Implemented sub-steps:
@@ -268,7 +268,7 @@ v01_hard_skin_holes = conservative black-hole skin fill
 v02_forehead_tone = central forehead tone normalization
 v03_forehead_uniform_tone = diagnostic forehead uniform-tone replacement
 v04_forehead_redefined_region = forehead region redefinition plus hair-leftover fill
-v04b_eyebrow_hairline_refine = fixed black symmetric eyebrow mask plus flatter broad hairline lift
+v04b_eyebrow_hairline_refine = component-scored fixed black eyebrow mask plus symmetric broad hairline lift
 ```
 
 v01 logic:
@@ -421,18 +421,22 @@ v04b logic:
 
 - restart from v01, like v04;
 - keep the v04 broader forehead definition;
-- strengthen eye/eyebrow protection with a stricter left-right eyebrow symmetry
-  check;
-- if eyebrow shape is imbalanced, replace the eyebrow region with a fixed black
-  symmetric mask from the stronger side. This stage does not color-transfer or
-  try to make final eyebrow texture because eye/brow material repair is a later
-  stage;
+- strengthen eye/eyebrow protection with a component-scored eyebrow source
+  check. The older area-based source selection was rejected because a large
+  dark hair/occlusion blob can be larger than the real eyebrow;
+- score each eyebrow candidate by position in the brow band, width, height,
+  area, aspect ratio, and high/hairline-touch penalties;
+- if one side is good and the other is bad or missing, discard the bad/missing
+  side and mirror only the good component. If both sides are good and similar,
+  keep the component masks. This stage still does not color-transfer eyebrow
+  texture because eye/brow material repair is a later stage;
 - keep Juseop app-scan frames as hairline-boundary hints only, never as
   texture/color/bake input;
 - first fit the smooth predicted hairline, reduce the front curvature so it is
   less like a perfect circular arc, then perform a second pass: if reliable
-  forehead-skin pixels exist above that first line, broadly lift the front
-  hairline segment instead of lifting only isolated columns;
+  forehead-skin pixels exist above that first line, use those pixels as lift
+  evidence but mirror the lift amount across the front segment so one-sided
+  evidence cannot create a one-sided hairline;
 - keep the main review sheet compact: before v01, after v04b, area map, and a
   bottom row for the second-pass hairline correction at front/left45/right45.
 
@@ -459,17 +463,19 @@ Observed v04b metrics at 1024 atlas:
 
 | Person | Forehead region texels | Filled hair/black texels | Symmetric eyebrow texels | Hairline lift columns | Max hairline lift px | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Juseop | 22,924 | 4,304 | 2,795 | 196 supported / 251 smoothed | 43.82 | Both eyebrows are now black protected regions; front hairline is less circular and broadly lifted |
-| Eunchae | 20,218 | 3,985 | 1,662 | 138 supported / 206 smoothed | 63.63 | Symmetric brow guard is active; lower face and neck still need separate repair |
+| Juseop | 26,448 | 6,428 | 1,708 | 197 supported / 312 smoothed | 43.61 | Brow source is the smaller good component (`61x16`) mirrored to both sides; front hairline lift is symmetric |
+| Eunchae | 22,146 | 6,104 | 1,838 | 135 supported / 212 smoothed | 63.43 | Right good brow component (`63x16`) is mirrored; lower face and neck still need separate repair |
 
 v04b interpretation:
 
-- v04b fixes the specific failure seen after v04: Juseop's right eyebrow side
-  is no longer eaten by the forehead fill, and the eyebrow guard is now a
-  symmetric black placeholder rather than a partial color-recovery attempt.
-- The second-pass hairline better respects observed forehead skin above the
-  first smooth curve and moves the front segment as a broader, flatter shape
-  instead of creating isolated local bumps.
+- v04b fixes the specific failure seen after the first v04b attempt: a large
+  dark blob is no longer automatically considered the best eyebrow. For Juseop,
+  the selected source is component `label=4`, side `left`, score `4.85`,
+  bbox `[434, 417, 495, 433]`.
+- The second-pass hairline now still uses observed skin above the first smooth
+  curve as evidence, but the actual lift is mirrored across the frontal segment
+  before rendering the final hairline. This prevents the previous one-sided
+  lift artifact.
 - This is still not final quality. The forehead repair remains a broad tone
   replacement and needs edge blending plus skin-detail recovery before moving
   on to mouth, eyes, neck, ears, and scalp.

@@ -3168,3 +3168,74 @@ Suggested v05 direction:
 - avoid changing eye, eyebrow, mouth, scalp, neck, and clothing in the same
   pass;
 - continue using the compact review-sheet format.
+
+### 27.12 Step 6 v04b Correction: Component-Scored Brows and Symmetric Hairline Lift
+
+Date: 2026-07-01.
+
+Private Step 6 output after this correction:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_153519
+```
+
+Why the previous v04b was rejected in review:
+
+- The eyebrow source picker treated the larger side as the stronger side. That
+  was wrong. In Juseop's case the larger dark eyebrow-like region could be a
+  hair/occlusion/blob artifact, while the smaller component was the cleaner
+  eyebrow-shaped source.
+- The second-pass hairline did lift when skin pixels appeared above the first
+  curve, but the lift was still driven by the local side where the evidence was
+  observed. That allowed an asymmetric one-sided hairline after the lift.
+- The user clarified the intended rule: observed forehead skin above the first
+  line is valid evidence to raise the hairline, but the resulting frontal
+  hairline must still be symmetric and human-plausible.
+
+Code changes:
+
+- `run_step6_postprocess.py` now scores individual eyebrow components instead
+  of choosing a whole left/right side by area.
+- Eyebrow component score uses:
+  - vertical position inside the eyebrow band;
+  - width;
+  - height;
+  - area;
+  - aspect ratio;
+  - penalties for being too wide, too tall, too large, too high, or touching
+    the top/hairline side of the brow band.
+- If one eyebrow component is good and the opposite side is bad or missing, the
+  bad/missing side is discarded and the good component is mirrored into a fixed
+  black symmetric brow placeholder.
+- If both sides are good and similar, the component masks can be kept.
+- The hairline lift still uses reliable skin pixels above the first line as
+  evidence, but the lift delta is mirrored across the frontal segment before
+  the final hairline is generated.
+- The final lifted frontal curve is also mirrored pairwise, so one side cannot
+  remain lower just because the observed evidence was one-sided.
+
+Review-sheet contract remains compact:
+
+- before v01 front/left45/right45;
+- after v04b front/left45/right45;
+- area map front/left45/right45;
+- second-pass hairline map front/left45/right45.
+
+Corrected v04b metrics at 1024 atlas:
+
+| Person | Forehead region texels | Filled hair/black texels | Symmetric eyebrow texels | Hairline lift columns | Raw lifted columns before symmetry | Max hairline lift px | Brow source |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Juseop | 26,448 | 6,428 | 1,708 | 197 supported / 312 smoothed | 251 | 43.61 | left component, `61x16`, score `4.85` |
+| Eunchae | 22,146 | 6,104 | 1,838 | 135 supported / 212 smoothed | 203 | 63.43 | right component, `63x16`, score `5.00` |
+
+Visual read:
+
+- Juseop's eyebrow source now comes from the smaller clean-looking component
+  instead of the previous larger dark blob. The output is still a black
+  placeholder, not final eyebrow material.
+- The front hairline is more symmetric after the second-pass lift. The skin
+  evidence still raises the line, but it no longer raises only the side where
+  the skin pixels appeared.
+- Remaining issues are unchanged: forehead material is still too flat,
+  eyebrow/eye material is still placeholder-level, and neck/clothing/side-face
+  artifacts still need separate material-region passes.

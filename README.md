@@ -76,7 +76,10 @@ machine:
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02/v03/v04/v04b postprocess passes.
+  arbitration, and Step 6 v01/v02/v03/v04/v04b postprocess passes. The current
+  v04b revision uses component-scored eyebrow source selection and symmetric
+  evidence-driven hairline lift after a visual review caught the older
+  area-based brow selection and one-sided hairline lift failure.
   `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
   the Step 5 `blend` texture as its fixed baseline.
 
@@ -185,7 +188,8 @@ private_outputs/
    produces compact before/after/area review sheets.
 5. Treat v04b forehead/eyebrow/hairline refinement as the current region
    baseline: it keeps v04's broader forehead, uses a fixed black symmetric
-   eyebrow mask as a protection placeholder, adds a flatter broad front-hairline
+   eyebrow mask as a protection placeholder, chooses the brow source by
+   component quality instead of area, adds a symmetric flatter front-hairline
    lift, and still looks too flat.
 6. Next, repair the v04b flat-patch artifact with edge blending/detail recovery,
    then repair mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears,

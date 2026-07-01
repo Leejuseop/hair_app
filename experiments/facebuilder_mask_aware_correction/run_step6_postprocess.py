@@ -7,7 +7,8 @@ and produces diagnostic review sheets. Implemented stages:
 - `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
 - `v03_forehead_uniform_tone`: unify forehead skin to non-forehead face skin tone.
 - `v04_forehead_redefined_region`: redefine forehead by position, then fill hair leftovers.
-- `v04b_eyebrow_hairline_refine`: symmetry eyebrow guard plus local hairline lift.
+- `v04b_eyebrow_hairline_refine`: component-scored eyebrow guard plus
+  symmetric evidence-driven hairline lift.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -1181,10 +1182,11 @@ def _lift_hairline_over_observed_skin(
     if front_x.size >= 4:
         # Frontal hairlines are usually flatter than a pure circular arc.
         # Keep the first curve as the source shape, but reduce the front
-        # curvature by blending toward a low-slope line across the front.
+        # curvature by blending toward a symmetric low-slope front line.
         left_y = float(np.percentile(first_curve[front_left : min(w, front_left + max(2, span // 18))], 45.0))
         right_y = float(np.percentile(first_curve[max(0, front_right - max(2, span // 18)) : front_right + 1], 45.0))
-        low_curve_line = np.interp(front_x, [front_left, front_right], [left_y, right_y]).astype(np.float32)
+        front_level = (left_y + right_y) * 0.5
+        low_curve_line = np.full(front_x.shape, front_level, dtype=np.float32)
         natural_curve[front_x] = first_curve[front_x].astype(np.float32) * 0.34 + low_curve_line * 0.66
         natural_curve[front_x] = ndimage.gaussian_filter1d(natural_curve[front_x], sigma=5.0)
 
@@ -1233,7 +1235,42 @@ def _lift_hairline_over_observed_skin(
                     lift_delta[active_x] = (lift_amount * profile).astype(np.float32)
                     lift_delta = ndimage.gaussian_filter1d(lift_delta, sigma=7.5)
 
-    lifted_curve = natural_curve.astype(np.float32) - lift_delta.astype(np.float32)
+    # If reliable forehead skin appears above the first line on only one side,
+    # use that evidence to lift the opposite side too. A frontal hairline can be
+    # imperfect, but this diagnostic bald-head pass must not create an obviously
+    # one-sided forehead boundary from a one-sided observation.
+    symmetric_lift_delta = lift_delta.copy()
+    if front_x.size >= 4 and np.any(lift_delta[front_left : front_right + 1] > 0.8):
+        center = (front_left + front_right) * 0.5
+        for x in range(front_left, front_right + 1):
+            mirror_x = int(round(2.0 * center - x))
+            if mirror_x < front_left or mirror_x > front_right:
+                continue
+            paired = max(float(symmetric_lift_delta[x]), float(symmetric_lift_delta[mirror_x]))
+            symmetric_lift_delta[x] = paired
+            symmetric_lift_delta[mirror_x] = paired
+        symmetric_lift_delta[front_left : front_right + 1] = ndimage.gaussian_filter1d(
+            symmetric_lift_delta[front_left : front_right + 1],
+            sigma=5.0,
+        )
+
+    lifted_curve = natural_curve.astype(np.float32) - symmetric_lift_delta.astype(np.float32)
+    if front_x.size >= 4:
+        symmetric_curve = lifted_curve.copy()
+        center = (front_left + front_right) * 0.5
+        for x in range(front_left, front_right + 1):
+            mirror_x = int(round(2.0 * center - x))
+            if mirror_x < front_left or mirror_x > front_right:
+                continue
+            # Smaller y means a higher hairline in image space. Use the higher
+            # of the paired positions so visible forehead skin is not cut away.
+            paired_y = min(float(symmetric_curve[x]), float(symmetric_curve[mirror_x]))
+            symmetric_curve[x] = paired_y
+            symmetric_curve[mirror_x] = paired_y
+        lifted_curve[front_left : front_right + 1] = ndimage.gaussian_filter1d(
+            symmetric_curve[front_left : front_right + 1],
+            sigma=4.0,
+        )
     lifted_curve = np.minimum(lifted_curve, natural_curve)
     lifted_curve = np.clip(lifted_curve, y_min_px - int(h * 0.030), y_bottom_px - int(h * 0.010))
 
@@ -1244,20 +1281,23 @@ def _lift_hairline_over_observed_skin(
         x_max_px=x_max_px,
         thickness=1,
     )
-    lifted_columns = int(np.count_nonzero(lift_delta[max(0, x_min_px) : min(w, x_max_px + 1)] > 0.8))
+    lifted_columns = int(np.count_nonzero(symmetric_lift_delta[max(0, x_min_px) : min(w, x_max_px + 1)] > 0.8))
     return lifted_curve, final_line, skin_above_first, {
         "hairline_lift_candidate_texels": int(skin_above_first.sum()),
         "hairline_lift_supported_columns": int(np.count_nonzero(supported)),
         "hairline_lift_smoothed_columns": lifted_columns,
-        "hairline_lift_max_px": float(lift_delta.max()) if lift_delta.size else 0.0,
+        "hairline_lift_max_px": float(symmetric_lift_delta.max()) if symmetric_lift_delta.size else 0.0,
         "hairline_lift_mean_px_on_lifted_columns": (
-            float(lift_delta[lift_delta > 0.8].mean())
-            if np.any(lift_delta > 0.8)
+            float(symmetric_lift_delta[symmetric_lift_delta > 0.8].mean())
+            if np.any(symmetric_lift_delta > 0.8)
             else 0.0
+        ),
+        "hairline_lift_raw_lifted_columns_before_symmetry": int(
+            np.count_nonzero(lift_delta[max(0, x_min_px) : min(w, x_max_px + 1)] > 0.8)
         ),
         "hairline_front_left_px": int(front_left),
         "hairline_front_right_px": int(front_right),
-        "hairline_shape_mode": "front_curve_flattened_then_broad_lifted",
+        "hairline_shape_mode": "front_curve_flattened_then_symmetric_broad_lifted",
     }
 
 
@@ -1280,6 +1320,97 @@ def _eyebrow_side_stats(mask: np.ndarray) -> dict[str, Any]:
         "center_x": float(xs.mean()),
         "center_y": float(ys.mean()),
     }
+
+
+def _soft_range_score(value: float, low: float, high: float, falloff: float) -> float:
+    if low <= value <= high:
+        return 1.0
+    if value < low:
+        return float(np.clip(1.0 - (low - value) / max(1e-6, falloff), 0.0, 1.0))
+    return float(np.clip(1.0 - (value - high) / max(1e-6, falloff), 0.0, 1.0))
+
+
+def _score_eyebrow_component(
+    *,
+    area: int,
+    width: int,
+    height: int,
+    aspect: float,
+    center_y: float,
+    bbox: list[int],
+    side: str,
+    h: int,
+    w: int,
+    brow_top: int,
+    brow_bottom: int,
+) -> dict[str, Any]:
+    band_h = max(1.0, float(brow_bottom - brow_top))
+    rel_y = (float(center_y) - float(brow_top)) / band_h
+    area_rel = float(area) / float(max(1, h * w))
+    width_rel = float(width) / float(max(1, w))
+    height_rel = float(height) / float(max(1, h))
+
+    width_score = _soft_range_score(width_rel, 0.045, 0.095, 0.035)
+    height_score = _soft_range_score(height_rel, 0.009, 0.024, 0.012)
+    area_score = _soft_range_score(area_rel, 0.00018, 0.00115, 0.00065)
+    aspect_score = _soft_range_score(aspect, 2.4, 6.0, 1.8)
+    vertical_score = _soft_range_score(rel_y, 0.58, 0.90, 0.22)
+
+    too_wide = width_rel > 0.110
+    too_tall = height_rel > 0.030
+    too_big = area_rel > 0.00145
+    too_high = rel_y < 0.45
+    top_touch = bbox[1] <= brow_top + max(3, int(h * 0.006))
+    size_penalty = 0.0
+    if too_wide:
+        size_penalty += 0.80
+    if too_tall:
+        size_penalty += 0.90
+    if too_big:
+        size_penalty += 0.95
+    if too_high:
+        size_penalty += 0.65
+    if top_touch:
+        size_penalty += 0.35
+
+    score = width_score + height_score + area_score + aspect_score + vertical_score - size_penalty
+    classification = "good"
+    if area < 18 or width < 8:
+        classification = "missing"
+    elif score < 3.15 or too_tall or (too_wide and too_big) or too_high:
+        classification = "bad"
+
+    return {
+        "side": side,
+        "score": float(score),
+        "classification": classification,
+        "width_score": float(width_score),
+        "height_score": float(height_score),
+        "area_score": float(area_score),
+        "aspect_score": float(aspect_score),
+        "vertical_score": float(vertical_score),
+        "penalty": float(size_penalty),
+        "relative_y_in_brow_band": float(rel_y),
+        "width_rel": float(width_rel),
+        "height_rel": float(height_rel),
+        "area_rel": float(area_rel),
+        "too_wide": bool(too_wide),
+        "too_tall": bool(too_tall),
+        "too_big": bool(too_big),
+        "too_high": bool(too_high),
+        "top_touch": bool(top_touch),
+    }
+
+
+def _mirror_mask_x(mask: np.ndarray, *, center_x: int, x_min_px: int, x_max_px: int) -> np.ndarray:
+    h, w = mask.shape
+    mirrored = np.zeros_like(mask, dtype=bool)
+    ys, xs = np.where(mask)
+    mirrored_x = np.rint(2 * center_x - xs).astype(np.int32)
+    valid = (mirrored_x >= x_min_px) & (mirrored_x <= x_max_px) & (mirrored_x >= 0) & (mirrored_x < w)
+    if np.any(valid):
+        mirrored[ys[valid], mirrored_x[valid]] = True
+    return mirrored
 
 
 def _symmetrize_eyebrow_guard(
@@ -1318,6 +1449,7 @@ def _symmetrize_eyebrow_guard(
     labels, count = ndimage.label(seed)
     eyebrow_seed = np.zeros_like(seed, dtype=bool)
     components: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
         if slices is None:
             continue
@@ -1328,21 +1460,71 @@ def _symmetrize_eyebrow_guard(
         height = int(ys.stop - ys.start)
         aspect = float(width / max(1, height))
         center_y = float((ys.start + ys.stop) * 0.5)
-        kept = area >= 18 and width >= 8 and height <= max(18, int(h * 0.040)) and aspect >= 1.35
-        if kept:
-            eyebrow_seed[slices][component] = True
+        center_x_value = float((xs.start + xs.stop) * 0.5)
+        side = "left" if center_x_value < center_x else "right"
+        bbox = [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)]
+        quality = _score_eyebrow_component(
+            area=area,
+            width=width,
+            height=height,
+            aspect=aspect,
+            center_y=center_y,
+            bbox=bbox,
+            side=side,
+            h=h,
+            w=w,
+            brow_top=brow_top,
+            brow_bottom=brow_bottom,
+        )
+        # This is deliberately stricter than the first guard pass. A large dark
+        # blob is often hair/occlusion, not a better eyebrow. Keep geometric
+        # candidates for diagnostics, but only good-scoring components can drive
+        # the mirrored eyebrow mask.
+        geom_kept = (
+            area >= 18
+            and width >= 8
+            and height <= max(28, int(h * 0.036))
+            and aspect >= 1.35
+            and quality["relative_y_in_brow_band"] >= 0.42
+        )
+        component_full = np.zeros_like(seed, dtype=bool)
+        if geom_kept:
+            view = component_full[slices]
+            view[component] = True
+            candidate_mask = ndimage.binary_closing(component_full, structure=_disk(1))
+            candidate_mask = ndimage.binary_dilation(candidate_mask, structure=_disk(1)) & brow_band
+            eyebrow_seed |= candidate_mask
+            candidates.append({
+                "label": int(label_id),
+                "side": side,
+                "score": float(quality["score"]),
+                "classification": quality["classification"],
+                "mask": candidate_mask,
+                "area": area,
+                "width": width,
+                "height": height,
+                "aspect": aspect,
+                "center_x": center_x_value,
+                "center_y": center_y,
+                "bbox": bbox,
+                "quality": quality,
+            })
         components.append({
             "label": int(label_id),
             "area": area,
             "width": width,
             "height": height,
             "aspect": aspect,
+            "side": side,
+            "score": float(quality["score"]),
+            "classification": quality["classification"],
             "center_y": center_y,
-            "kept": bool(kept),
-            "bbox": [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)],
+            "kept": bool(geom_kept),
+            "bbox": bbox,
+            "quality": quality,
         })
 
-    eyebrow_seed = ndimage.binary_dilation(eyebrow_seed, structure=_disk(2)) & brow_band
+    eyebrow_seed = ndimage.binary_closing(eyebrow_seed, structure=_disk(1)) & brow_band
     left = eyebrow_seed & (xx < center_x)
     right = eyebrow_seed & (xx > center_x)
     left_stats = _eyebrow_side_stats(left)
@@ -1357,62 +1539,48 @@ def _symmetrize_eyebrow_guard(
     mirror_mode = "none"
     mirror_source = np.zeros_like(guard, dtype=bool)
     black_brow_rgb = np.asarray([16, 13, 12], dtype=np.uint8)
-    force_symmetric_brow = (
-        max(left_area, right_area) >= min_reasonable_area
-        and (
-            ratio < 0.90
-            or min(left_area, right_area) < min_reasonable_area
-            or abs(float(left_stats["height"] or 0) - float(right_stats["height"] or 0)) > h * 0.018
-            or abs(float(left_stats["width"] or 0) - float(right_stats["width"] or 0)) > w * 0.040
-        )
-    )
-    if force_symmetric_brow:
-        if left_area >= right_area:
-            strong = left
-            mirror_mode = "left_to_right"
+    good_threshold = 3.15
+    sorted_candidates = sorted(candidates, key=lambda item: float(item["score"]), reverse=True)
+    left_candidates = [item for item in sorted_candidates if item["side"] == "left"]
+    right_candidates = [item for item in sorted_candidates if item["side"] == "right"]
+    left_best = left_candidates[0] if left_candidates else None
+    right_best = right_candidates[0] if right_candidates else None
+    selected_source: dict[str, Any] | None = None
+
+    left_good = bool(left_best and left_best["classification"] == "good" and float(left_best["score"]) >= good_threshold)
+    right_good = bool(right_best and right_best["classification"] == "good" and float(right_best["score"]) >= good_threshold)
+    if left_good and right_good:
+        score_gap = abs(float(left_best["score"]) - float(right_best["score"]))
+        width_ratio = min(float(left_best["width"]), float(right_best["width"])) / max(1.0, max(float(left_best["width"]), float(right_best["width"])))
+        height_ratio = min(float(left_best["height"]), float(right_best["height"])) / max(1.0, max(float(left_best["height"]), float(right_best["height"])))
+        if score_gap <= 0.55 and width_ratio >= 0.72 and height_ratio >= 0.62:
+            symmetric_eyebrow_mask = left_best["mask"] | right_best["mask"]
+            mirror_mode = "both_good_keep_component_masks"
         else:
-            strong = right
-            mirror_mode = "right_to_left"
+            selected_source = left_best if float(left_best["score"]) >= float(right_best["score"]) else right_best
+    elif left_good:
+        selected_source = left_best
+    elif right_good:
+        selected_source = right_best
+    elif sorted_candidates and float(sorted_candidates[0]["score"]) >= 2.45:
+        selected_source = sorted_candidates[0]
 
-        strong_luma = luma[strong]
-        if strong_luma.size:
-            dark_cutoff = min(98.0, max(44.0, float(np.percentile(strong_luma, 62.0))))
-            mirror_source = strong & (luma <= dark_cutoff)
-            mirror_source = ndimage.binary_opening(mirror_source, structure=_disk(1))
-            if int(mirror_source.sum()) < min_reasonable_area:
-                mirror_source = strong & (luma <= min(112.0, float(np.percentile(strong_luma, 72.0))))
-        else:
-            mirror_source = strong
+    if selected_source is not None:
+        mirror_source = selected_source["mask"]
+        mirrored = _mirror_mask_x(mirror_source, center_x=center_x, x_min_px=x_min_px, x_max_px=x_max_px)
+        symmetric_eyebrow_mask = (mirror_source | mirrored) & brow_band
+        symmetric_eyebrow_mask = ndimage.binary_closing(symmetric_eyebrow_mask, structure=_disk(1))
+        symmetric_eyebrow_mask = ndimage.binary_opening(symmetric_eyebrow_mask, structure=_disk(1)) & brow_band
+        mirror_mode = f"{selected_source['side']}_component_to_symmetric_pair"
 
-        if np.any(mirror_source):
-            src_y, src_x = np.where(mirror_source)
-            y_lo = int(np.percentile(src_y, 8.0))
-            y_hi = int(np.percentile(src_y, 72.0))
-            max_height = int(max(12, h * 0.040))
-            y_hi = min(y_hi, y_lo + max_height)
-            mirror_source &= (yy >= y_lo) & (yy <= y_hi)
-            mirror_source = ndimage.binary_closing(mirror_source, structure=_disk(2))
-            mirror_source = ndimage.binary_opening(mirror_source, structure=_disk(1))
-
-        ys, xs = np.where(mirror_source)
-        mirrored_x = np.rint(2 * center_x - xs).astype(np.int32)
-        valid = (mirrored_x >= x_min_px) & (mirrored_x <= x_max_px) & (mirrored_x >= 0) & (mirrored_x < w)
-        ys = ys[valid]
-        dst_xs = mirrored_x[valid]
-        if ys.size:
-            symmetric_eyebrow_mask[ys, dst_xs] = True
-        symmetric_eyebrow_mask |= mirror_source
-        symmetric_eyebrow_mask &= brow_band
-        symmetric_eyebrow_mask = ndimage.binary_closing(symmetric_eyebrow_mask, structure=_disk(2))
-        symmetric_eyebrow_mask = ndimage.binary_dilation(symmetric_eyebrow_mask, structure=_disk(1)) & brow_band
-        symmetric_eyebrow_rgb[symmetric_eyebrow_mask] = black_brow_rgb
-
-    if mirror_mode == "none":
+    if not np.any(symmetric_eyebrow_mask):
         symmetric_eyebrow_mask = eyebrow_seed
-        symmetric_eyebrow_rgb[symmetric_eyebrow_mask] = black_brow_rgb
+        mirror_mode = "fallback_all_component_seed"
+    symmetric_eyebrow_rgb[symmetric_eyebrow_mask] = black_brow_rgb
 
     eye_keep_y = y_min_px + int(h * 0.102)
-    eye_guard = guard & brow_band & (yy >= eye_keep_y)
+    rejected_brow_seed = eyebrow_seed & ~ndimage.binary_dilation(symmetric_eyebrow_mask, structure=_disk(4))
+    eye_guard = guard & brow_band & (yy >= eye_keep_y) & ~rejected_brow_seed
     final_guard = ((guard & ~brow_band) | eye_guard | symmetric_eyebrow_mask) & roi
     final_guard = ndimage.binary_dilation(final_guard, structure=_disk(1)) & roi
     return final_guard, symmetric_eyebrow_mask, symmetric_eyebrow_rgb, {
@@ -1426,6 +1594,47 @@ def _symmetrize_eyebrow_guard(
         "eyebrow_mirror_mode": mirror_mode,
         "eyebrow_mirrored_texels": int(symmetric_eyebrow_mask.sum()),
         "eyebrow_mirror_source_texels": int(mirror_source.sum()) if mirror_mode != "none" else 0,
+        "eyebrow_good_threshold": float(good_threshold),
+        "eyebrow_selected_source": (
+            {
+                "label": int(selected_source["label"]),
+                "side": selected_source["side"],
+                "score": float(selected_source["score"]),
+                "classification": selected_source["classification"],
+                "bbox": selected_source["bbox"],
+                "width": int(selected_source["width"]),
+                "height": int(selected_source["height"]),
+                "area": int(selected_source["area"]),
+            }
+            if selected_source is not None
+            else None
+        ),
+        "eyebrow_left_best": (
+            {
+                "label": int(left_best["label"]),
+                "score": float(left_best["score"]),
+                "classification": left_best["classification"],
+                "bbox": left_best["bbox"],
+                "width": int(left_best["width"]),
+                "height": int(left_best["height"]),
+                "area": int(left_best["area"]),
+            }
+            if left_best is not None
+            else None
+        ),
+        "eyebrow_right_best": (
+            {
+                "label": int(right_best["label"]),
+                "score": float(right_best["score"]),
+                "classification": right_best["classification"],
+                "bbox": right_best["bbox"],
+                "width": int(right_best["width"]),
+                "height": int(right_best["height"]),
+                "area": int(right_best["area"]),
+            }
+            if right_best is not None
+            else None
+        ),
         "eyebrow_symmetry_texture_mode": "fixed_black_mask_no_color_transfer",
         "eyebrow_symmetry_components_preview": components[:30],
     }
@@ -2377,7 +2586,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
             v04b_paths["compact_review_sheet"] = compact_sheet
 
     person_summary["stages"]["v04b_eyebrow_hairline_refine"] = {
-        "logic": "start from v04 forehead redefinition, redefine weak brows as a fixed black symmetric mask, flatten the front hairline shape, then broadly lift it from reliable forehead-skin evidence",
+        "logic": "start from v04 forehead redefinition, choose eyebrow source by component quality, mirror good brows as a fixed black mask, flatten the front hairline shape, then symmetrically lift it from reliable forehead-skin evidence",
         "paths": v04b_paths,
         "metrics": v04b_meta,
     }
@@ -2508,8 +2717,8 @@ def _build_report(summary: dict[str, Any]) -> str:
         "## v04b_eyebrow_hairline_refine",
         "",
         "This stage keeps the v04 forehead definition idea, but fixes two issues seen in review.",
-        "First, eyebrow/eye protection is strengthened with a left-right symmetry check. When eyebrow shape is imbalanced, both brows are redefined as a fixed black symmetric mask, not color-transferred texture.",
-        "Second, the first smooth hairline is reshaped to be less circular across the front, then broadly lifted when reliable forehead skin appears above it.",
+        "First, eyebrow/eye protection is strengthened with component-scored source selection. When one brow side is good and the other is bad/missing, the bad side is discarded and the good component is mirrored as a fixed black symmetric mask, not color-transferred texture.",
+        "Second, the first smooth hairline is reshaped to be less circular across the front, then lifted from reliable forehead-skin evidence with a mirrored frontal lift so one-sided evidence cannot create a one-sided hairline.",
         "The compact sheet adds a bottom row for the secondary hairline correction: purple is the first line, yellow is the lifted line, and cyan is the skin evidence used for the broad lift.",
         "",
     ])
@@ -2530,8 +2739,10 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Observed forehead texels: {metrics['observed_forehead_texels']}",
             f"- Initial/final eye-brow guard texels: {metrics['initial_eye_brow_guard_texels']} / {metrics['eye_brow_guard_texels']}",
             f"- Symmetric black eyebrow-mask texels: {metrics['mirrored_eyebrow_texels']} ({metrics['eyebrow_mirror_mode']})",
+            f"- Selected eyebrow source: {metrics.get('eyebrow_selected_source')}",
             f"- Hairline lift candidate texels: {metrics['hairline_lift_candidate_texels']}",
             f"- Hairline lift supported/smoothed columns: {metrics['hairline_lift_supported_columns']} / {metrics['hairline_lift_smoothed_columns']}",
+            f"- Hairline raw lifted columns before symmetry: {metrics.get('hairline_lift_raw_lifted_columns_before_symmetry')}",
             f"- Max hairline lift px: {round(metrics['hairline_lift_max_px'], 2)}",
             f"- Hairline fit mode: {metrics['hairline_fit_mode']}",
             f"- Changed texels: {metrics['changed_texels']}",
