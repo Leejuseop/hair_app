@@ -2970,19 +2970,92 @@ Visual interpretation:
   the edited boundary, reintroduce believable skin detail, or locally inpaint
   only the patchy islands while keeping the new compact review-sheet format.
 
+Next user-requested correction before edge/detail recovery:
+
+- redefine "forehead" more aggressively before improving material detail;
+- if a region is in the upper face below the hairline and not eye/eyebrow, it
+  should be treated as forehead even if current texture marks it as black hair
+  or non-skin;
+- smooth the hairline into a plausible human curve instead of trusting the
+  jagged observed edge literally.
+
+### 27.10 Step 6 v04 Forehead Region Redefinition
+
+Date: 2026-07-01.
+
+Active private Step 6 output after v04:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_131820
+```
+
+Implemented sub-step:
+
+```text
+v04_forehead_redefined_region
+```
+
+Why this version exists:
+
+- The user clarified that the problem was not only tone/detail. The actual
+  forehead region was still defined too narrowly.
+- In a bald-head pipeline, hair that falls over the forehead must eventually
+  disappear. Therefore, black/hair leftovers inside the forehead location
+  should be filled as forehead skin, not protected as unknown black texture.
+- The user also pointed out that observed hairline fragments are jagged and
+  incomplete. The pipeline should infer a smoother human-like hairline curve
+  from partial evidence instead of directly preserving the jagged edge.
+
+Accepted v04 logic:
+
+- restart from v01, not from the already-flat v03 texture;
+- keep v03's basic tone-fill idea, but redefine the edited region;
+- predict a smooth hairline curve from observed upper-face skin boundary;
+- use Juseop app-scan hairline frames only as a boundary hint, never as
+  texture, color, or bake input;
+- define forehead as the upper-face area below the predicted hairline and
+  outside eye/eyebrow guard regions;
+- include black/hair/non-skin leftovers in that region and fill them as
+  forehead;
+- keep a compact review sheet with before front/left45/right45, after
+  front/left45/right45, and area front/left45/right45.
+
+v04 compact review colors:
+
+- green = redefined forehead region;
+- orange = hair/black/non-skin leftovers filled as forehead;
+- yellow = smooth predicted hairline;
+- blue = eye/brow guard;
+- dark = untouched.
+
+Accepted v04 metrics at 1024 atlas:
+
+| Person | Forehead region texels | Filled hair/black texels | Reference face texels | Hairline hint | Result |
+| --- | ---: | ---: | ---: | --- | --- |
+| Juseop | 25,855 | 6,201 | 45,545 | scan boundary hint used | Right eyebrow-side hair remnant is now treated as forehead; still flat and hard-edged |
+| Eunchae | 23,009 | 7,694 | 26,087 | no scan hint | Wider forehead fill works; still flat and hard-edged |
+
+Visual interpretation:
+
+- v04 is better aligned with the bald-head goal than v03. It no longer treats
+  every black/hair fragment in the upper forehead as untouchable.
+- The predicted hairline is smoother and more human-like than the prior jagged
+  observed edge, though it remains a heuristic curve and needs review.
+- v04 is still not product-quality. It expands the corrected forehead, but the
+  filled region remains too flat and the lower/side boundaries are visible.
+
 Next Step 6 sub-step:
 
 ```text
-v04_forehead_edge_detail_recovery
+v05_forehead_edge_detail_recovery
 ```
 
-Suggested v04 direction:
+Suggested v05 direction:
 
-- keep v03 as a diagnostic baseline, not as the final forehead;
-- feather the edited forehead boundary against adjacent reliable skin;
-- restore subtle local texture/detail from clean nearby forehead or source
-  projections where available;
-- avoid making the forehead a single flat material;
-- keep eye/brow, hairline, scalp, mouth, and lower face out of this pass;
-- after forehead edge/detail recovery is visually accepted, move to
-  mouth/lips, eyes/brows, neck/lower leakage, ears/side face, and scalp/hairline.
+- keep v04's broader forehead definition;
+- blend the lower/side boundary against adjacent reliable skin;
+- reintroduce subtle local skin detail so the filled forehead does not look
+  like one flat material;
+- avoid changing eye, eyebrow, mouth, scalp, neck, and clothing in the same
+  pass;
+- continue using the compact review-sheet format.

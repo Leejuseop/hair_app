@@ -76,7 +76,7 @@ machine:
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02/v03 postprocess passes.
+  arbitration, and Step 6 v01/v02/v03/v04 postprocess passes.
   `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
   the Step 5 `blend` texture as its fixed baseline.
 
@@ -183,12 +183,15 @@ private_outputs/
    quality: it replaces selected forehead skin with the average non-forehead
    face tone, uses Juseop scan frames only as a hairline boundary hint, and
    produces compact before/after/area review sheets.
-5. Next, repair the v03 flat-patch artifact with edge blending/detail recovery,
+5. Treat v04 forehead redefinition as the current region baseline: it defines
+   forehead by upper-face position below a smooth predicted hairline, includes
+   hair/black leftovers as fill targets, and still looks too flat.
+6. Next, repair the v04 flat-patch artifact with edge blending/detail recovery,
    then repair mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears,
    scalp/hairline, and final mild color smoothing.
-6. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+7. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
    candidate unless visual review proves otherwise.
-7. Preserve confidence/provenance maps so observed pixels, blended pixels, and
+8. Preserve confidence/provenance maps so observed pixels, blended pixels, and
    generated/fallback pixels remain distinguishable.
-8. After the bald head is credible, decide whether the FaceBuilder mesh can be
+9. After the bald head is credible, decide whether the FaceBuilder mesh can be
    used directly for hair fitting or needs retopology/transfer.

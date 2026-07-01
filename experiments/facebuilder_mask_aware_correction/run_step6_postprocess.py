@@ -6,6 +6,7 @@ and produces diagnostic review sheets. Implemented stages:
 - `v01_hard_skin_holes`: only tiny black COMPLETION_NEEDED skin holes.
 - `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
 - `v03_forehead_uniform_tone`: unify forehead skin to non-forehead face skin tone.
+- `v04_forehead_redefined_region`: redefine forehead by position, then fill hair leftovers.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -58,6 +59,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--forehead-x-max", type=float, default=0.72)
     parser.add_argument("--skip-baseline-renders", action="store_true")
     parser.add_argument("--skip-v02-renders", action="store_true")
+    parser.add_argument("--skip-v03-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -192,6 +194,9 @@ def _make_compact_before_after_sheet(
     area_dir: Path | None,
     output_path: Path,
     legend: str,
+    before_label: str = "before v01",
+    after_label: str = "after v03",
+    area_label: str = "area map",
 ) -> str | None:
     yaw_items = [
         ("front", "+00"),
@@ -199,11 +204,11 @@ def _make_compact_before_after_sheet(
         ("right 45", "+45"),
     ]
     rows: list[tuple[str, Path]] = [
-        ("before v01", before_dir),
-        ("after v03", after_dir),
+        (before_label, before_dir),
+        (after_label, after_dir),
     ]
     if area_dir is not None:
-        rows.append(("area map", area_dir))
+        rows.append((area_label, area_dir))
 
     tile_w = 300
     band_h = 34
@@ -963,6 +968,169 @@ def _top_boundary(mask: np.ndarray) -> np.ndarray:
     return boundary & near_top
 
 
+def _predict_smooth_hairline(
+    reliable_skin: np.ndarray,
+    roi: np.ndarray,
+    *,
+    x_min_px: int,
+    x_max_px: int,
+    y_min_px: int,
+    y_max_px: int,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    h, w = reliable_skin.shape
+    skin = ndimage.binary_closing(reliable_skin & roi, structure=_disk(4))
+    skin = ndimage.binary_opening(skin, structure=_disk(2))
+    sample_x: list[int] = []
+    sample_y: list[int] = []
+    step = max(1, (x_max_px - x_min_px) // 160)
+    for x in range(x_min_px, x_max_px + 1, step):
+        local = skin[y_min_px:y_max_px, max(0, x - 2) : min(w, x + 3)]
+        if local.size == 0:
+            continue
+        row_score = local.mean(axis=1)
+        smoothed = ndimage.uniform_filter1d(row_score.astype(np.float32), size=7)
+        hits = np.where(smoothed > 0.24)[0]
+        if hits.size:
+            y = int(y_min_px + hits[0])
+            if y_min_px - 8 <= y <= y_max_px:
+                sample_x.append(x)
+                sample_y.append(y)
+
+    xs_full = np.arange(w, dtype=np.float32)
+    curve = np.full(w, float(y_min_px + max(4, int(h * 0.015))), dtype=np.float32)
+    fit_mode = "fallback_arc"
+    used_samples = 0
+    rejected_samples = 0
+
+    if len(sample_x) >= 12:
+        sx = np.asarray(sample_x, dtype=np.float32)
+        sy = np.asarray(sample_y, dtype=np.float32)
+        center = (x_min_px + x_max_px) * 0.5
+        scale = max(1.0, (x_max_px - x_min_px) * 0.5)
+        tx = (sx - center) / scale
+        coeff = np.polyfit(tx, sy, deg=2)
+        pred = np.polyval(coeff, tx)
+        residual = np.abs(sy - pred)
+        cutoff = max(6.0, float(np.percentile(residual, 75.0)) * 1.8)
+        keep = residual <= cutoff
+        rejected_samples = int((~keep).sum())
+        if int(keep.sum()) >= 10:
+            coeff = np.polyfit(tx[keep], sy[keep], deg=2)
+            fit_mode = "robust_quadratic"
+            used_samples = int(keep.sum())
+        else:
+            used_samples = int(len(sample_x))
+
+        full_tx = (xs_full - center) / scale
+        curve = np.polyval(coeff, full_tx).astype(np.float32)
+
+        # A real frontal hairline should be a smooth arc: center slightly
+        # higher, sides slightly lower. If noisy samples invert that curve,
+        # keep the observed center height and impose a conservative arc.
+        side_probe = np.asarray([
+            curve[int(np.clip(x_min_px, 0, w - 1))],
+            curve[int(np.clip(x_max_px, 0, w - 1))],
+        ])
+        center_y = float(curve[int(np.clip(round(center), 0, w - 1))])
+        min_side_drop = float(h * 0.018)
+        if float(side_probe.mean()) < center_y + min_side_drop:
+            t = (xs_full - center) / scale
+            curve = center_y + min_side_drop + (np.clip(np.abs(t), 0.0, 1.0) ** 2) * float(h * 0.024)
+            fit_mode = "arc_enforced_after_flat_or_inverted_fit"
+    else:
+        center = (x_min_px + x_max_px) * 0.5
+        scale = max(1.0, (x_max_px - x_min_px) * 0.5)
+        t = (xs_full - center) / scale
+        curve = float(y_min_px + h * 0.012) + (np.clip(np.abs(t), 0.0, 1.0) ** 2) * float(h * 0.038)
+
+    curve = ndimage.gaussian_filter1d(curve, sigma=8.0)
+    active_curve = curve[x_min_px:x_max_px + 1] if x_max_px >= x_min_px else curve
+    if active_curve.size and float(active_curve.max() - active_curve.min()) < float(h * 0.012):
+        center = (x_min_px + x_max_px) * 0.5
+        scale = max(1.0, (x_max_px - x_min_px) * 0.5)
+        t = (xs_full - center) / scale
+        median_y = float(np.median(active_curve))
+        center_y = median_y - float(h * 0.026)
+        curve = center_y + (np.clip(np.abs(t), 0.0, 1.0) ** 2) * float(h * 0.055)
+        fit_mode = f"{fit_mode}_human_arc_from_flat_profile"
+    curve = np.clip(curve, y_min_px - int(h * 0.012), y_max_px - int(h * 0.010))
+
+    line = np.zeros_like(reliable_skin, dtype=bool)
+    for x in range(max(0, x_min_px), min(w, x_max_px + 1)):
+        y = int(np.clip(round(float(curve[x])), 0, h - 1))
+        y0 = max(0, y - 1)
+        y1 = min(h, y + 2)
+        line[y0:y1, x] = True
+
+    return curve, line, {
+        "hairline_fit_mode": fit_mode,
+        "hairline_sample_count": int(len(sample_x)),
+        "hairline_samples_used": int(used_samples or len(sample_x)),
+        "hairline_samples_rejected": rejected_samples,
+        "hairline_curve_y_min_px": float(curve[x_min_px:x_max_px + 1].min()) if x_max_px >= x_min_px else 0.0,
+        "hairline_curve_y_max_px": float(curve[x_min_px:x_max_px + 1].max()) if x_max_px >= x_min_px else 0.0,
+    }
+
+
+def _eye_brow_guard_for_redefined_forehead(
+    texture: np.ndarray,
+    decision: np.ndarray,
+    reliable_skin: np.ndarray,
+    roi: np.ndarray,
+    yy: np.ndarray,
+    *,
+    y_min_px: int,
+    y_bottom_px: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    h, _ = decision.shape
+    rgb = texture.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    skin_near = ndimage.binary_dilation(reliable_skin, structure=_disk(10))
+    feature_band = (yy >= y_min_px + int(h * 0.045)) & (yy <= y_bottom_px)
+    dark = (((decision == COMPLETION_NEEDED) & (luma < 84.0)) | (luma < 48.0)) & roi & feature_band & skin_near
+    dark = ndimage.binary_closing(dark, structure=_disk(2))
+    dark = ndimage.binary_opening(dark, structure=_disk(1))
+
+    labels, count = ndimage.label(dark)
+    guard = np.zeros(dark.shape, dtype=bool)
+    components: list[dict[str, Any]] = []
+    for label_id, slices in enumerate(ndimage.find_objects(labels), start=1):
+        if slices is None:
+            continue
+        ys, xs = slices
+        component = labels[slices] == label_id
+        area = int(component.sum())
+        width = int(xs.stop - xs.start)
+        height = int(ys.stop - ys.start)
+        center_y = float((ys.start + ys.stop) * 0.5)
+        aspect = float(width / max(1, height))
+        horizontal_feature = width >= 14 and height <= max(16, int(h * 0.025)) and aspect >= 1.55
+        eye_like_blob = area >= 70 and center_y >= y_min_px + h * 0.075 and height <= int(h * 0.055)
+        kept = bool(horizontal_feature or eye_like_blob)
+        if kept:
+            guard[slices][component] = True
+        components.append({
+            "label": label_id,
+            "area": area,
+            "width": width,
+            "height": height,
+            "center_y": center_y,
+            "aspect": aspect,
+            "horizontal_feature": bool(horizontal_feature),
+            "eye_like_blob": bool(eye_like_blob),
+            "kept": kept,
+            "bbox": [int(xs.start), int(ys.start), int(xs.stop), int(ys.stop)],
+        })
+
+    guard = ndimage.binary_dilation(guard, structure=_disk(2))
+    return guard, {
+        "eye_brow_component_count": int(count),
+        "eye_brow_components_kept": int(sum(1 for item in components if item["kept"])),
+        "eye_brow_guard_texels": int(guard.sum()),
+        "eye_brow_components_preview": components[:30],
+    }
+
+
 def _step_v03_forehead_uniform_tone(
     base: np.ndarray,
     decision: np.ndarray,
@@ -1069,6 +1237,162 @@ def _step_v03_forehead_uniform_tone(
         ),
     }
     meta.update(lower_meta)
+    meta.update(component_meta)
+    return maps, meta
+
+
+def _step_v04_forehead_redefined_region(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    source_count: np.ndarray,
+    *,
+    forehead_y_min: float,
+    forehead_y_max: float,
+    forehead_x_min: float,
+    forehead_x_max: float,
+    scan_hairline_hint: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    y_shift = 0.0
+    if scan_hairline_hint.get("used"):
+        ratio = float(scan_hairline_hint.get("estimated_hairline_skin_start_ratio", 0.16))
+        y_shift = float(np.clip((ratio - 0.16) * 0.08, -0.012, 0.014))
+
+    y_min = float(np.clip(forehead_y_min + y_shift, 0.24, 0.38))
+    y_bottom = float(np.clip(max(forehead_y_max + 0.010, y_min + 0.105), y_min + 0.095, 0.475))
+    x_min = float(max(0.25, forehead_x_min - 0.015))
+    x_max = float(min(0.75, forehead_x_max + 0.015))
+    x_min_px = int(w * x_min)
+    x_max_px = int(w * x_max)
+    y_min_px = int(h * y_min)
+    y_bottom_px = int(h * y_bottom)
+
+    coarse_roi = (
+        (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & (yy >= max(0, y_min_px - int(h * 0.020)))
+        & (yy <= y_bottom_px)
+    )
+    curve_y, predicted_hairline, hairline_meta = _predict_smooth_hairline(
+        reliable_skin,
+        coarse_roi,
+        x_min_px=x_min_px,
+        x_max_px=x_max_px,
+        y_min_px=y_min_px,
+        y_max_px=y_bottom_px,
+    )
+    curve_lookup = curve_y[np.clip(xx, 0, w - 1)]
+    below_predicted_hairline = yy >= curve_lookup
+    position_forehead = (
+        (xx >= x_min_px)
+        & (xx <= x_max_px)
+        & below_predicted_hairline
+        & (yy <= y_bottom_px)
+    )
+    face_support = ndimage.binary_dilation(reliable_skin & coarse_roi, structure=_disk(24))
+    position_forehead &= face_support
+    predicted_hairline &= ndimage.binary_dilation(face_support, structure=_disk(4))
+
+    eye_brow_guard, guard_meta = _eye_brow_guard_for_redefined_forehead(
+        base,
+        decision,
+        reliable_skin,
+        position_forehead,
+        yy,
+        y_min_px=y_min_px,
+        y_bottom_px=y_bottom_px,
+    )
+    forehead_region = position_forehead & ~eye_brow_guard
+    forehead_region = ndimage.binary_closing(forehead_region, structure=_disk(2)) & position_forehead & ~eye_brow_guard
+    forehead_region, component_meta = _keep_central_forehead_components(forehead_region)
+
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+    ref_roi = (
+        reliable_skin
+        & ~forehead_region
+        & ~eye_brow_guard
+        & (xx >= int(w * 0.24))
+        & (xx <= int(w * 0.76))
+        & (yy >= int(h * 0.44))
+        & (yy <= int(h * 0.62))
+        & (max_score > 0.22)
+        & (source_count.astype(np.float32) >= 1.0)
+    )
+    fallback = np.asarray([150.0, 105.0, 88.0], dtype=np.float32)
+    face_mean, face_ref_count = _trimmed_mean_rgb(base, ref_roi, fallback)
+
+    rgb = base.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    non_skin_forehead = forehead_region & (~reliable_skin | (decision == COMPLETION_NEEDED) | (luma < 56.0))
+    observed_forehead = forehead_region & ~non_skin_forehead
+
+    edge_feather = np.clip(ndimage.distance_transform_edt(forehead_region).astype(np.float32) / 7.0, 0.0, 1.0)
+    weight = np.where(forehead_region, np.clip(0.34 + 0.66 * edge_feather, 0.0, 1.0), 0.0).astype(np.float32)
+    weight[non_skin_forehead] = np.maximum(weight[non_skin_forehead], 0.96)
+
+    uniform = base.copy()
+    target = face_mean.reshape(1, 1, 3)
+    mixed = rgb * (1.0 - weight[..., None]) + target * weight[..., None]
+    uniform[forehead_region] = np.clip(mixed[forehead_region], 0.0, 255.0).astype(np.uint8)
+
+    changed = np.any(uniform != base, axis=2)
+    area_rgb = np.full_like(base, 28, dtype=np.uint8)
+    area_rgb[forehead_region] = (40, 210, 95)
+    area_rgb[non_skin_forehead] = (255, 142, 42)
+    area_rgb[predicted_hairline] = (245, 218, 38)
+    area_rgb[eye_brow_guard] = (58, 130, 245)
+
+    area_overlay = base.copy()
+    for mask, color, alpha in [
+        (forehead_region, (40, 210, 95), 0.42),
+        (non_skin_forehead, (255, 142, 42), 0.72),
+        (predicted_hairline, (245, 218, 38), 0.86),
+        (eye_brow_guard, (58, 130, 245), 0.70),
+    ]:
+        area_overlay = _blend_overlay(area_overlay, mask, color, alpha=alpha)
+
+    maps = {
+        "texture": uniform,
+        "forehead_region_mask": forehead_region.astype(np.uint8) * 255,
+        "filled_non_skin_mask": non_skin_forehead.astype(np.uint8) * 255,
+        "observed_forehead_mask": observed_forehead.astype(np.uint8) * 255,
+        "predicted_hairline_mask": predicted_hairline.astype(np.uint8) * 255,
+        "eye_brow_guard_mask": eye_brow_guard.astype(np.uint8) * 255,
+        "changed_mask": changed.astype(np.uint8) * 255,
+        "weight": np.clip(weight * 255.0, 0, 255).astype(np.uint8),
+        "area_render_texture": area_rgb,
+        "area_overlay": area_overlay,
+        "reference_skin_rgb": _mask_rgb(ref_roi, (80, 160, 255)),
+    }
+    meta = {
+        "forehead_roi_normalized": {
+            "x_min": x_min,
+            "x_max": x_max,
+            "y_min": y_min,
+            "y_bottom": y_bottom,
+            "scan_y_shift": y_shift,
+        },
+        "scan_hairline_hint": scan_hairline_hint,
+        "target_non_forehead_face_mean_rgb": [float(x) for x in face_mean.tolist()],
+        "target_reference_texels": int(face_ref_count),
+        "forehead_region_texels": int(forehead_region.sum()),
+        "observed_forehead_texels": int(observed_forehead.sum()),
+        "filled_non_skin_texels": int(non_skin_forehead.sum()),
+        "predicted_hairline_texels": int(predicted_hairline.sum()),
+        "eye_brow_guard_texels": int(eye_brow_guard.sum()),
+        "changed_texels": int(changed.sum()),
+        "mean_abs_rgb_delta_on_changed": (
+            float(np.abs(uniform.astype(np.int16) - base.astype(np.int16)).sum(axis=2)[changed].mean())
+            if np.any(changed)
+            else 0.0
+        ),
+    }
+    meta.update(hairline_meta)
+    meta.update(guard_meta)
     meta.update(component_meta)
     return maps, meta
 
@@ -1346,7 +1670,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "area_overlay": _save_rgb(v03_maps_dir / "v03_area_overlay.png", v03_maps["area_overlay"]),
         "reference_skin_rgb": _save_rgb(v03_maps_dir / "v03_non_forehead_reference_skin_debug_rgb.png", v03_maps["reference_skin_rgb"]),
     }
-    if not args.skip_render:
+    if not args.skip_render and not args.skip_v03_renders:
         v03_paths["before_v01_render"] = _render_stage_raw(
             person=person,
             stage="v03_before_v01_skin_holes",
@@ -1387,6 +1711,81 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "logic": "use scan hairline only as a boundary hint, then set forehead skin to non-forehead face-skin mean tone with thin feature guards",
         "paths": v03_paths,
         "metrics": v03_meta,
+    }
+
+    v04_maps, v04_meta = _step_v04_forehead_redefined_region(
+        v01_texture,
+        decision,
+        clean_score,
+        raw_score,
+        source_count,
+        forehead_y_min=args.forehead_y_min,
+        forehead_y_max=args.forehead_y_max,
+        forehead_x_min=args.forehead_x_min,
+        forehead_x_max=args.forehead_x_max,
+        scan_hairline_hint=scan_hairline_hint,
+    )
+    v04_dir = output_dir / "v04_forehead_redefined_region"
+    v04_maps_dir = v04_dir / "maps"
+    v04_texture_path = v04_maps_dir / "v04_forehead_redefined_region_texture.png"
+    v04_area_texture_path = v04_maps_dir / "v04_forehead_redefined_area_render_texture.png"
+    v04_paths: dict[str, Any] = {
+        "texture": _save_rgb(v04_texture_path, v04_maps["texture"]),
+        "forehead_region_mask": _save_l(v04_maps_dir / "v04_forehead_region_mask.png", v04_maps["forehead_region_mask"]),
+        "filled_non_skin_mask": _save_l(v04_maps_dir / "v04_filled_non_skin_mask.png", v04_maps["filled_non_skin_mask"]),
+        "observed_forehead_mask": _save_l(v04_maps_dir / "v04_observed_forehead_mask.png", v04_maps["observed_forehead_mask"]),
+        "predicted_hairline_mask": _save_l(v04_maps_dir / "v04_predicted_hairline_mask.png", v04_maps["predicted_hairline_mask"]),
+        "eye_brow_guard_mask": _save_l(v04_maps_dir / "v04_eye_brow_guard_mask.png", v04_maps["eye_brow_guard_mask"]),
+        "changed_mask": _save_l(v04_maps_dir / "v04_changed_mask.png", v04_maps["changed_mask"]),
+        "weight": _save_l(v04_maps_dir / "v04_uniform_weight.png", v04_maps["weight"]),
+        "area_render_texture": _save_rgb(v04_area_texture_path, v04_maps["area_render_texture"]),
+        "area_overlay": _save_rgb(v04_maps_dir / "v04_area_overlay.png", v04_maps["area_overlay"]),
+        "reference_skin_rgb": _save_rgb(v04_maps_dir / "v04_non_forehead_reference_skin_debug_rgb.png", v04_maps["reference_skin_rgb"]),
+    }
+    if not args.skip_render:
+        v04_paths["before_v01_render"] = _render_stage_raw(
+            person=person,
+            stage="v04_before_v01_skin_holes",
+            texture_path=v01_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04_dir,
+            args=args,
+        )
+        v04_paths["after_redefined_render"] = _render_stage_raw(
+            person=person,
+            stage="v04_after_forehead_redefined",
+            texture_path=v04_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04_dir,
+            args=args,
+        )
+        v04_paths["area_render"] = _render_stage_raw(
+            person=person,
+            stage="v04_area_map",
+            texture_path=v04_area_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v04_dir,
+            args=args,
+        )
+        compact_sheet = _make_compact_before_after_sheet(
+            person=person,
+            title_stage="v04_forehead_redefined_region",
+            before_dir=_as_path(v04_paths["before_v01_render"]["render_dir"]),
+            after_dir=_as_path(v04_paths["after_redefined_render"]["render_dir"]),
+            area_dir=_as_path(v04_paths["area_render"]["render_dir"]),
+            output_path=v04_dir / "step6_v04_compact_review_sheet.png",
+            legend="Green=forehead region, orange=hair/black leftovers filled as forehead, yellow=smooth predicted hairline, blue=eye/brow guard, dark=not touched.",
+            before_label="before v01",
+            after_label="after v04",
+            area_label="area map",
+        )
+        if compact_sheet:
+            v04_paths["compact_review_sheet"] = compact_sheet
+
+    person_summary["stages"]["v04_forehead_redefined_region"] = {
+        "logic": "redefine upper-face forehead by smooth predicted hairline and eye/brow guard, then fill hair/black leftovers as forehead skin",
+        "paths": v04_paths,
+        "metrics": v04_meta,
     }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
@@ -1483,6 +1882,34 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Scan hairline hint used: {metrics['scan_hairline_hint'].get('used')}",
             "",
         ])
+    lines.extend([
+        "## v04_forehead_redefined_region",
+        "",
+        "This stage restarts from v01, keeps the v03 uniform-tone idea, but redefines the forehead by position.",
+        "The forehead is the upper-face region below a smooth predicted hairline and above/excluding eyes and brows.",
+        "Hair/black leftovers inside that region are filled as forehead instead of being preserved as black.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v04_forehead_redefined_region", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- Compact review: `{paths.get('compact_review_sheet')}`",
+            f"- Texture: `{paths.get('texture')}`",
+            f"- Target non-forehead face mean RGB: {[round(x, 2) for x in metrics['target_non_forehead_face_mean_rgb']]}",
+            f"- Forehead region texels: {metrics['forehead_region_texels']}",
+            f"- Filled hair/black/non-skin texels: {metrics['filled_non_skin_texels']}",
+            f"- Observed forehead texels: {metrics['observed_forehead_texels']}",
+            f"- Eye/brow guard texels: {metrics['eye_brow_guard_texels']}",
+            f"- Hairline fit mode: {metrics['hairline_fit_mode']}",
+            f"- Changed texels: {metrics['changed_texels']}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -1507,7 +1934,7 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": _safe_path(output_root),
         "blender_exe": _safe_path(args.blender_exe),
         "people": [],
-        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone", "v03_forehead_uniform_tone"],
+        "stages": ["v00_baseline", "v01_hard_skin_holes", "v02_forehead_tone", "v03_forehead_uniform_tone", "v04_forehead_redefined_region"],
         "parameters": {
             "close_radius": int(args.close_radius),
             "max_fill_distance": float(args.max_fill_distance),
@@ -1520,6 +1947,7 @@ def main(argv: list[str] | None = None) -> int:
             "forehead_y_max": float(args.forehead_y_max),
             "skip_baseline_renders": bool(args.skip_baseline_renders),
             "skip_v02_renders": bool(args.skip_v02_renders),
+            "skip_v03_renders": bool(args.skip_v03_renders),
         },
     }
 
@@ -1547,6 +1975,8 @@ def main(argv: list[str] | None = None) -> int:
                 "v02_metrics": _compact_metrics(item["stages"].get("v02_forehead_tone", {}).get("metrics", {})),
                 "v03_compact_review": item["stages"].get("v03_forehead_uniform_tone", {}).get("paths", {}).get("compact_review_sheet"),
                 "v03_metrics": _compact_metrics(item["stages"].get("v03_forehead_uniform_tone", {}).get("metrics", {})),
+                "v04_compact_review": item["stages"].get("v04_forehead_redefined_region", {}).get("paths", {}).get("compact_review_sheet"),
+                "v04_metrics": _compact_metrics(item["stages"].get("v04_forehead_redefined_region", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],

@@ -93,6 +93,7 @@ Completed:
 - Step 6 v00/v01: baseline plus conservative hard black skin-hole fill.
 - Step 6 v02: central forehead tone normalization.
 - Step 6 v03: diagnostic forehead uniform-tone replacement.
+- Step 6 v04: forehead region redefinition plus hair/black leftover fill.
 
 Current Step 3 winner:
 
@@ -161,10 +162,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_122600
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_131820
 ```
 
-Step 6 v01/v02/v03 status:
+Step 6 v01/v02/v03/v04 status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -202,8 +203,22 @@ Step 6 v01/v02/v03 status:
 - Review-sheet rule going forward: main sheets should be simple. Show before
   front/left45/right45, after front/left45/right45, and optionally area map
   front/left45/right45. Keep UV maps/debug maps out of the main human review.
+- `v04_forehead_redefined_region` is complete as a region-definition correction.
+- v04 restarts from v01, keeps the v03-style uniform-tone idea, but treats the
+  upper-face area below a smooth predicted hairline and outside eyes/brows as
+  forehead even when current pixels are black/hair/non-skin leftovers.
+- Juseop scan hairline frames remain boundary-only; no scan pixels are used as
+  texture/color/bake input.
+- Accepted v04 metrics:
+  - Juseop: 25,855 forehead-region texels, 6,201 filled hair/black texels,
+    45,545 reference face texels.
+  - Eunchae: 23,009 forehead-region texels, 7,694 filled hair/black texels,
+    26,087 reference face texels.
+- Visual judgment: v04 better matches the bald-head goal and includes Juseop's
+  right eyebrow-side hair remnant as forehead, but the result is still too flat
+  and the edited boundary is still visible.
 
-## 6. Next Active Step: Step 6 v04
+## 6. Next Active Step: Step 6 v05
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -212,7 +227,7 @@ Do not batch many fixes together.
 Planned order:
 
 1. Forehead edge/detail recovery
-   - Use v03 as a diagnostic baseline, not final output.
+   - Use v04's broader forehead region as the working definition.
    - Feather the boundary between edited forehead and unedited skin.
    - Reintroduce subtle skin detail from nearby reliable forehead or source
      projections where available.

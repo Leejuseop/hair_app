@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_122600
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_131820
 ```
 
 Implemented sub-steps:
@@ -267,6 +267,7 @@ v00_baseline = Step 5 blend texture
 v01_hard_skin_holes = conservative black-hole skin fill
 v02_forehead_tone = central forehead tone normalization
 v03_forehead_uniform_tone = diagnostic forehead uniform-tone replacement
+v04_forehead_redefined_region = forehead region redefinition plus hair-leftover fill
 ```
 
 v01 logic:
@@ -367,3 +368,50 @@ v03 interpretation:
 - The next useful Step 6 sub-step should keep v03 as a diagnostic reference,
   then add edge blending/detail recovery or region-aware inpainting before
   moving to mouth/lips and eye/brow material repair.
+
+v04 logic:
+
+- restart from the accepted v01 texture instead of building on the already-flat
+  v03 texture;
+- keep the v03-style uniform-tone replacement idea, but redefine the forehead
+  by position instead of by "already skin-looking" pixels;
+- fit a smooth, human-like hairline curve from the observed upper-face skin
+  boundary and the Juseop scan hairline hint when available;
+- use scan frames only as a hairline boundary hint, never as texture/color/bake
+  input;
+- define forehead as upper face below the smooth predicted hairline and above
+  or around the eye/brow guard;
+- include black/hair/non-skin leftovers inside that forehead region and fill
+  them as forehead instead of leaving them black;
+- keep eyes and eyebrows protected as blue guard regions;
+- write the same compact before/after/area render review sheet. UV/debug maps
+  stay private diagnostics.
+
+v04 color legend in the compact review sheet:
+
+```text
+green  = redefined forehead region
+orange = hair/black/non-skin leftovers filled as forehead
+yellow = smooth predicted hairline
+blue   = eye/brow guard, not edited as forehead skin
+dark   = not touched by v04
+```
+
+Observed v04 metrics at 1024 atlas:
+
+| Person | Forehead region texels | Filled hair/black texels | Reference face texels | Hairline hint | Read |
+| --- | ---: | ---: | ---: | --- | --- |
+| Juseop | 25,855 | 6,201 | 45,545 | scan boundary hint used | Better region definition; right eyebrow-side hair remnant is now included, but forehead remains flat |
+| Eunchae | 23,009 | 7,694 | 26,087 | no scan hint | Wider forehead fill works, but flat material and hard boundary remain |
+
+v04 interpretation:
+
+- v04 matches the revised product intent better than v03: if a pixel is in the
+  upper-face forehead region, hair leftovers should be removed and filled as
+  skin.
+- The smooth hairline curve is more human-like than the previous jagged
+  observed edge, but it is still a geometric prediction and must be reviewed.
+- v04 is still not final quality. It solves region definition better than v03,
+  but it increases the flat-forehead/material problem. The next pass should
+  focus on edge blending, skin-detail recovery, and making the filled forehead
+  look less like one flat patch.
