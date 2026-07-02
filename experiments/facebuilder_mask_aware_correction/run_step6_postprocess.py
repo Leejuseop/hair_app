@@ -9,6 +9,8 @@ and produces diagnostic review sheets. Implemented stages:
 - `v04_forehead_redefined_region`: redefine forehead by position, then fill hair leftovers.
 - `v04b_eyebrow_hairline_refine`: component-scored eyebrow guard, symmetric
   evidence-driven hairline lift, and eyebrow-baseline forehead definition.
+- `v05_side_neck_temporary_skin`: fill side/temple/ear dark fragments and
+  neck/jaw/clothing contamination with temporary skin material.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -64,6 +66,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-v03-renders", action="store_true")
     parser.add_argument("--skip-v04-renders", action="store_true")
     parser.add_argument("--skip-v04b-renders", action="store_true")
+    parser.add_argument("--skip-v05-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -2165,6 +2168,203 @@ def _step_v04b_eyebrow_hairline_refine(
     return maps, meta
 
 
+def _step_v05_side_neck_temporary_skin(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    source_count: np.ndarray,
+    v04b_maps: dict[str, np.ndarray],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    x = xx.astype(np.float32) / max(1, w - 1)
+    y = yy.astype(np.float32) / max(1, h - 1)
+
+    rgb = base.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    maxc = rgb.max(axis=2)
+    minc = rgb.min(axis=2)
+    chroma = maxc - minc
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+
+    eye_brow_guard = v04b_maps.get("eye_brow_guard_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    mirrored_brow = v04b_maps.get("mirrored_eyebrow_guard_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    final_hairline = v04b_maps.get("final_hairline_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    forehead_region = v04b_maps.get("forehead_region_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+
+    skin_like = reliable_skin & (luma > 46.0) & (luma < 238.0)
+    face_ref = (
+        skin_like
+        & (x >= 0.34)
+        & (x <= 0.66)
+        & (y >= 0.46)
+        & (y <= 0.66)
+        & (max_score > 0.22)
+        & (source_count > 0)
+    )
+    default_face = np.asarray([150.0, 98.0, 76.0], dtype=np.float32)
+    face_mean, face_ref_count = _trimmed_mean_rgb(base, face_ref, default_face)
+
+    side_ref = (
+        skin_like
+        & (y >= 0.38)
+        & (y <= 0.66)
+        & (((x >= 0.18) & (x <= 0.38)) | ((x >= 0.62) & (x <= 0.84)))
+        & (max_score > 0.16)
+    )
+    side_mean, side_ref_count = _trimmed_mean_rgb(base, side_ref, face_mean)
+    side_target = np.clip(side_mean * 0.62 + face_mean * 0.38, 0, 255)
+
+    neck_ref = (
+        skin_like
+        & (x >= 0.28)
+        & (x <= 0.74)
+        & (y >= 0.60)
+        & (y <= 0.79)
+        & (max_score > 0.14)
+    )
+    neck_fallback = np.clip(face_mean * np.asarray([0.82, 0.78, 0.75], dtype=np.float32), 0, 255)
+    neck_mean, neck_ref_count = _trimmed_mean_rgb(base, neck_ref, neck_fallback)
+    neck_target_top = np.clip(neck_mean * 0.55 + neck_fallback * 0.45, 0, 255)
+    neck_target_bottom = np.clip(face_mean * np.asarray([0.66, 0.62, 0.60], dtype=np.float32), 0, 255)
+
+    # Protect actual facial features and scalp/hairline boundaries. The pass is
+    # allowed to repair side/neck skin, but not to eat eyes, brows, mouth, or
+    # the newly defined forehead/hairline mask.
+    central_mouth = (
+        (x >= 0.38)
+        & (x <= 0.62)
+        & (y >= 0.46)
+        & (y <= 0.565)
+        & ((luma < 76.0) | (decision == COMPLETION_NEEDED))
+    )
+    mouth_guard = ndimage.binary_dilation(central_mouth, structure=_disk(3))
+    hairline_guard = ndimage.binary_dilation(final_hairline | forehead_region, structure=_disk(2)) & (y <= 0.51)
+    feature_guard = ndimage.binary_dilation(eye_brow_guard | mirrored_brow | mouth_guard, structure=_disk(2)) | hairline_guard
+    visible_feature_guard = ndimage.binary_dilation(eye_brow_guard | mirrored_brow | mouth_guard | final_hairline, structure=_disk(2))
+
+    ref_for_distance = skin_like & ~feature_guard & (max_score > 0.10)
+    if int(ref_for_distance.sum()) < 512:
+        ref_for_distance = skin_like & ~feature_guard
+    distance, nearest = ndimage.distance_transform_edt(~ref_for_distance, return_indices=True)
+    nearest_y, nearest_x = nearest
+    nearest_colors = base[nearest_y, nearest_x].astype(np.float32)
+
+    side_roi = (
+        (y >= 0.36)
+        & (y <= 0.66)
+        & (((x >= 0.16) & (x <= 0.39)) | ((x >= 0.61) & (x <= 0.86)))
+        & (distance <= 54.0)
+    )
+    temple_roi = (
+        (y >= 0.34)
+        & (y <= 0.53)
+        & (((x >= 0.22) & (x <= 0.39)) | ((x >= 0.61) & (x <= 0.78)))
+        & (distance <= 60.0)
+    )
+    neck_roi = (
+        (x >= 0.20)
+        & (x <= 0.82)
+        & (y >= 0.57)
+        & (y <= 0.84)
+        & (distance <= 132.0)
+    )
+    jaw_under_roi = (
+        (x >= 0.32)
+        & (x <= 0.72)
+        & (y >= 0.54)
+        & (y <= 0.67)
+        & (distance <= 116.0)
+    )
+
+    side_color_dist = np.sqrt(np.mean(((rgb - side_target.reshape(1, 1, 3)) / 48.0) ** 2.0, axis=2))
+    neck_t = np.clip((y - 0.58) / 0.25, 0.0, 1.0)
+    neck_target_map = neck_target_top.reshape(1, 1, 3) * (1.0 - neck_t[..., None]) + neck_target_bottom.reshape(1, 1, 3) * neck_t[..., None]
+    neck_color_dist = np.sqrt(np.mean(((rgb - neck_target_map) / 52.0) ** 2.0, axis=2))
+
+    severe_dark = (decision == COMPLETION_NEEDED) | (luma < 52.0)
+    weak_skin = (~reliable_skin & (luma < 128.0)) | (max_score < 0.12) | (source_count == 0)
+    cloth_like = (chroma > 72.0) | (neck_color_dist > 1.25) | ((luma > 160.0) & ~reliable_skin)
+
+    side_candidate = (side_roi | temple_roi) & ~feature_guard & (severe_dark | weak_skin | (side_color_dist > 1.35))
+    muted_cloth_or_shadow = (y >= 0.62) & (luma < 138.0) & (neck_color_dist > 0.72)
+    neck_candidate = (neck_roi | jaw_under_roi) & ~feature_guard & (severe_dark | weak_skin | cloth_like | muted_cloth_or_shadow)
+
+    # Keep the masks coherent without growing them into background.
+    valid_surface = ndimage.binary_dilation(ref_for_distance | side_candidate | neck_candidate, structure=_disk(2))
+    side_candidate = ndimage.binary_closing(side_candidate, structure=_disk(2)) & valid_surface & (distance <= 60.0)
+    neck_candidate = ndimage.binary_closing(neck_candidate, structure=_disk(3)) & valid_surface & (distance <= 138.0)
+    neck_candidate &= ~side_candidate | (y >= 0.59)
+    side_candidate &= ~neck_candidate
+
+    repaired = base.copy()
+
+    side_edge = np.clip(ndimage.distance_transform_edt(side_candidate).astype(np.float32) / 7.0, 0.0, 1.0)
+    side_weight = np.clip(0.46 + 0.34 * severe_dark.astype(np.float32) + 0.18 * (side_color_dist > 1.6).astype(np.float32), 0.0, 0.88)
+    side_weight *= side_edge
+    side_mix = np.clip(nearest_colors * 0.58 + side_target.reshape(1, 1, 3) * 0.42, 0, 255)
+    side_result = rgb * (1.0 - side_weight[..., None]) + side_mix * side_weight[..., None]
+    repaired[side_candidate] = np.clip(side_result[side_candidate], 0, 255).astype(np.uint8)
+
+    neck_edge = np.clip(ndimage.distance_transform_edt(neck_candidate).astype(np.float32) / 10.0, 0.0, 1.0)
+    neck_weight = np.clip(0.58 + 0.30 * severe_dark.astype(np.float32) + 0.20 * cloth_like.astype(np.float32), 0.0, 0.94)
+    neck_weight *= neck_edge
+    neck_mix = np.clip(nearest_colors * 0.30 + neck_target_map * 0.70, 0, 255)
+    neck_result = rgb * (1.0 - neck_weight[..., None]) + neck_mix * neck_weight[..., None]
+    repaired[neck_candidate] = np.clip(neck_result[neck_candidate], 0, 255).astype(np.uint8)
+
+    changed = np.any(repaired != base, axis=2)
+
+    area_rgb = np.zeros_like(base, dtype=np.uint8)
+    area_rgb[side_candidate] = (42, 220, 120)
+    area_rgb[neck_candidate] = (255, 142, 42)
+    area_rgb[visible_feature_guard] = (45, 125, 255)
+    overlay = base.copy()
+    for mask, color, alpha in [
+        (side_candidate, (42, 220, 120), 0.58),
+        (neck_candidate, (255, 142, 42), 0.66),
+        (visible_feature_guard, (45, 125, 255), 0.42),
+    ]:
+        overlay = _blend_overlay(overlay, mask, color, alpha=alpha)
+
+    maps = {
+        "texture": repaired,
+        "side_candidate_mask": side_candidate.astype(np.uint8) * 255,
+        "neck_candidate_mask": neck_candidate.astype(np.uint8) * 255,
+        "feature_guard_mask": visible_feature_guard.astype(np.uint8) * 255,
+        "changed_mask": changed.astype(np.uint8) * 255,
+        "area_render_texture": area_rgb,
+        "area_overlay": overlay,
+        "side_weight": np.clip(side_weight * 255.0, 0, 255).astype(np.uint8),
+        "neck_weight": np.clip(neck_weight * 255.0, 0, 255).astype(np.uint8),
+        "side_reference_skin_rgb": _mask_rgb(side_ref, (95, 220, 145)),
+        "neck_reference_skin_rgb": _mask_rgb(neck_ref, (255, 180, 80)),
+    }
+    meta = {
+        "logic": "temporary skin fill for side/temple/ear dark fragments and neck/jaw/clothing contamination",
+        "face_reference_texels": int(face_ref.sum()),
+        "side_reference_texels": int(side_ref.sum()),
+        "neck_reference_texels": int(neck_ref.sum()),
+        "target_face_rgb": [float(v) for v in face_mean.tolist()],
+        "target_side_rgb": [float(v) for v in side_target.tolist()],
+        "target_neck_top_rgb": [float(v) for v in neck_target_top.tolist()],
+        "target_neck_bottom_rgb": [float(v) for v in neck_target_bottom.tolist()],
+        "side_candidate_texels": int(side_candidate.sum()),
+        "neck_candidate_texels": int(neck_candidate.sum()),
+        "feature_guard_texels": int(visible_feature_guard.sum()),
+        "edit_block_guard_texels": int(feature_guard.sum()),
+        "changed_texels": int(changed.sum()),
+        "severe_dark_side_texels": int((side_candidate & severe_dark).sum()),
+        "severe_dark_neck_texels": int((neck_candidate & severe_dark).sum()),
+        "cloth_like_neck_texels": int((neck_candidate & cloth_like).sum()),
+        "mean_side_weight": float(side_weight[side_candidate].mean()) if np.any(side_candidate) else 0.0,
+        "mean_neck_weight": float(neck_weight[neck_candidate].mean()) if np.any(neck_candidate) else 0.0,
+    }
+    return maps, meta
+
+
 def _render_stage(
     *,
     person: str,
@@ -2646,6 +2846,77 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "paths": v04b_paths,
         "metrics": v04b_meta,
     }
+
+    v05_maps, v05_meta = _step_v05_side_neck_temporary_skin(
+        v04b_maps["texture"],
+        decision,
+        clean_score,
+        raw_score,
+        source_count,
+        v04b_maps,
+    )
+    v05_dir = output_dir / "v05_side_neck_temporary_skin"
+    v05_maps_dir = v05_dir / "maps"
+    v05_texture_path = v05_maps_dir / "v05_side_neck_temporary_skin_texture.png"
+    v05_area_texture_path = v05_maps_dir / "v05_area_render_texture.png"
+    v05_paths: dict[str, Any] = {
+        "texture": _save_rgb(v05_texture_path, v05_maps["texture"]),
+        "side_candidate_mask": _save_l(v05_maps_dir / "v05_side_candidate_mask.png", v05_maps["side_candidate_mask"]),
+        "neck_candidate_mask": _save_l(v05_maps_dir / "v05_neck_candidate_mask.png", v05_maps["neck_candidate_mask"]),
+        "feature_guard_mask": _save_l(v05_maps_dir / "v05_feature_guard_mask.png", v05_maps["feature_guard_mask"]),
+        "changed_mask": _save_l(v05_maps_dir / "v05_changed_mask.png", v05_maps["changed_mask"]),
+        "area_render_texture": _save_rgb(v05_area_texture_path, v05_maps["area_render_texture"]),
+        "area_overlay": _save_rgb(v05_maps_dir / "v05_area_overlay.png", v05_maps["area_overlay"]),
+        "side_weight": _save_l(v05_maps_dir / "v05_side_weight.png", v05_maps["side_weight"]),
+        "neck_weight": _save_l(v05_maps_dir / "v05_neck_weight.png", v05_maps["neck_weight"]),
+        "side_reference_skin_rgb": _save_rgb(v05_maps_dir / "v05_side_reference_skin_debug_rgb.png", v05_maps["side_reference_skin_rgb"]),
+        "neck_reference_skin_rgb": _save_rgb(v05_maps_dir / "v05_neck_reference_skin_debug_rgb.png", v05_maps["neck_reference_skin_rgb"]),
+    }
+    if not args.skip_render and not args.skip_v05_renders:
+        v05_paths["before_v04b_render"] = _render_stage_raw(
+            person=person,
+            stage="v05_before_v04b",
+            texture_path=v04b_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v05_dir,
+            args=args,
+        )
+        v05_paths["after_side_neck_render"] = _render_stage_raw(
+            person=person,
+            stage="v05_after_side_neck_temporary_skin",
+            texture_path=v05_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v05_dir,
+            args=args,
+        )
+        v05_paths["area_render"] = _render_stage_raw(
+            person=person,
+            stage="v05_area_map",
+            texture_path=v05_area_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v05_dir,
+            args=args,
+        )
+        compact_sheet = _make_compact_before_after_sheet(
+            person=person,
+            title_stage="v05_side_neck_temporary_skin",
+            before_dir=_as_path(v05_paths["before_v04b_render"]["render_dir"]),
+            after_dir=_as_path(v05_paths["after_side_neck_render"]["render_dir"]),
+            area_dir=_as_path(v05_paths["area_render"]["render_dir"]),
+            output_path=v05_dir / "step6_v05_compact_review_sheet.png",
+            legend="Green=side/temple/ear temporary skin, orange=neck/jaw/clothing temporary skin, blue=protected eye/brow/mouth/hairline, dark=not touched.",
+            before_label="before v04b",
+            after_label="after v05",
+            area_label="v05 area",
+        )
+        if compact_sheet:
+            v05_paths["compact_review_sheet"] = compact_sheet
+
+    person_summary["stages"]["v05_side_neck_temporary_skin"] = {
+        "logic": "fill side/temple/ear dark fragments and neck/jaw/clothing contamination as temporary skin while preserving protected facial features",
+        "paths": v05_paths,
+        "metrics": v05_meta,
+    }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
 
@@ -2807,6 +3078,33 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Changed texels: {metrics['changed_texels']}",
             "",
         ])
+    lines.extend([
+        "## v05_side_neck_temporary_skin",
+        "",
+        "This stage starts from v04b and repairs two broader temporary-skin regions before global skin blending.",
+        "Green marks side/temple/ear dark fragments filled with a mild side-skin target. Orange marks neck, under-jaw, and clothing-contaminated regions filled with a darker neck target. Blue is protected eye/brow/mouth/hairline material.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v05_side_neck_temporary_skin", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- Compact review: `{paths.get('compact_review_sheet')}`",
+            f"- Texture: `{paths.get('texture')}`",
+            f"- Side/temple/ear candidate texels: {metrics['side_candidate_texels']}",
+            f"- Neck/jaw/clothing candidate texels: {metrics['neck_candidate_texels']}",
+            f"- Protected feature texels: {metrics['feature_guard_texels']}",
+            f"- Changed texels: {metrics['changed_texels']}",
+            f"- Target side RGB: {[round(x, 2) for x in metrics['target_side_rgb']]}",
+            f"- Target neck top/bottom RGB: {[round(x, 2) for x in metrics['target_neck_top_rgb']]} / {[round(x, 2) for x in metrics['target_neck_bottom_rgb']]}",
+            f"- Mean side/neck weight: {round(metrics['mean_side_weight'], 3)} / {round(metrics['mean_neck_weight'], 3)}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -2838,6 +3136,7 @@ def main(argv: list[str] | None = None) -> int:
             "v03_forehead_uniform_tone",
             "v04_forehead_redefined_region",
             "v04b_eyebrow_hairline_refine",
+            "v05_side_neck_temporary_skin",
         ],
         "parameters": {
             "close_radius": int(args.close_radius),
@@ -2854,6 +3153,7 @@ def main(argv: list[str] | None = None) -> int:
             "skip_v03_renders": bool(args.skip_v03_renders),
             "skip_v04_renders": bool(args.skip_v04_renders),
             "skip_v04b_renders": bool(args.skip_v04b_renders),
+            "skip_v05_renders": bool(args.skip_v05_renders),
         },
     }
 
@@ -2885,6 +3185,8 @@ def main(argv: list[str] | None = None) -> int:
                 "v04_metrics": _compact_metrics(item["stages"].get("v04_forehead_redefined_region", {}).get("metrics", {})),
                 "v04b_compact_review": item["stages"].get("v04b_eyebrow_hairline_refine", {}).get("paths", {}).get("compact_review_sheet"),
                 "v04b_metrics": _compact_metrics(item["stages"].get("v04b_eyebrow_hairline_refine", {}).get("metrics", {})),
+                "v05_compact_review": item["stages"].get("v05_side_neck_temporary_skin", {}).get("paths", {}).get("compact_review_sheet"),
+                "v05_metrics": _compact_metrics(item["stages"].get("v05_side_neck_temporary_skin", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],

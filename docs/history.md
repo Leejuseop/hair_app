@@ -3292,3 +3292,56 @@ Visual read:
   views. This should not be fixed by blindly expanding forehead further, because
   it risks filling actual ear/scalp/side-face regions. It belongs in the later
   side-face/ear material pass.
+
+### 27.14 Step 6 v05: Side/Neck Temporary Skin Cleanup
+
+Date: 2026-07-02.
+
+Private Step 6 output after this pass:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_164709
+```
+
+Why this pass exists:
+
+- After v04b, the forehead/hairline/eyebrow region was finally defined well
+  enough, but 45-degree review still showed dark side-face, temple, and
+  ear-boundary chunks.
+- The lower head still showed clothing, black holes, and under-jaw/neck
+  contamination. The user decided these should be filled as temporary skin
+  before doing one global skin-blending pass.
+
+Code changes:
+
+- Added `v05_side_neck_temporary_skin` to
+  `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
+- v05 starts from v04b, not raw Step 5.
+- It builds two edit classes:
+  - side/temple/ear dark fragments, colored green in the review area map;
+  - neck/under-jaw/clothing contamination, colored orange in the review area
+    map.
+- It protects eyes, brows, mouth, and hairline in blue. The visible blue area
+  map was intentionally narrowed after review so the whole previously repaired
+  forehead is not confusingly displayed as a protected feature.
+- The mouth guard was narrowed and neck distance gates were widened after the
+  first v05 run left a central under-jaw/neck dark strip untouched.
+- The Blender diagnostic render script now adds broad left/right fill lights and
+  a brighter world color so 45-degree review renders are less dominated by
+  lighting darkness.
+
+Accepted v05 metrics at 1024 atlas:
+
+| Person | Side/temple/ear texels | Neck/jaw/clothing texels | Visible protected texels | Changed texels | Mean side/neck weight |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 52,112 | 119,702 | 13,249 | 171,723 | 0.735 / 0.669 |
+| Eunchae | 39,934 | 123,873 | 19,819 | 163,747 | 0.720 / 0.764 |
+
+Visual read:
+
+- Side/ear black chunks and lower neck/clothing leakage are reduced.
+- The result is still visibly patchy and temporary. This is expected because
+  v05 is only a region cleanup pass before global skin blending.
+- Next recommended step: lock eye/brow/mouth/lip protection masks, then blend
+  all confirmed skin regions together. Do not start final eye/mouth materials
+  until skin blending can avoid swallowing those features.

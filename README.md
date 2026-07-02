@@ -76,11 +76,10 @@ machine:
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02/v03/v04/v04b postprocess passes. The current
-  v04b revision uses component-scored eyebrow source selection, symmetric
-  evidence-driven hairline lift, and an eyebrow-baseline forehead definition
-  after review caught the older area-based brow selection, one-sided hairline
-  lift, and central-forehead-only region failures.
+  arbitration, and Step 6 v01/v02/v03/v04/v04b/v05 postprocess passes. The
+  current v05 revision keeps v04b as the forehead/eyebrow/hairline baseline,
+  then fills side/temple/ear dark fragments and neck/jaw/clothing contamination
+  with temporary skin material before later global skin blending.
   `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
   the Step 5 `blend` texture as its fixed baseline.
 
@@ -193,12 +192,16 @@ private_outputs/
    component quality instead of area, adds a symmetric flatter front-hairline
    lift, defines the forehead as the region below the hairline and above the
    eyebrow baseline except tight eye/brow guards, and still looks too flat.
-6. Next, repair the v04b flat-patch artifact with edge blending/detail recovery,
-   then repair mouth/lips, eyes/eyebrows, neck/lower clothing leakage, ears,
-   scalp/hairline, and final mild color smoothing.
-7. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+6. Treat v05 side/neck temporary skin cleanup as the current lower/side repair
+   baseline: it fills ear/temple/side-face dark fragments and neck/jaw/clothing
+   contamination, while protecting eyes, brows, mouth, and hairline. It is not
+   final skin blending.
+7. Next, lock the eye/brow/mouth/lip protection masks, then run global skin
+   blending over all confirmed skin regions. After that, repair eye/brow,
+   mouth/lips, scalp/hairline, and final mild color smoothing.
+8. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
    candidate unless visual review proves otherwise.
-8. Preserve confidence/provenance maps so observed pixels, blended pixels, and
+9. Preserve confidence/provenance maps so observed pixels, blended pixels, and
    generated/fallback pixels remain distinguishable.
-9. After the bald head is credible, decide whether the FaceBuilder mesh can be
+10. After the bald head is credible, decide whether the FaceBuilder mesh can be
    used directly for hair fitting or needs retopology/transfer.

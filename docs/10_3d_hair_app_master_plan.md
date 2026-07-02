@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_155348
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_164709
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1574,6 +1574,8 @@ Completed Step 6 sub-steps:
   hair/black leftover fill.
 - `v04b_eyebrow_hairline_refine`: component-scored fixed black eyebrow mask,
   symmetric broad hairline lift, and eyebrow-baseline forehead definition.
+- `v05_side_neck_temporary_skin`: side/temple/ear dark-fragment fill plus
+  neck/jaw/clothing temporary skin cleanup.
 
 Important Step 6 v01 result:
 
@@ -1670,11 +1672,32 @@ Important Step 6 v04b result:
   from the forehead pass. It still looks too flat and needs edge/detail
   recovery.
 
+Important Step 6 v05 result:
+
+- v05 starts from v04b and repairs two broader temporary-skin regions before
+  global skin blending:
+  - side/temple/ear dark fragments are filled with a mild side-skin target;
+  - neck, under-jaw, and clothing-contaminated regions are filled with a darker
+    neck-skin target.
+- Eyes, eyebrows, mouth, and hairline stay protected. The v05 area map uses:
+  green for side/temple/ear fill, orange for neck/jaw/clothing fill, blue for
+  visible protected feature/hairline material, and dark for untouched regions.
+- Diagnostic Blender review lighting was made more even with broad side fill
+  lights and a brighter world color so 45-degree renders are less misleadingly
+  dark.
+- v05 metrics:
+  - Juseop: 52,112 side/temple/ear texels, 119,702 neck/jaw/clothing texels,
+    13,249 visible protected texels, 171,723 changed texels.
+  - Eunchae: 39,934 side/temple/ear texels, 123,873 neck/jaw/clothing texels,
+    19,819 visible protected texels, 163,747 changed texels.
+- Visual review says the side/ear black chunks and lower clothing/neck
+  contamination are reduced, but the result is still temporary and patchy.
+  Do not treat v05 as final skin material.
+
 Remaining Step 6 should repair completion-needed and contaminated regions by
-semantic/material region: forehead edge/detail recovery from the v04b region,
-mouth/lips,
-eyes/brows, neck/lower leakage, ears/side face, scalp/hairline, and only then
-final color smoothing.
+semantic/material region. The next accepted order is to lock eye/brow/mouth/lip
+protection masks, then apply global skin blending over confirmed skin regions,
+then repair eye/brow, mouth/lips, scalp/hairline, and final color smoothing.
 
 Detailed Step 6 plan:
 
@@ -1700,38 +1723,37 @@ Detailed Step 6 plan:
      preserving local detail and avoiding a flat fake-skin patch.
    - Current v02 is complete as a safe but weak tone pass.
 
-4. Forehead edge/detail recovery
-   - Use v04b's broader forehead region and stronger eye/eyebrow/hairline
-     guards as the working definition.
-   - Feather the boundary between edited forehead and unedited skin.
-   - Restore subtle skin detail from clean nearby forehead or source-aware
-     projections where available.
-   - Avoid turning the forehead into one flat material.
-   - Keep eyes, eyebrows, hairline, scalp, mouth, and lower face protected.
-   - This is the next active sub-step before moving to mouth/lips.
+4. Side/neck temporary skin cleanup
+   - v05 is complete as a temporary region cleanup pass.
+   - It fills side/temple/ear dark fragments and neck/jaw/clothing leakage so
+     later global skin blending has fewer black or clothing-colored islands.
+   - It is not final skin quality and should not be judged as the final neck or
+     ear material.
 
-5. Mouth and lips
+5. Eye/brow/mouth/lip protection masks
+   - This is the next active sub-step.
+   - Lock the exact non-skin feature regions before global skin blending.
+   - Protect eyes, eyelids, brows, mouth interior, lips, nostril-like dark
+     pixels, and hairline/scalp boundaries from being averaged into skin.
+
+6. Global skin blending
+   - Blend all confirmed skin regions together after v04b/v05 region cleanup.
+   - Feather boundaries between forehead, cheek, side face, ear-adjacent skin,
+     jaw, and neck.
+   - Preserve broad natural differences: neck can stay darker, and ears/side
+     face should not be forced to the exact cheek color.
+
+7. Mouth and lips
    - Treat lip, mouth interior, teeth-like bright pixels, and nostril-like dark
      pixels as separate material regions.
    - Use controlled dark mouth material and lip color smoothing rather than
      diffusing cheek skin into the mouth.
 
-6. Eyes and brows
+8. Eyes and brows
    - Use separate eye/eyelid/brow repair masks.
    - Avoid blending eye whites or brow darkness into surrounding skin.
    - Prefer simple stable materials over noisy photo fragments until geometry
      or better eye assets are introduced.
-
-7. Neck, lower boundary, and clothing leakage
-   - Detect shirt/background remnants near the lower neck from decision/source
-     maps, color outliers, and semantic region location.
-   - Replace lower non-skin remnants with neck/scalp fallback only after a
-     review sheet confirms no useful observed skin is being removed.
-
-8. Ears and side face
-   - Fill low-confidence side/ear gaps conservatively.
-   - Use observed pixels first; use mirrored or neighboring fallback only for
-     truly missing regions.
 
 9. Scalp and hairline
    - Create a plausible scalp material and hairline transition.

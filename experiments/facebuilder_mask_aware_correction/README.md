@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_155348
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_164709
 ```
 
 Implemented sub-steps:
@@ -269,6 +269,7 @@ v02_forehead_tone = central forehead tone normalization
 v03_forehead_uniform_tone = diagnostic forehead uniform-tone replacement
 v04_forehead_redefined_region = forehead region redefinition plus hair-leftover fill
 v04b_eyebrow_hairline_refine = component-scored fixed black eyebrow mask plus symmetric broad hairline lift
+v05_side_neck_temporary_skin = side/temple/ear plus neck/jaw/clothing temporary skin cleanup
 ```
 
 v01 logic:
@@ -488,3 +489,45 @@ v04b interpretation:
 - This is still not final quality. The forehead repair remains a broad tone
   replacement and needs edge blending plus skin-detail recovery before moving
   on to mouth, eyes, neck, ears, and scalp.
+
+v05 logic:
+
+- start from v04b, not from raw Step 5;
+- keep the v04b forehead/eyebrow/hairline result as a protected baseline;
+- detect side/temple/ear dark fragments near reliable skin and fill them with
+  a mild side-skin target so ear/side-face geometry stops rendering as black
+  chunks;
+- detect neck, under-jaw, and lower clothing contamination using UV position,
+  dark/completion status, weak skin confidence, source count, and color
+  distance from a darker neck target;
+- keep eyes, eyebrows, mouth, and hairline protected. The area map now shows
+  only visible protected features in blue, not the whole previously edited
+  forehead, so the main sheet stays readable;
+- adjust Blender diagnostic lighting with broad side fill lights and a brighter
+  world color so 45-degree review renders are less dominated by lighting
+  darkness.
+
+v05 compact review colors:
+
+```text
+green  = side/temple/ear temporary skin fill
+orange = neck/jaw/clothing temporary skin fill
+blue   = protected eye/brow/mouth/hairline material
+dark   = not touched by v05
+```
+
+Observed v05 metrics at 1024 atlas:
+
+| Person | Side/temple/ear texels | Neck/jaw/clothing texels | Visible protected texels | Changed texels | Mean side/neck weight | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Juseop | 52,112 | 119,702 | 13,249 | 171,723 | 0.735 / 0.669 | Side/temple black chunks and lower-neck contamination are reduced, but the material is still temporary |
+| Eunchae | 39,934 | 123,873 | 19,819 | 163,747 | 0.720 / 0.764 | Neck/clothing contamination is pulled toward temporary skin while eyes/brows/mouth stay protected |
+
+v05 interpretation:
+
+- v05 is a region cleanup pass, not final skin blending. It intentionally makes
+  side/neck regions more skin-like so later global blending has fewer black or
+  clothing-colored islands to fight.
+- The neck and side-face are still visibly patchy. That is expected at this
+  stage because the next accepted step should first lock eye/brow/mouth/lip
+  protection masks and then blend all confirmed skin regions together.

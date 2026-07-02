@@ -110,8 +110,20 @@ def _setup_review_scene(head_obj: Any) -> dict[str, Any]:
     bpy.ops.object.light_add(type="AREA", location=(center[0], center[1] - largest * 2.5, center[2] + largest * 1.5))
     light = bpy.context.object
     light.name = "HairApp_Step4_AreaLight"
-    light.data.energy = 500
-    light.data.size = largest * 2.2
+    light.data.energy = 420
+    light.data.size = largest * 2.6
+
+    # Review renders should expose texture defects, not dramatic lighting.
+    # Add broad side fill so 45-degree sheets stay readable.
+    for name, x_sign in [("LeftFill", -1.0), ("RightFill", 1.0)]:
+        bpy.ops.object.light_add(
+            type="AREA",
+            location=(center[0] + largest * 1.8 * x_sign, center[1] - largest * 1.9, center[2] + largest * 0.95),
+        )
+        fill = bpy.context.object
+        fill.name = f"HairApp_Step4_{name}"
+        fill.data.energy = 180
+        fill.data.size = largest * 2.8
 
     bpy.ops.object.camera_add(location=(center[0], center[1] - largest * 3.0, center[2] + largest * 0.05))
     camera = bpy.context.object
@@ -125,7 +137,7 @@ def _setup_review_scene(head_obj: Any) -> dict[str, Any]:
     bpy.context.scene.render.resolution_x = 900
     bpy.context.scene.render.resolution_y = 1100
     bpy.context.scene.render.film_transparent = False
-    bpy.context.scene.world.color = (0.03, 0.03, 0.03)
+    bpy.context.scene.world.color = (0.12, 0.12, 0.12)
     try:
         bpy.context.scene.render.engine = "BLENDER_EEVEE_NEXT"
     except Exception:

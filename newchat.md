@@ -164,10 +164,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_155348
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_164709
 ```
 
-Step 6 v01/v02/v03/v04/v04b status:
+Step 6 v01/v02/v03/v04/v04b/v05 status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -247,10 +247,24 @@ Step 6 v01/v02/v03/v04/v04b status:
   makes the front hairline lift symmetric. The eyebrow-baseline forehead rule
   reduces central/upper hairline black remnants. Small side/ear-boundary
   artifacts can still remain and should be handled later in side-face/ear
-  repair, not by blindly widening the forehead. It still leaves flat forehead
-  material and visible boundaries, so v05 should recover edge/detail.
+  repair, not by blindly widening the forehead.
+- `v05_side_neck_temporary_skin` is complete as a temporary lower/side cleanup
+  pass.
+- v05 fills side/temple/ear dark fragments with a mild side-skin target and
+  neck/jaw/clothing contamination with a darker neck-skin target. It protects
+  eyes, brows, mouth, and hairline.
+- Accepted v05 metrics:
+  - Juseop: 52,112 side/temple/ear texels, 119,702 neck/jaw/clothing texels,
+    13,249 visible protected texels, 171,723 changed texels.
+  - Eunchae: 39,934 side/temple/ear texels, 123,873 neck/jaw/clothing texels,
+    19,819 visible protected texels, 163,747 changed texels.
+- Diagnostic Blender review lighting now has broad side fill lights and a
+  brighter world color so 45-degree renders are easier to judge.
+- Visual judgment: v05 reduces side/ear black chunks and lower neck/clothing
+  leakage, but the material is still patchy and temporary. Do not treat it as
+  final skin blending.
 
-## 6. Next Active Step: Step 6 v05
+## 6. Next Active Step: Step 6 v06
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -258,37 +272,31 @@ Do not batch many fixes together.
 
 Planned order:
 
-1. Forehead edge/detail recovery
-   - Use v04b's broader forehead region and stronger eye/eyebrow/hairline
-     guards as the working definition.
-   - Feather the boundary between edited forehead and unedited skin.
-   - Reintroduce subtle skin detail from nearby reliable forehead or source
-     projections where available.
-   - Avoid making the forehead one flat material.
-   - Keep eyes, eyebrows, hairline, scalp, mouth, and lower face protected.
+1. Lock eye/brow/mouth/lip protection masks
+   - Before global skin blending, define the exact regions that must not be
+     averaged into skin.
+   - Protect eyes, eyelids, brows, mouth interior, lips, nostrils, and
+     hairline/scalp boundaries.
 
-2. Mouth and lips
+2. Global skin blending
+   - Blend all confirmed skin regions together: forehead, cheeks, side face,
+     ear-adjacent skin, jaw, and neck.
+   - Keep neck slightly darker and avoid forcing ears/side face to exact cheek
+     color.
+
+3. Mouth and lips
    - Repair mouth interior and lips as separate materials.
    - Do not diffuse cheek skin into the mouth.
 
-3. Eyes and brows
+4. Eyes and brows
    - Repair eye, eyelid, and brow regions separately.
    - Avoid blending eye whites or brow darkness into skin.
 
-4. Neck and lower leakage
-   - Remove shirt/background remnants near lower neck using semantic location,
-     decision/source maps, and color outlier checks.
-   - Replace only after review confirms useful skin is not being removed.
-
-5. Ears and side face
-   - Fill low-confidence ear/side gaps conservatively.
-   - Use observed pixels first; use fallback only for missing regions.
-
-6. Scalp and hairline
+5. Scalp and hairline
    - Create plausible scalp material and hairline transition.
    - Keep scalp/hairline separate from forehead skin.
 
-7. Final mild color pass
+6. Final mild color pass
    - Apply only after individual repairs are accepted.
    - Avoid early global color correction because it hides which sub-step helped.
 
