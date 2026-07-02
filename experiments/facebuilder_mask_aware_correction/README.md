@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260701_153519
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_155348
 ```
 
 Implemented sub-steps:
@@ -430,6 +430,11 @@ v04b logic:
   side and mirror only the good component. If both sides are good and similar,
   keep the component masks. This stage still does not color-transfer eyebrow
   texture because eye/brow material repair is a later stage;
+- define the edited forehead as: below the final hairline, above the eyebrow
+  baseline, and outside only the tight eye/eyebrow guard. This replaces the
+  earlier central-component/reliable-skin-support definition so temple-side
+  forehead remnants are not skipped just because they are black/non-skin in the
+  current texture;
 - keep Juseop app-scan frames as hairline-boundary hints only, never as
   texture/color/bake input;
 - first fit the smooth predicted hairline, reduce the front curvature so it is
@@ -463,8 +468,8 @@ Observed v04b metrics at 1024 atlas:
 
 | Person | Forehead region texels | Filled hair/black texels | Symmetric eyebrow texels | Hairline lift columns | Max hairline lift px | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Juseop | 26,448 | 6,428 | 1,708 | 197 supported / 312 smoothed | 43.61 | Brow source is the smaller good component (`61x16`) mirrored to both sides; front hairline lift is symmetric |
-| Eunchae | 22,146 | 6,104 | 1,838 | 135 supported / 212 smoothed | 63.43 | Right good brow component (`63x16`) is mirrored; lower face and neck still need separate repair |
+| Juseop | 20,252 | 6,826 | 1,708 | 202 supported / 334 smoothed | 48.63 | Brow source remains the smaller good component (`61x16`); forehead is clipped at the eyebrow baseline instead of central-only support |
+| Eunchae | 22,053 | 10,223 | 1,838 | 128 supported / 220 smoothed | 62.17 | Right good brow component (`63x16`) is mirrored; wider upper-face forehead definition fills more non-skin texels |
 
 v04b interpretation:
 
@@ -476,6 +481,10 @@ v04b interpretation:
   curve as evidence, but the actual lift is mirrored across the frontal segment
   before rendering the final hairline. This prevents the previous one-sided
   lift artifact.
+- The newest v04b revision also changes the forehead region definition to the
+  user's rule: hairline below + eyebrow-baseline above + tight eye/brow
+  exclusions. It intentionally does not solve lower cheek, neck, clothing,
+  mouth, or side-face/ear artifacts in the same pass.
 - This is still not final quality. The forehead repair remains a broad tone
   replacement and needs edge blending plus skin-detail recovery before moving
   on to mouth, eyes, neck, ears, and scalp.

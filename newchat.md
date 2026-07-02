@@ -94,8 +94,8 @@ Completed:
 - Step 6 v02: central forehead tone normalization.
 - Step 6 v03: diagnostic forehead uniform-tone replacement.
 - Step 6 v04: forehead region redefinition plus hair/black leftover fill.
-- Step 6 v04b: component-scored fixed black eyebrow mask plus symmetric broad
-  hairline lift.
+- Step 6 v04b: component-scored fixed black eyebrow mask, symmetric broad
+  hairline lift, and eyebrow-baseline forehead definition.
 
 Current Step 3 winner:
 
@@ -164,7 +164,7 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260701_153519
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_155348
 ```
 
 Step 6 v01/v02/v03/v04/v04b status:
@@ -232,17 +232,23 @@ Step 6 v01/v02/v03/v04/v04b status:
   circular, and reliable forehead-skin pixels above the first smooth curve can
   broadly lift the front segment. The lift delta is mirrored across the frontal
   segment so one-sided skin evidence cannot produce a one-sided hairline.
+- v04b now defines the edited forehead as below the final hairline and above
+  the eyebrow baseline, excluding only tight eye/eyebrow guards. This replaced
+  the central-component-only definition that left upper hairline/temple
+  fragments unedited.
 - Accepted v04b metrics:
-  - Juseop: 26,448 forehead-region texels, 6,428 filled hair/black texels,
-    1,708 symmetric eyebrow texels, max hairline lift 43.61 px. Selected brow
+  - Juseop: 20,252 forehead-region texels, 6,826 filled hair/black texels,
+    1,708 symmetric eyebrow texels, max hairline lift 48.63 px. Selected brow
     source is the left `61x16` component, score `4.85`.
-  - Eunchae: 22,146 forehead-region texels, 6,104 filled hair/black texels,
-    1,838 symmetric eyebrow texels, max hairline lift 63.43 px. Selected brow
+  - Eunchae: 22,053 forehead-region texels, 10,223 filled hair/black texels,
+    1,838 symmetric eyebrow texels, max hairline lift 62.17 px. Selected brow
     source is the right `63x16` component, score `5.00`.
 - Visual judgment: v04b now avoids copying the larger bad eyebrow-like blob and
-  makes the front hairline lift symmetric. It still leaves flat forehead
-  material and visible boundaries, so v05 should recover edge/detail rather
-  than widen the region again.
+  makes the front hairline lift symmetric. The eyebrow-baseline forehead rule
+  reduces central/upper hairline black remnants. Small side/ear-boundary
+  artifacts can still remain and should be handled later in side-face/ear
+  repair, not by blindly widening the forehead. It still leaves flat forehead
+  material and visible boundaries, so v05 should recover edge/detail.
 
 ## 6. Next Active Step: Step 6 v05
 

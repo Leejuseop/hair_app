@@ -3239,3 +3239,56 @@ Visual read:
 - Remaining issues are unchanged: forehead material is still too flat,
   eyebrow/eye material is still placeholder-level, and neck/clothing/side-face
   artifacts still need separate material-region passes.
+
+### 27.13 Step 6 v04b Correction: Eyebrow-Baseline Forehead Definition
+
+Date: 2026-07-02.
+
+Private Step 6 output after this correction:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_155348
+```
+
+Why this correction exists:
+
+- Review showed black/dirty fragments near the hairline and temple-side
+  forehead after v04b.
+- The blue area-map color meant eye/brow guard, but the guard and central
+  component filtering were too broad for this pass. Some pixels that should be
+  forehead were not being edited because the old region still depended on
+  reliable-skin support or central connected components.
+- The user clarified the intended rule: not just the central forehead, but
+  everything above the eyebrow baseline and below the hairline should count as
+  forehead, except actual eyes/eyebrows and ear/scalp regions.
+
+Code changes:
+
+- v04b forehead x-range was widened from the earlier central range to
+  approximately `0.235..0.765`.
+- The final v04b forehead region is now:
+  - below the symmetric lifted hairline;
+  - above the eyebrow baseline;
+  - outside a tighter eye/eyebrow exclusion;
+  - no longer filtered down to only one central connected forehead component.
+- The raw broad eye/brow guard is still saved for diagnostics, but the blue area
+  map now represents the tighter exclusion used by the forehead pass.
+- The pass still does not solve lower cheek, mouth, neck, clothing, or
+  side-face/ear material. Those remain separate material-region passes.
+
+Corrected v04b metrics at 1024 atlas:
+
+| Person | Forehead region texels | Filled hair/black texels | Brow-axis y px | Tight feature guard texels | Hairline lift columns | Max hairline lift px |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 20,252 | 6,826 | 450 | 4,346 | 202 supported / 334 smoothed | 48.63 |
+| Eunchae | 22,053 | 10,223 | 452 | 5,599 | 128 supported / 220 smoothed | 62.17 |
+
+Visual read:
+
+- The central/right upper-forehead black wedge is reduced compared with the
+  previous v04b because the region no longer depends on central-only component
+  filtering.
+- A small dark side/ear-boundary artifact can remain in left/right 45-degree
+  views. This should not be fixed by blindly expanding forehead further, because
+  it risks filling actual ear/scalp/side-face regions. It belongs in the later
+  side-face/ear material pass.

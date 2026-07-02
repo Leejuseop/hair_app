@@ -7,8 +7,8 @@ and produces diagnostic review sheets. Implemented stages:
 - `v02_forehead_tone`: protect eyes/brows/hairline, then repair forehead tone.
 - `v03_forehead_uniform_tone`: unify forehead skin to non-forehead face skin tone.
 - `v04_forehead_redefined_region`: redefine forehead by position, then fill hair leftovers.
-- `v04b_eyebrow_hairline_refine`: component-scored eyebrow guard plus
-  symmetric evidence-driven hairline lift.
+- `v04b_eyebrow_hairline_refine`: component-scored eyebrow guard, symmetric
+  evidence-driven hairline lift, and eyebrow-baseline forehead definition.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -1413,6 +1413,24 @@ def _mirror_mask_x(mask: np.ndarray, *, center_x: int, x_min_px: int, x_max_px: 
     return mirrored
 
 
+def _component_count_meta(mask: np.ndarray, prefix: str) -> dict[str, Any]:
+    labels, count = ndimage.label(mask)
+    areas: list[int] = []
+    for slices in ndimage.find_objects(labels):
+        if slices is None:
+            continue
+        component = labels[slices] > 0
+        areas.append(int(component.sum()))
+    areas.sort(reverse=True)
+    return {
+        f"{prefix}_component_count": int(count),
+        f"{prefix}_components_kept": int(count),
+        f"{prefix}_components_rejected": 0,
+        f"{prefix}_component_filter_fallback_used": False,
+        f"{prefix}_component_areas_preview": areas[:12],
+    }
+
+
 def _symmetrize_eyebrow_guard(
     texture: np.ndarray,
     decision: np.ndarray,
@@ -1929,8 +1947,8 @@ def _step_v04b_eyebrow_hairline_refine(
 
     y_min = float(np.clip(forehead_y_min + y_shift, 0.24, 0.38))
     y_bottom = float(np.clip(max(forehead_y_max + 0.010, y_min + 0.105), y_min + 0.095, 0.475))
-    x_min = float(max(0.25, forehead_x_min - 0.015))
-    x_max = float(min(0.75, forehead_x_max + 0.015))
+    x_min = float(max(0.22, forehead_x_min - 0.045))
+    x_max = float(min(0.78, forehead_x_max + 0.045))
     x_min_px = int(w * x_min)
     x_max_px = int(w * x_max)
     y_min_px = int(h * y_min)
@@ -1970,9 +1988,9 @@ def _step_v04b_eyebrow_hairline_refine(
         & below_final_hairline
         & (yy <= y_bottom_px)
     )
-    position_forehead &= face_support
+    initial_position_forehead = position_forehead.copy()
     first_pass_hairline &= ndimage.binary_dilation(face_support, structure=_disk(4))
-    final_hairline &= ndimage.binary_dilation(face_support, structure=_disk(4))
+    final_hairline &= ndimage.binary_dilation(position_forehead | face_support, structure=_disk(4))
 
     initial_eye_brow_guard, guard_meta = _eye_brow_guard_for_redefined_forehead(
         base,
@@ -1983,7 +2001,7 @@ def _step_v04b_eyebrow_hairline_refine(
         y_min_px=y_min_px,
         y_bottom_px=y_bottom_px,
     )
-    eye_brow_guard, mirrored_eyebrow_mask, mirrored_eyebrow_rgb, eyebrow_meta = _symmetrize_eyebrow_guard(
+    raw_eye_brow_guard, mirrored_eyebrow_mask, mirrored_eyebrow_rgb, eyebrow_meta = _symmetrize_eyebrow_guard(
         base,
         decision,
         reliable_skin,
@@ -1997,9 +2015,37 @@ def _step_v04b_eyebrow_hairline_refine(
         y_bottom_px=y_bottom_px,
     )
 
-    forehead_region = position_forehead & ~eye_brow_guard
-    forehead_region = ndimage.binary_closing(forehead_region, structure=_disk(2)) & position_forehead & ~eye_brow_guard
-    forehead_region, component_meta = _keep_central_forehead_components(forehead_region)
+    if np.any(mirrored_eyebrow_mask):
+        brow_y = np.where(mirrored_eyebrow_mask)[0]
+        brow_axis_px = int(np.clip(
+            np.percentile(brow_y, 96.0) + h * 0.018,
+            y_min_px + int(h * 0.090),
+            y_bottom_px,
+        ))
+    else:
+        brow_axis_px = int(np.clip(y_min_px + h * 0.145, y_min_px + int(h * 0.090), y_bottom_px))
+
+    eye_zone_top = max(0, brow_axis_px - int(h * 0.058))
+    eye_zone_bottom = min(h - 1, brow_axis_px + int(h * 0.035))
+    eye_only_guard = (
+        raw_eye_brow_guard
+        & (yy >= eye_zone_top)
+        & (yy <= eye_zone_bottom)
+        & position_forehead
+    )
+    eyebrow_only_guard = ndimage.binary_dilation(mirrored_eyebrow_mask, structure=_disk(2)) & position_forehead
+    forehead_feature_guard = (eye_only_guard | eyebrow_only_guard) & position_forehead
+    # Final forehead definition for this pass:
+    # below hairline + above eyebrow baseline + not actual eye/eyebrow.
+    position_forehead = (
+        initial_position_forehead
+        & (yy <= brow_axis_px)
+        & ~forehead_feature_guard
+    )
+    position_forehead = ndimage.binary_closing(position_forehead, structure=_disk(2)) & initial_position_forehead & (yy <= brow_axis_px) & ~forehead_feature_guard
+    forehead_region = position_forehead
+    component_meta = _component_count_meta(forehead_region, "forehead")
+    eye_brow_guard = forehead_feature_guard
 
     max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
     ref_roi = (
@@ -2067,6 +2113,7 @@ def _step_v04b_eyebrow_hairline_refine(
         "final_hairline_mask": final_hairline.astype(np.uint8) * 255,
         "hairline_lift_skin_mask": lift_skin_mask.astype(np.uint8) * 255,
         "initial_eye_brow_guard_mask": initial_eye_brow_guard.astype(np.uint8) * 255,
+        "raw_eye_brow_guard_mask": raw_eye_brow_guard.astype(np.uint8) * 255,
         "eye_brow_guard_mask": eye_brow_guard.astype(np.uint8) * 255,
         "mirrored_eyebrow_guard_mask": mirrored_eyebrow_mask.astype(np.uint8) * 255,
         "changed_mask": changed.astype(np.uint8) * 255,
@@ -2094,7 +2141,15 @@ def _step_v04b_eyebrow_hairline_refine(
         "final_hairline_texels": int(final_hairline.sum()),
         "eye_brow_guard_texels": int(eye_brow_guard.sum()),
         "initial_eye_brow_guard_texels": int(initial_eye_brow_guard.sum()),
+        "raw_eye_brow_guard_texels": int(raw_eye_brow_guard.sum()),
         "mirrored_eyebrow_texels": int(mirrored_eyebrow_mask.sum()),
+        "forehead_definition_mode": "below_hairline_above_brow_axis_except_tight_eye_brow_guard",
+        "position_forehead_texels_before_brow_axis": int(initial_position_forehead.sum()),
+        "brow_axis_y_px": int(brow_axis_px),
+        "eye_zone_top_px": int(eye_zone_top),
+        "eye_zone_bottom_px": int(eye_zone_bottom),
+        "tight_eye_guard_texels": int(eye_only_guard.sum()),
+        "forehead_feature_guard_texels": int(forehead_feature_guard.sum()),
         "changed_texels": int(changed.sum()),
         "mean_abs_rgb_delta_on_changed": (
             float(np.abs(uniform.astype(np.int16) - base.astype(np.int16)).sum(axis=2)[changed].mean())
@@ -2527,6 +2582,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "final_hairline_mask": _save_l(v04b_maps_dir / "v04b_final_hairline_mask.png", v04b_maps["final_hairline_mask"]),
         "hairline_lift_skin_mask": _save_l(v04b_maps_dir / "v04b_hairline_lift_skin_mask.png", v04b_maps["hairline_lift_skin_mask"]),
         "initial_eye_brow_guard_mask": _save_l(v04b_maps_dir / "v04b_initial_eye_brow_guard_mask.png", v04b_maps["initial_eye_brow_guard_mask"]),
+        "raw_eye_brow_guard_mask": _save_l(v04b_maps_dir / "v04b_raw_eye_brow_guard_mask.png", v04b_maps["raw_eye_brow_guard_mask"]),
         "eye_brow_guard_mask": _save_l(v04b_maps_dir / "v04b_eye_brow_guard_mask.png", v04b_maps["eye_brow_guard_mask"]),
         "mirrored_eyebrow_guard_mask": _save_l(v04b_maps_dir / "v04b_mirrored_eyebrow_guard_mask.png", v04b_maps["mirrored_eyebrow_guard_mask"]),
         "changed_mask": _save_l(v04b_maps_dir / "v04b_changed_mask.png", v04b_maps["changed_mask"]),
@@ -2586,7 +2642,7 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
             v04b_paths["compact_review_sheet"] = compact_sheet
 
     person_summary["stages"]["v04b_eyebrow_hairline_refine"] = {
-        "logic": "start from v04 forehead redefinition, choose eyebrow source by component quality, mirror good brows as a fixed black mask, flatten the front hairline shape, then symmetrically lift it from reliable forehead-skin evidence",
+        "logic": "start from v04 forehead redefinition, choose eyebrow source by component quality, mirror good brows as a fixed black mask, flatten and symmetrically lift the front hairline, then define forehead as below hairline and above eyebrow baseline except tight eye/brow guards",
         "paths": v04b_paths,
         "metrics": v04b_meta,
     }
@@ -2719,6 +2775,7 @@ def _build_report(summary: dict[str, Any]) -> str:
         "This stage keeps the v04 forehead definition idea, but fixes two issues seen in review.",
         "First, eyebrow/eye protection is strengthened with component-scored source selection. When one brow side is good and the other is bad/missing, the bad side is discarded and the good component is mirrored as a fixed black symmetric mask, not color-transferred texture.",
         "Second, the first smooth hairline is reshaped to be less circular across the front, then lifted from reliable forehead-skin evidence with a mirrored frontal lift so one-sided evidence cannot create a one-sided hairline.",
+        "Third, the edited forehead is now below the hairline and above the eyebrow baseline, excluding only tight eye/brow guards, instead of keeping only a central reliable-skin component.",
         "The compact sheet adds a bottom row for the secondary hairline correction: purple is the first line, yellow is the lifted line, and cyan is the skin evidence used for the broad lift.",
         "",
     ])
@@ -2737,6 +2794,8 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Forehead region texels: {metrics['forehead_region_texels']}",
             f"- Filled hair/black/non-skin texels: {metrics['filled_non_skin_texels']}",
             f"- Observed forehead texels: {metrics['observed_forehead_texels']}",
+            f"- Forehead definition mode: {metrics.get('forehead_definition_mode')}",
+            f"- Brow-axis y px: {metrics.get('brow_axis_y_px')}",
             f"- Initial/final eye-brow guard texels: {metrics['initial_eye_brow_guard_texels']} / {metrics['eye_brow_guard_texels']}",
             f"- Symmetric black eyebrow-mask texels: {metrics['mirrored_eyebrow_texels']} ({metrics['eyebrow_mirror_mode']})",
             f"- Selected eyebrow source: {metrics.get('eyebrow_selected_source')}",
