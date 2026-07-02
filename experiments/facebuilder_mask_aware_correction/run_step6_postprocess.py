@@ -11,6 +11,8 @@ and produces diagnostic review sheets. Implemented stages:
   evidence-driven hairline lift, and eyebrow-baseline forehead definition.
 - `v05_side_neck_temporary_skin`: fill side/temple/ear dark fragments and
   neck/jaw/clothing contamination with temporary skin material.
+- `v06_simple_bald_skin_fill`: black out everything above the hairline, then
+  keep good pixels and fill bad below-hairline pixels with simple skin.
 
 Private generated assets stay in Drive. Do not commit outputs.
 """
@@ -67,6 +69,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-v04-renders", action="store_true")
     parser.add_argument("--skip-v04b-renders", action="store_true")
     parser.add_argument("--skip-v05-renders", action="store_true")
+    parser.add_argument("--skip-v06-renders", action="store_true")
     parser.add_argument("--skip-render", action="store_true")
     return parser.parse_args(argv)
 
@@ -2365,6 +2368,186 @@ def _step_v05_side_neck_temporary_skin(
     return maps, meta
 
 
+def _hairline_curve_from_mask(mask: np.ndarray, *, fallback_y: int) -> np.ndarray:
+    h, w = mask.shape
+    curve = np.full(w, float(fallback_y), dtype=np.float32)
+    xs_with_line: list[int] = []
+    ys_with_line: list[float] = []
+    for x in range(w):
+        rows = np.where(mask[:, x])[0]
+        if rows.size:
+            xs_with_line.append(x)
+            ys_with_line.append(float(np.percentile(rows, 50.0)))
+    if len(xs_with_line) >= 2:
+        curve = np.interp(
+            np.arange(w, dtype=np.float32),
+            np.asarray(xs_with_line, dtype=np.float32),
+            np.asarray(ys_with_line, dtype=np.float32),
+        ).astype(np.float32)
+    elif len(xs_with_line) == 1:
+        curve[:] = ys_with_line[0]
+    curve = ndimage.gaussian_filter1d(curve, sigma=max(3.0, w / 96.0), mode="nearest")
+    return np.clip(curve, 0, h - 1)
+
+
+def _step_v06_simple_bald_skin_fill(
+    base: np.ndarray,
+    decision: np.ndarray,
+    clean_score: np.ndarray,
+    raw_score: np.ndarray,
+    source_count: np.ndarray,
+    v04b_maps: dict[str, np.ndarray],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reliable_skin = _broad_skin_mask(base, decision)
+    h, w = decision.shape
+    yy, xx = np.indices((h, w))
+    x = xx.astype(np.float32) / max(1, w - 1)
+    y = yy.astype(np.float32) / max(1, h - 1)
+    rgb = base.astype(np.float32)
+    luma = rgb[..., 0] * 0.2126 + rgb[..., 1] * 0.7152 + rgb[..., 2] * 0.0722
+    maxc = rgb.max(axis=2)
+    minc = rgb.min(axis=2)
+    chroma = maxc - minc
+    max_score = np.maximum(clean_score.astype(np.float32), raw_score.astype(np.float32))
+
+    final_hairline = v04b_maps.get("final_hairline_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    eye_brow_guard = v04b_maps.get("eye_brow_guard_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    mirrored_brow = v04b_maps.get("mirrored_eyebrow_guard_mask", np.zeros(decision.shape, dtype=np.uint8)) > 0
+    fallback_hairline_y = int(h * 0.405)
+    hairline_curve = _hairline_curve_from_mask(final_hairline, fallback_y=fallback_hairline_y)
+    curve_lookup = hairline_curve[np.clip(xx, 0, w - 1)]
+
+    above_hairline = yy < (curve_lookup - max(2.0, h * 0.004))
+    below_hairline = ~above_hairline
+
+    mouth_lip_seed = (
+        (x >= 0.34)
+        & (x <= 0.66)
+        & (y >= 0.48)
+        & (y <= 0.61)
+        & (
+            (luma < 92.0)
+            | ((rgb[..., 0] > rgb[..., 1] * 1.04) & (rgb[..., 0] > rgb[..., 2] * 1.12) & (luma < 172.0))
+        )
+    )
+    labeled_mouth, mouth_components = ndimage.label(mouth_lip_seed)
+    mouth_lip_keep = np.zeros_like(mouth_lip_seed, dtype=bool)
+    for label in range(1, mouth_components + 1):
+        component = labeled_mouth == label
+        area = int(component.sum())
+        if area < 24 or area > 9000:
+            continue
+        ys, xs = np.where(component)
+        width = int(xs.max() - xs.min() + 1)
+        height = int(ys.max() - ys.min() + 1)
+        if width >= 8 and height >= 3:
+            mouth_lip_keep |= component
+    mouth_lip_guard = ndimage.binary_dilation(mouth_lip_keep, structure=_disk(3))
+    nose_dark_seed = (
+        (x >= 0.43)
+        & (x <= 0.57)
+        & (y >= 0.38)
+        & (y <= 0.50)
+        & (luma < 64.0)
+    )
+    feature_guard = ndimage.binary_dilation(
+        eye_brow_guard | mirrored_brow | mouth_lip_guard | nose_dark_seed | final_hairline,
+        structure=_disk(2),
+    )
+
+    skin_ref = (
+        reliable_skin
+        & below_hairline
+        & ~feature_guard
+        & (y >= 0.37)
+        & (y <= 0.69)
+        & (x >= 0.22)
+        & (x <= 0.78)
+        & (max_score > 0.16)
+        & (source_count > 0)
+    )
+    default_skin = np.asarray([150.0, 100.0, 78.0], dtype=np.float32)
+    skin_mean, skin_ref_count = _trimmed_mean_rgb(base, skin_ref, default_skin)
+    neck_target = np.clip(skin_mean * np.asarray([0.78, 0.74, 0.72], dtype=np.float32), 0, 255)
+    lower_t = np.clip((y - 0.56) / 0.30, 0.0, 1.0)
+    target_map = skin_mean.reshape(1, 1, 3) * (1.0 - lower_t[..., None]) + neck_target.reshape(1, 1, 3) * lower_t[..., None]
+
+    color_dist = np.sqrt(np.mean(((rgb - target_map) / 58.0) ** 2.0, axis=2))
+    too_dark = luma < 48.0
+    too_bright = (luma > 215.0) & ~reliable_skin
+    not_skin = ~reliable_skin
+    untrusted = (decision == COMPLETION_NEEDED) | (source_count == 0) | (max_score < 0.10)
+    chroma_outlier = chroma > 92.0
+    color_outlier = color_dist > 1.28
+
+    bad_below_hairline = (
+        below_hairline
+        & ~feature_guard
+        & (too_dark | too_bright | untrusted | (not_skin & (color_outlier | chroma_outlier | (luma < 132.0))))
+    )
+    bad_below_hairline = ndimage.binary_closing(bad_below_hairline, structure=_disk(2)) & below_hairline & ~feature_guard
+    bad_below_hairline = ndimage.binary_dilation(bad_below_hairline, structure=_disk(1)) & below_hairline & ~feature_guard
+
+    good_kept = below_hairline & ~feature_guard & ~bad_below_hairline & (decision != COMPLETION_NEEDED)
+    repaired = base.copy()
+    repaired[above_hairline] = (0, 0, 0)
+
+    fill_weight = np.clip(0.84 + 0.10 * too_dark.astype(np.float32) + 0.08 * untrusted.astype(np.float32), 0.0, 1.0)
+    fill_weight *= np.clip(ndimage.distance_transform_edt(bad_below_hairline).astype(np.float32) / 5.0, 0.0, 1.0)
+    mixed = rgb * (1.0 - fill_weight[..., None]) + target_map * fill_weight[..., None]
+    repaired[bad_below_hairline] = np.clip(mixed[bad_below_hairline], 0, 255).astype(np.uint8)
+    repaired[feature_guard & below_hairline] = base[feature_guard & below_hairline]
+
+    changed = np.any(repaired != base, axis=2)
+    area_rgb = np.zeros_like(base, dtype=np.uint8)
+    area_rgb[above_hairline] = (0, 0, 0)
+    area_rgb[good_kept] = (44, 210, 95)
+    area_rgb[bad_below_hairline] = (255, 142, 42)
+    area_rgb[feature_guard & below_hairline] = (45, 125, 255)
+    area_rgb[final_hairline] = (245, 218, 38)
+
+    overlay = base.copy()
+    for mask, color, alpha in [
+        (above_hairline, (0, 0, 0), 0.82),
+        (good_kept, (44, 210, 95), 0.24),
+        (bad_below_hairline, (255, 142, 42), 0.66),
+        (feature_guard & below_hairline, (45, 125, 255), 0.52),
+        (final_hairline, (245, 218, 38), 0.88),
+    ]:
+        overlay = _blend_overlay(overlay, mask, color, alpha=alpha)
+
+    maps = {
+        "texture": repaired,
+        "above_hairline_mask": above_hairline.astype(np.uint8) * 255,
+        "bad_below_hairline_mask": bad_below_hairline.astype(np.uint8) * 255,
+        "good_kept_mask": good_kept.astype(np.uint8) * 255,
+        "feature_guard_mask": (feature_guard & below_hairline).astype(np.uint8) * 255,
+        "changed_mask": changed.astype(np.uint8) * 255,
+        "area_render_texture": area_rgb,
+        "area_overlay": overlay,
+        "weight": np.clip(fill_weight * 255.0, 0, 255).astype(np.uint8),
+        "skin_reference_rgb": _mask_rgb(skin_ref, (90, 220, 145)),
+    }
+    meta = {
+        "logic": "black above hairline; below hairline keep good pixels and fill bad pixels with simple skin while protecting eyes/brows/lips/mouth",
+        "skin_reference_texels": int(skin_ref.sum()),
+        "target_skin_rgb": [float(v) for v in skin_mean.tolist()],
+        "target_neck_rgb": [float(v) for v in neck_target.tolist()],
+        "above_hairline_texels": int(above_hairline.sum()),
+        "good_kept_texels": int(good_kept.sum()),
+        "bad_below_hairline_texels": int(bad_below_hairline.sum()),
+        "feature_guard_texels": int((feature_guard & below_hairline).sum()),
+        "changed_texels": int(changed.sum()),
+        "hairline_curve_y_min_px": float(hairline_curve.min()),
+        "hairline_curve_y_max_px": float(hairline_curve.max()),
+        "mean_fill_weight": float(fill_weight[bad_below_hairline].mean()) if np.any(bad_below_hairline) else 0.0,
+        "too_dark_filled_texels": int((bad_below_hairline & too_dark).sum()),
+        "untrusted_filled_texels": int((bad_below_hairline & untrusted).sum()),
+        "color_outlier_filled_texels": int((bad_below_hairline & color_outlier).sum()),
+    }
+    return maps, meta
+
+
 def _render_stage(
     *,
     person: str,
@@ -2917,6 +3100,76 @@ def _process_person(person: str, step5_person_dir: Path, output_dir: Path, args:
         "paths": v05_paths,
         "metrics": v05_meta,
     }
+
+    v06_maps, v06_meta = _step_v06_simple_bald_skin_fill(
+        v04b_maps["texture"],
+        decision,
+        clean_score,
+        raw_score,
+        source_count,
+        v04b_maps,
+    )
+    v06_dir = output_dir / "v06_simple_bald_skin_fill"
+    v06_maps_dir = v06_dir / "maps"
+    v06_texture_path = v06_maps_dir / "v06_simple_bald_skin_fill_texture.png"
+    v06_area_texture_path = v06_maps_dir / "v06_area_render_texture.png"
+    v06_paths: dict[str, Any] = {
+        "texture": _save_rgb(v06_texture_path, v06_maps["texture"]),
+        "above_hairline_mask": _save_l(v06_maps_dir / "v06_above_hairline_mask.png", v06_maps["above_hairline_mask"]),
+        "bad_below_hairline_mask": _save_l(v06_maps_dir / "v06_bad_below_hairline_mask.png", v06_maps["bad_below_hairline_mask"]),
+        "good_kept_mask": _save_l(v06_maps_dir / "v06_good_kept_mask.png", v06_maps["good_kept_mask"]),
+        "feature_guard_mask": _save_l(v06_maps_dir / "v06_feature_guard_mask.png", v06_maps["feature_guard_mask"]),
+        "changed_mask": _save_l(v06_maps_dir / "v06_changed_mask.png", v06_maps["changed_mask"]),
+        "area_render_texture": _save_rgb(v06_area_texture_path, v06_maps["area_render_texture"]),
+        "area_overlay": _save_rgb(v06_maps_dir / "v06_area_overlay.png", v06_maps["area_overlay"]),
+        "fill_weight": _save_l(v06_maps_dir / "v06_fill_weight.png", v06_maps["weight"]),
+        "skin_reference_rgb": _save_rgb(v06_maps_dir / "v06_skin_reference_debug_rgb.png", v06_maps["skin_reference_rgb"]),
+    }
+    if not args.skip_render and not args.skip_v06_renders:
+        v06_paths["before_v04b_render"] = _render_stage_raw(
+            person=person,
+            stage="v06_before_v04b",
+            texture_path=v04b_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v06_dir,
+            args=args,
+        )
+        v06_paths["after_simple_bald_skin_fill_render"] = _render_stage_raw(
+            person=person,
+            stage="v06_after_simple_bald_skin_fill",
+            texture_path=v06_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v06_dir,
+            args=args,
+        )
+        v06_paths["area_render"] = _render_stage_raw(
+            person=person,
+            stage="v06_area_map",
+            texture_path=v06_area_texture_path,
+            source_person_dir=source_person_dir,
+            output_dir=v06_dir,
+            args=args,
+        )
+        compact_sheet = _make_compact_before_after_sheet(
+            person=person,
+            title_stage="v06_simple_bald_skin_fill",
+            before_dir=_as_path(v06_paths["before_v04b_render"]["render_dir"]),
+            after_dir=_as_path(v06_paths["after_simple_bald_skin_fill_render"]["render_dir"]),
+            area_dir=_as_path(v06_paths["area_render"]["render_dir"]),
+            output_path=v06_dir / "step6_v06_compact_review_sheet.png",
+            legend="Black=hair/scalp above hairline, green=good pixels kept, orange=bad pixels filled as simple skin, blue=protected eyes/brows/lips/mouth, yellow=hairline.",
+            before_label="before v04b",
+            after_label="after v06",
+            area_label="v06 area",
+        )
+        if compact_sheet:
+            v06_paths["compact_review_sheet"] = compact_sheet
+
+    person_summary["stages"]["v06_simple_bald_skin_fill"] = {
+        "logic": "start from v04b, black out all texels above the refined hairline, keep good below-hairline pixels, and fill bad below-hairline non-feature pixels with a simple skin/neck target",
+        "paths": v06_paths,
+        "metrics": v06_meta,
+    }
     _write_json(output_dir / "step6_person_summary.json", person_summary)
     return person_summary
 
@@ -3105,6 +3358,35 @@ def _build_report(summary: dict[str, Any]) -> str:
             f"- Mean side/neck weight: {round(metrics['mean_side_weight'], 3)} / {round(metrics['mean_neck_weight'], 3)}",
             "",
         ])
+    lines.extend([
+        "## v06_simple_bald_skin_fill",
+        "",
+        "This stage is the simplified bald-head cleanup rule requested after v05 review.",
+        "It starts again from v04b instead of stacking on v05: everything above the refined hairline is blacked out as future hair/scalp territory.",
+        "Below the hairline, eye/brow/lip/mouth feature guards are protected. Good pixels are kept; bad, black, untrusted, or strong outlier pixels are filled with a simple skin/neck target.",
+        "Area-map render colors: black=above hairline, green=kept good pixels, orange=filled bad pixels, blue=protected features, yellow=hairline.",
+        "",
+    ])
+    for person in summary["people"]:
+        stage = person["stages"].get("v06_simple_bald_skin_fill", {})
+        if not stage:
+            continue
+        metrics = stage["metrics"]
+        paths = stage["paths"]
+        lines.extend([
+            f"### {person['person']}",
+            "",
+            f"- Compact review: `{paths.get('compact_review_sheet')}`",
+            f"- Texture: `{paths.get('texture')}`",
+            f"- Above-hairline black texels: {metrics['above_hairline_texels']}",
+            f"- Good kept texels: {metrics['good_kept_texels']}",
+            f"- Bad below-hairline filled texels: {metrics['bad_below_hairline_texels']}",
+            f"- Protected feature texels: {metrics['feature_guard_texels']}",
+            f"- Changed texels: {metrics['changed_texels']}",
+            f"- Target skin/neck RGB: {[round(x, 2) for x in metrics['target_skin_rgb']]} / {[round(x, 2) for x in metrics['target_neck_rgb']]}",
+            f"- Mean fill weight: {round(metrics['mean_fill_weight'], 3)}",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -3137,6 +3419,7 @@ def main(argv: list[str] | None = None) -> int:
             "v04_forehead_redefined_region",
             "v04b_eyebrow_hairline_refine",
             "v05_side_neck_temporary_skin",
+            "v06_simple_bald_skin_fill",
         ],
         "parameters": {
             "close_radius": int(args.close_radius),
@@ -3154,6 +3437,7 @@ def main(argv: list[str] | None = None) -> int:
             "skip_v04_renders": bool(args.skip_v04_renders),
             "skip_v04b_renders": bool(args.skip_v04b_renders),
             "skip_v05_renders": bool(args.skip_v05_renders),
+            "skip_v06_renders": bool(args.skip_v06_renders),
         },
     }
 
@@ -3187,6 +3471,8 @@ def main(argv: list[str] | None = None) -> int:
                 "v04b_metrics": _compact_metrics(item["stages"].get("v04b_eyebrow_hairline_refine", {}).get("metrics", {})),
                 "v05_compact_review": item["stages"].get("v05_side_neck_temporary_skin", {}).get("paths", {}).get("compact_review_sheet"),
                 "v05_metrics": _compact_metrics(item["stages"].get("v05_side_neck_temporary_skin", {}).get("metrics", {})),
+                "v06_compact_review": item["stages"].get("v06_simple_bald_skin_fill", {}).get("paths", {}).get("compact_review_sheet"),
+                "v06_metrics": _compact_metrics(item["stages"].get("v06_simple_bald_skin_fill", {}).get("metrics", {})),
             }
             for item in summary["people"]
         ],

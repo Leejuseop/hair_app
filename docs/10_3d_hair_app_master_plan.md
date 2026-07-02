@@ -1558,7 +1558,7 @@ Observed Step 5 category ratios:
 Current Step 6 status:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_164709
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_171843
 ```
 
 Step 6 has started from the Step 5 `blend` texture. The implemented script is
@@ -1576,6 +1576,8 @@ Completed Step 6 sub-steps:
   symmetric broad hairline lift, and eyebrow-baseline forehead definition.
 - `v05_side_neck_temporary_skin`: side/temple/ear dark-fragment fill plus
   neck/jaw/clothing temporary skin cleanup.
+- `v06_simple_bald_skin_fill`: black above hairline, keep good below-hairline
+  pixels, and fill bad below-hairline pixels with simple temporary skin.
 
 Important Step 6 v01 result:
 
@@ -1693,6 +1695,36 @@ Important Step 6 v05 result:
 - Visual review says the side/ear black chunks and lower clothing/neck
   contamination are reduced, but the result is still temporary and patchy.
   Do not treat v05 as final skin material.
+- After user review, v05 is retained as a logged experiment but is not the
+  current visual baseline. The side/neck result looked too odd, so v06 restarts
+  from v04b and applies a simpler bald-head rule.
+
+Important Step 6 v06 result:
+
+- v06 starts from v04b, not from v05.
+- Every texel above the refined hairline is set to black. This reserves the
+  future hair/scalp area as a simple placeholder instead of trying to preserve
+  partial baked hair/skin texture.
+- Below the hairline, good pixels are kept. Bad pixels, black gaps, untrusted
+  pixels, and strong color outliers are filled with a simple skin/neck target.
+- Eyes, eyebrows, lips, mouth, nostril-like dark features, and the hairline
+  boundary are protected. This is still a placeholder material pass, not final
+  eye/brow/mouth repair.
+- v06 area colors:
+  - black = above hairline/future hair region;
+  - green = good below-hairline pixels kept;
+  - orange = bad below-hairline pixels filled;
+  - blue = protected eyes/brows/lips/mouth/nostril-like features;
+  - yellow = refined hairline boundary.
+- v06 metrics:
+  - Juseop: 440,555 above-hairline black texels, 189,725 good-kept texels,
+    406,489 bad-filled texels, 9,649 protected texels, 406,181 changed texels.
+  - Eunchae: 437,835 above-hairline black texels, 135,132 good-kept texels,
+    462,503 bad-filled texels, 10,946 protected texels, 462,224 changed texels.
+- Visual review says v06 is more aligned with the hair-app target than v05:
+  the future hair region is cleanly black, and below-hairline neck/side
+  contamination is reduced enough for the next material passes. It is still not
+  final quality.
 
 Remaining Step 6 should repair completion-needed and contaminated regions by
 semantic/material region. The next accepted order is to lock eye/brow/mouth/lip
@@ -1723,12 +1755,14 @@ Detailed Step 6 plan:
      preserving local detail and avoiding a flat fake-skin patch.
    - Current v02 is complete as a safe but weak tone pass.
 
-4. Side/neck temporary skin cleanup
-   - v05 is complete as a temporary region cleanup pass.
-   - It fills side/temple/ear dark fragments and neck/jaw/clothing leakage so
-     later global skin blending has fewer black or clothing-colored islands.
-   - It is not final skin quality and should not be judged as the final neck or
-     ear material.
+4. Simple bald-head temporary skin fill
+   - v06 is the current postprocess baseline.
+   - It blacks out everything above the refined hairline because that region is
+     future hair/scalp territory for the hair app.
+   - It fills bad below-hairline neck/face/side pixels with simple temporary
+     skin while preserving usable pixels and tight feature guards.
+   - It is not final skin quality and should not be judged as the final neck,
+     mouth, eye, or eyebrow material.
 
 5. Eye/brow/mouth/lip protection masks
    - This is the next active sub-step.

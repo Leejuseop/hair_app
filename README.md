@@ -76,10 +76,12 @@ machine:
   review sheets, and a cross-version comparison sheet.
 - The active mask-aware correction experiment has completed Step 3 parser/object
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02/v03/v04/v04b/v05 postprocess passes. The
-  current v05 revision keeps v04b as the forehead/eyebrow/hairline baseline,
-  then fills side/temple/ear dark fragments and neck/jaw/clothing contamination
-  with temporary skin material before later global skin blending.
+  arbitration, and Step 6 v01/v02/v03/v04/v04b/v05/v06 postprocess passes. The
+  current accepted v06 revision restarts from v04b, blacks out everything above
+  the refined hairline as future hair/scalp territory, keeps good below-hairline
+  pixels, and fills bad below-hairline skin/neck regions with simple temporary
+  skin material. v05 is retained as a logged experiment, but it is not the
+  current visual baseline because the side/neck cleanup result looked too odd.
   `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
   the Step 5 `blend` texture as its fixed baseline.
 
@@ -186,16 +188,14 @@ private_outputs/
    quality: it replaces selected forehead skin with the average non-forehead
    face tone, uses Juseop scan frames only as a hairline boundary hint, and
    produces compact before/after/area review sheets.
-5. Treat v04b forehead/eyebrow/hairline refinement as the current region
-   baseline: it keeps v04's broader forehead, uses a fixed black symmetric
-   eyebrow mask as a protection placeholder, chooses the brow source by
-   component quality instead of area, adds a symmetric flatter front-hairline
-   lift, defines the forehead as the region below the hairline and above the
-   eyebrow baseline except tight eye/brow guards, and still looks too flat.
-6. Treat v05 side/neck temporary skin cleanup as the current lower/side repair
-   baseline: it fills ear/temple/side-face dark fragments and neck/jaw/clothing
-   contamination, while protecting eyes, brows, mouth, and hairline. It is not
-   final skin blending.
+5. Treat v04b forehead/eyebrow/hairline refinement as the region baseline used
+   by v06: it chooses the brow source by component quality, adds a symmetric
+   flatter front-hairline lift, and defines the forehead as below the hairline
+   and above the eyebrow baseline except tight eye/brow guards.
+6. Treat v06 simple bald skin fill as the current postprocess baseline: above
+   hairline is black, below hairline good pixels are kept, and bad
+   below-hairline pixels are filled with simple skin/neck material while eyes,
+   brows, lips, mouth, and nostril-like dark features stay protected.
 7. Next, lock the eye/brow/mouth/lip protection masks, then run global skin
    blending over all confirmed skin regions. After that, repair eye/brow,
    mouth/lips, scalp/hairline, and final mild color smoothing.

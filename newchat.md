@@ -1,6 +1,6 @@
 # Hair App New-Chat Handoff
 
-Last synchronized: 2026-07-01
+Last synchronized: 2026-07-02
 
 Expected branch: `main`
 
@@ -164,10 +164,10 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_164709
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_171843
 ```
 
-Step 6 v01/v02/v03/v04/v04b/v05 status:
+Step 6 v01/v02/v03/v04/v04b/v05/v06 status:
 
 - Script: `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
 - `v00_baseline` copies/renders Step 5 `blend`.
@@ -263,8 +263,28 @@ Step 6 v01/v02/v03/v04/v04b/v05 status:
 - Visual judgment: v05 reduces side/ear black chunks and lower neck/clothing
   leakage, but the material is still patchy and temporary. Do not treat it as
   final skin blending.
+- User rejected v05 as visually odd, so v05 is kept only as a logged experiment,
+  not the active visual baseline.
+- `v06_simple_bald_skin_fill` is now the current Step 6 baseline.
+- v06 restarts from v04b, blacks out every texel above the refined hairline,
+  keeps usable below-hairline pixels, and fills bad below-hairline pixels with
+  simple temporary skin/neck material.
+- v06 protected areas are tight eyes/brows/lips/mouth/nostril-like dark
+  features and the hairline boundary. The pass is still a placeholder material
+  cleanup, not final eye/brow/mouth repair.
+- Accepted v06 metrics:
+  - Juseop: 440,555 above-hairline black texels, 189,725 good-kept texels,
+    406,489 bad-filled texels, 9,649 protected texels, 406,181 changed texels.
+  - Eunchae: 437,835 above-hairline black texels, 135,132 good-kept texels,
+    462,503 bad-filled texels, 10,946 protected texels, 462,224 changed texels.
+- v06 review colors:
+  - black = above hairline/future hair region;
+  - green = good below-hairline pixels kept;
+  - orange = bad below-hairline pixels filled;
+  - blue = protected features;
+  - yellow = refined hairline.
 
-## 6. Next Active Step: Step 6 v06
+## 6. Next Active Step: Step 6 Material Repair After v06
 
 Step 6 is material-specific post-processing from the Step 5 `blend` texture.
 It should be done one element at a time, with a review sheet after each element.
@@ -272,11 +292,13 @@ Do not batch many fixes together.
 
 Planned order:
 
-1. Lock eye/brow/mouth/lip protection masks
+1. Lock/refine eye/brow/mouth/lip protection masks
    - Before global skin blending, define the exact regions that must not be
      averaged into skin.
    - Protect eyes, eyelids, brows, mouth interior, lips, nostrils, and
      hairline/scalp boundaries.
+   - v06 already has a narrow placeholder guard, but the next pass should make
+     this guard more semantic and visually correct.
 
 2. Global skin blending
    - Blend all confirmed skin regions together: forehead, cheeks, side face,

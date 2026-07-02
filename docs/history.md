@@ -3345,3 +3345,80 @@ Visual read:
 - Next recommended step: lock eye/brow/mouth/lip protection masks, then blend
   all confirmed skin regions together. Do not start final eye/mouth materials
   until skin blending can avoid swallowing those features.
+
+### 27.15 Step 6 v06: Simple Bald Skin Fill
+
+Date: 2026-07-02.
+
+Private Step 6 output after this pass:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_171843
+```
+
+Why this pass exists:
+
+- The user rejected the v05 visual result as too odd. v05 reduced some
+  side/neck artifacts, but the region-specific temporary-skin result did not
+  feel like the right current baseline.
+- The product target was restated: this is a hair app, so neck detail does not
+  need to be highly realistic at this phase. The bald-head substrate mainly
+  needs a readable face/neck placeholder and a clean future hair/scalp region.
+- The user specified a simpler rule:
+  - everything above the hairline should be black because hair will eventually
+    occupy that area;
+  - below the hairline, keep good pixels;
+  - below the hairline, fill bad pixels with simple skin-like material;
+  - do not overwrite protected eyes, eyebrows, lips, mouth, and similar feature
+    regions.
+
+Code changes:
+
+- Added `v06_simple_bald_skin_fill` to
+  `experiments/facebuilder_mask_aware_correction/run_step6_postprocess.py`.
+- v06 restarts from v04b instead of stacking on v05. v05 remains in the report
+  as a historical experiment, but it is not the active visual baseline.
+- The refined v04b hairline is converted into a smooth per-column curve.
+- Texels above that curve are set to black.
+- Texels below that curve are divided into:
+  - good kept pixels;
+  - bad pixels to fill;
+  - protected features.
+- Bad below-hairline pixels include black gaps, completion-needed pixels,
+  untrusted pixels, very bright non-skin pixels, and strong color/chroma
+  outliers.
+- The simple fill color is estimated from reliable below-hairline skin, then
+  darkened toward the lower neck so the neck is not forced to cheek color.
+- The first v06 run protected too much of the center face because the mouth/lip
+  guard used `COMPLETION_NEEDED` over a broad rectangle. That was corrected:
+  mouth/lip protection now keeps only connected dark/reddish components in a
+  tighter mouth band, so the area map is easier to read and does not show the
+  whole center face as protected.
+
+v06 compact review colors:
+
+```text
+black  = above hairline, reserved for future hair/scalp handling
+green  = good below-hairline pixels kept from v04b
+orange = bad below-hairline pixels filled with simple skin/neck material
+blue   = protected eyes/brows/lips/mouth/nostril-like features
+yellow = refined hairline boundary
+```
+
+Accepted v06 metrics at 1024 atlas:
+
+| Person | Above-hairline black texels | Good kept texels | Bad below-hairline filled texels | Protected feature texels | Changed texels |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Juseop | 440,555 | 189,725 | 406,489 | 9,649 | 406,181 |
+| Eunchae | 437,835 | 135,132 | 462,503 | 10,946 | 462,224 |
+
+Visual read:
+
+- The v06 result is easier to understand than v05: future hair/scalp is clearly
+  black, and the lower face/neck no longer carries as many extreme black or
+  clothing-colored islands.
+- This is still not final skin quality. The face, neck, and side regions remain
+  patchy, and the lips/eyes/eyebrows are only placeholder-protected.
+- Next recommended step: refine and lock the eye/brow/mouth/lip protection
+  masks, then blend all confirmed skin regions. After that, do dedicated
+  eye/brow and mouth/lip material repair.
