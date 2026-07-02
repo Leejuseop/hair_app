@@ -164,7 +164,7 @@ Visual read:
 Active Step 6 output:
 
 ```text
-<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260702_171843
+<private_drive>\hair_app\output\facebuilder_mask_aware_step6\20260703_022613
 ```
 
 Step 6 v01/v02/v03/v04/v04b/v05/v06 status:
@@ -267,16 +267,20 @@ Step 6 v01/v02/v03/v04/v04b/v05/v06 status:
   not the active visual baseline.
 - `v06_simple_bald_skin_fill` is now the current Step 6 baseline.
 - v06 restarts from v04b, blacks out every texel above the refined hairline,
-  keeps usable below-hairline pixels, and fills bad below-hairline pixels with
-  simple temporary skin/neck material.
-- v06 protected areas are tight eyes/brows/lips/mouth/nostril-like dark
-  features and the hairline boundary. The pass is still a placeholder material
-  cleanup, not final eye/brow/mouth repair.
+  keeps only excellent below-hairline face pixels, fills all other
+  non-protected face texels with simple temporary skin, and fills the
+  below-neck-start region with simple darker neck skin.
+- v06 protected areas are tight eyes/brows, a compact central lip/mouth core,
+  nostril-like dark features, and the hairline boundary. The pass is still a
+  placeholder material cleanup, not final eye/brow/mouth repair.
+- A rejected intermediate v06 attempt made the mouth/lip guard too broad and
+  turned most of the lower face blue in the area map. The accepted v06 uses only
+  a small dark central mouth core, so the lower cheek/chin stays editable.
 - Accepted v06 metrics:
-  - Juseop: 440,555 above-hairline black texels, 189,725 good-kept texels,
-    406,489 bad-filled texels, 9,649 protected texels, 406,181 changed texels.
-  - Eunchae: 437,835 above-hairline black texels, 135,132 good-kept texels,
-    462,503 bad-filled texels, 10,946 protected texels, 462,224 changed texels.
+  - Juseop: 440,555 above-hairline black texels, 80,961 good-kept texels,
+    514,631 bad-filled texels, 12,429 protected texels, 514,873 changed texels.
+  - Eunchae: 437,835 above-hairline black texels, 44,679 good-kept texels,
+    552,321 bad-filled texels, 13,741 protected texels, 552,782 changed texels.
 - v06 review colors:
   - black = above hairline/future hair region;
   - green = good below-hairline pixels kept;

@@ -78,9 +78,10 @@ machine:
   mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
   arbitration, and Step 6 v01/v02/v03/v04/v04b/v05/v06 postprocess passes. The
   current accepted v06 revision restarts from v04b, blacks out everything above
-  the refined hairline as future hair/scalp territory, keeps good below-hairline
-  pixels, and fills bad below-hairline skin/neck regions with simple temporary
-  skin material. v05 is retained as a logged experiment, but it is not the
+  the refined hairline as future hair/scalp territory, keeps only excellent
+  below-hairline face pixels, fills the remaining non-protected face/neck region
+  with simple temporary skin/neck material, and keeps a compact eye/brow/lip
+  feature guard. v05 is retained as a logged experiment, but it is not the
   current visual baseline because the side/neck cleanup result looked too odd.
   `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
   the Step 5 `blend` texture as its fixed baseline.
@@ -193,9 +194,11 @@ private_outputs/
    flatter front-hairline lift, and defines the forehead as below the hairline
    and above the eyebrow baseline except tight eye/brow guards.
 6. Treat v06 simple bald skin fill as the current postprocess baseline: above
-   hairline is black, below hairline good pixels are kept, and bad
-   below-hairline pixels are filled with simple skin/neck material while eyes,
-   brows, lips, mouth, and nostril-like dark features stay protected.
+   hairline is black, excellent below-hairline face pixels are kept, the rest of
+   the non-protected face/neck is filled with simple skin/neck material, and
+   eyes, brows, a compact lip/mouth core, and nostril-like dark features stay
+   protected. The latest accepted output is
+   `<drive_root>/output/facebuilder_mask_aware_step6/20260703_022613`.
 7. Next, lock the eye/brow/mouth/lip protection masks, then run global skin
    blending over all confirmed skin regions. After that, repair eye/brow,
    mouth/lips, scalp/hairline, and final mild color smoothing.

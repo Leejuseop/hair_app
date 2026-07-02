@@ -3353,7 +3353,7 @@ Date: 2026-07-02.
 Private Step 6 output after this pass:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_171843
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260703_022613
 ```
 
 Why this pass exists:
@@ -3381,19 +3381,27 @@ Code changes:
 - The refined v04b hairline is converted into a smooth per-column curve.
 - Texels above that curve are set to black.
 - Texels below that curve are divided into:
-  - good kept pixels;
-  - bad pixels to fill;
-  - protected features.
-- Bad below-hairline pixels include black gaps, completion-needed pixels,
-  untrusted pixels, very bright non-skin pixels, and strong color/chroma
-  outliers.
+  - excellent face-skin pixels to keep;
+  - simple face/neck fill pixels;
+  - protected eyes, eyebrows, compact lips/mouth, nostril-like dark pixels, and
+    hairline boundary pixels.
+- The accepted strict rule after user clarification is:
+  - above the hairline: black;
+  - below the hairline and above the neck start: preserve only excellent skin
+    plus protected features, fill everything else with simple temporary skin;
+  - below the neck start: fill every non-protected texel with a darker simple
+    neck target.
 - The simple fill color is estimated from reliable below-hairline skin, then
   darkened toward the lower neck so the neck is not forced to cheek color.
-- The first v06 run protected too much of the center face because the mouth/lip
-  guard used `COMPLETION_NEEDED` over a broad rectangle. That was corrected:
-  mouth/lip protection now keeps only connected dark/reddish components in a
-  tighter mouth band, so the area map is easier to read and does not show the
-  whole center face as protected.
+- Several v06 mouth/lip guard attempts were tested:
+  - the first accepted-looking version did not actually protect lips because
+    `mouth_lip_guard_texels` was `0`;
+  - the next attempt added a broad UV ellipse and `COMPLETION_NEEDED`, but this
+    turned most of the lower face blue in the area map because the completion
+    region was too broad;
+  - the final accepted version removes broad completion from the mouth seed and
+    keeps only a small dark central mouth core. This preserves the mouth from
+    skin fill without protecting the chin/lower cheek.
 
 v06 compact review colors:
 
@@ -3409,8 +3417,8 @@ Accepted v06 metrics at 1024 atlas:
 
 | Person | Above-hairline black texels | Good kept texels | Bad below-hairline filled texels | Protected feature texels | Changed texels |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Juseop | 440,555 | 189,725 | 406,489 | 9,649 | 406,181 |
-| Eunchae | 437,835 | 135,132 | 462,503 | 10,946 | 462,224 |
+| Juseop | 440,555 | 80,961 | 514,631 | 12,429 | 514,873 |
+| Eunchae | 437,835 | 44,679 | 552,321 | 13,741 | 552,782 |
 
 Visual read:
 

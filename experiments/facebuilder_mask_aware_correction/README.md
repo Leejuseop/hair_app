@@ -257,7 +257,7 @@ Planned process:
 Current private Step 6 output:
 
 ```text
-<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260702_171843
+<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260703_022613
 ```
 
 Implemented sub-steps:
@@ -544,12 +544,14 @@ v06 logic:
 - set every texel above that hairline to black. This intentionally treats the
   whole future hair area as a placeholder rather than trying to preserve partial
   baked hair/skin detail;
-- below the hairline, keep pixels that still look usable;
-- protect only tight eyes, brows, lips, mouth, nostril-like dark features, and
-  the hairline boundary;
-- fill bad below-hairline texels with simple temporary skin/neck material. The
-  target becomes darker toward the lower neck so the neck is not forced to the
-  same tone as the cheeks;
+- below the hairline and above the neck start, keep only excellent skin pixels;
+- protect tight eyes, brows, a compact dark mouth/lip core, nostril-like dark
+  features, and the hairline boundary;
+- below the hairline, fill every non-excellent, non-protected face texel with a
+  simple temporary skin target;
+- below the neck start, fill every non-protected texel with a darker simple neck
+  target. This intentionally sacrifices neck/clothing detail because the hair
+  app does not need high-fidelity neck reconstruction at this phase;
 - keep the compact review sheet simple: before v04b, after v06, and the v06
   area map at front/left45/right45.
 
@@ -567,14 +569,19 @@ Observed v06 metrics at 1024 atlas:
 
 | Person | Above-hairline black texels | Good kept texels | Bad filled texels | Protected feature texels | Changed texels | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Juseop | 440,555 | 189,725 | 406,489 | 9,649 | 406,181 | Cleaner bald placeholder; below-hairline black/clothing artifacts are reduced, but mouth/eye/brow materials still need dedicated repair |
-| Eunchae | 437,835 | 135,132 | 462,503 | 10,946 | 462,224 | Hair-area placeholder is clearer and neck/side contamination is reduced; right-side/occlusion remnants remain visible and need later blending/material passes |
+| Juseop | 440,555 | 80,961 | 514,631 | 12,429 | 514,873 | Strict simple bald fill; future hair is black, neck is intentionally simplified, and mouth/lip protection is compact instead of swallowing the lower face |
+| Eunchae | 437,835 | 44,679 | 552,321 | 13,741 | 552,782 | Strict simple bald fill; larger portions are temporary skin because fewer clean below-hairline texels survived the excellent-skin gate |
 
 v06 interpretation:
 
 - v06 matches the product intent better than v05 for this phase: a hair app does
   not need detailed neck/clothing reconstruction, and the future hair region can
   safely be a black placeholder until scalp/hair assets are added.
+- A failed intermediate v06 attempt protected the whole lower face because
+  `COMPLETION_NEEDED` was included inside a broad mouth UV ellipse. The accepted
+  v06 removes that broad condition and keeps only a compact dark central
+  mouth/lip core, so the blue protection mask no longer covers the chin/lower
+  cheek.
 - The pass is intentionally simple and temporary. It improves readability of the
   bald-head substrate, but it does not solve final skin realism.
 - The next accepted Step 6 work should handle materials one at a time: lock

@@ -2420,29 +2420,30 @@ def _step_v06_simple_bald_skin_fill(
     above_hairline = yy < (curve_lookup - max(2.0, h * 0.004))
     below_hairline = ~above_hairline
 
-    mouth_lip_seed = (
-        (x >= 0.34)
-        & (x <= 0.66)
-        & (y >= 0.48)
-        & (y <= 0.61)
-        & (
-            (luma < 92.0)
-            | ((rgb[..., 0] > rgb[..., 1] * 1.04) & (rgb[..., 0] > rgb[..., 2] * 1.12) & (luma < 172.0))
-        )
-    )
+    # Lips/mouth are too important to skin-fill, but broad "red-ish" or
+    # completion-needed tests spill onto the lower face. Keep only the compact
+    # dark mouth core near the center of the FaceBuilder UV mouth area.
+    mouth_anchor = (((x - 0.50) / 0.080) ** 2.0 + ((y - 0.535) / 0.047) ** 2.0) <= 1.0
+    mouth_anchor &= (x >= 0.435) & (x <= 0.565) & (y >= 0.495) & (y <= 0.575)
+    mouth_lip_seed = mouth_anchor & (luma < 58.0)
     labeled_mouth, mouth_components = ndimage.label(mouth_lip_seed)
     mouth_lip_keep = np.zeros_like(mouth_lip_seed, dtype=bool)
     for label in range(1, mouth_components + 1):
         component = labeled_mouth == label
         area = int(component.sum())
-        if area < 24 or area > 9000:
+        if area < 24 or area > 5200:
             continue
         ys, xs = np.where(component)
         width = int(xs.max() - xs.min() + 1)
         height = int(ys.max() - ys.min() + 1)
-        if width >= 8 and height >= 3:
+        center_x = float(xs.mean()) / max(1, w - 1)
+        center_y = float(ys.mean()) / max(1, h - 1)
+        if width >= 6 and height >= 4 and 0.455 <= center_x <= 0.545 and 0.500 <= center_y <= 0.565:
             mouth_lip_keep |= component
-    mouth_lip_guard = ndimage.binary_dilation(mouth_lip_keep, structure=_disk(3))
+    if int(mouth_lip_keep.sum()) < 120:
+        fallback_core = (((x - 0.50) / 0.050) ** 2.0 + ((y - 0.535) / 0.028) ** 2.0) <= 1.0
+        mouth_lip_keep = fallback_core & mouth_anchor & (luma < 96.0)
+    mouth_lip_guard = ndimage.binary_dilation(mouth_lip_keep, structure=_disk(2)) & mouth_anchor
     nose_dark_seed = (
         (x >= 0.43)
         & (x <= 0.57)
@@ -2460,7 +2461,7 @@ def _step_v06_simple_bald_skin_fill(
         & below_hairline
         & ~feature_guard
         & (y >= 0.37)
-        & (y <= 0.69)
+        & (y <= 0.60)
         & (x >= 0.22)
         & (x <= 0.78)
         & (max_score > 0.16)
@@ -2472,30 +2473,32 @@ def _step_v06_simple_bald_skin_fill(
     lower_t = np.clip((y - 0.56) / 0.30, 0.0, 1.0)
     target_map = skin_mean.reshape(1, 1, 3) * (1.0 - lower_t[..., None]) + neck_target.reshape(1, 1, 3) * lower_t[..., None]
 
-    color_dist = np.sqrt(np.mean(((rgb - target_map) / 58.0) ** 2.0, axis=2))
-    too_dark = luma < 48.0
-    too_bright = (luma > 215.0) & ~reliable_skin
-    not_skin = ~reliable_skin
-    untrusted = (decision == COMPLETION_NEEDED) | (source_count == 0) | (max_score < 0.10)
-    chroma_outlier = chroma > 92.0
-    color_outlier = color_dist > 1.28
-
-    bad_below_hairline = (
-        below_hairline
-        & ~feature_guard
-        & (too_dark | too_bright | untrusted | (not_skin & (color_outlier | chroma_outlier | (luma < 132.0))))
+    color_dist = np.sqrt(np.mean(((rgb - target_map) / 55.0) ** 2.0, axis=2))
+    neck_start_y = 0.615
+    face_below_hairline = below_hairline & (y < neck_start_y) & ~feature_guard
+    neck_below_hairline = below_hairline & (y >= neck_start_y) & ~feature_guard
+    excellent_skin = (
+        face_below_hairline
+        & reliable_skin
+        & (decision != COMPLETION_NEEDED)
+        & (source_count > 0)
+        & (max_score >= 0.18)
+        & (luma >= 54.0)
+        & (luma <= 214.0)
+        & (chroma <= 92.0)
+        & (color_dist <= 1.08)
     )
-    bad_below_hairline = ndimage.binary_closing(bad_below_hairline, structure=_disk(2)) & below_hairline & ~feature_guard
-    bad_below_hairline = ndimage.binary_dilation(bad_below_hairline, structure=_disk(1)) & below_hairline & ~feature_guard
 
-    good_kept = below_hairline & ~feature_guard & ~bad_below_hairline & (decision != COMPLETION_NEEDED)
+    face_fill = face_below_hairline & ~excellent_skin
+    neck_fill = neck_below_hairline
+    bad_below_hairline = face_fill | neck_fill
+
+    good_kept = excellent_skin
     repaired = base.copy()
     repaired[above_hairline] = (0, 0, 0)
 
-    fill_weight = np.clip(0.84 + 0.10 * too_dark.astype(np.float32) + 0.08 * untrusted.astype(np.float32), 0.0, 1.0)
-    fill_weight *= np.clip(ndimage.distance_transform_edt(bad_below_hairline).astype(np.float32) / 5.0, 0.0, 1.0)
-    mixed = rgb * (1.0 - fill_weight[..., None]) + target_map * fill_weight[..., None]
-    repaired[bad_below_hairline] = np.clip(mixed[bad_below_hairline], 0, 255).astype(np.uint8)
+    fill_weight = bad_below_hairline.astype(np.float32)
+    repaired[bad_below_hairline] = np.clip(target_map[bad_below_hairline], 0, 255).astype(np.uint8)
     repaired[feature_guard & below_hairline] = base[feature_guard & below_hairline]
 
     changed = np.any(repaired != base, axis=2)
@@ -2529,21 +2532,23 @@ def _step_v06_simple_bald_skin_fill(
         "skin_reference_rgb": _mask_rgb(skin_ref, (90, 220, 145)),
     }
     meta = {
-        "logic": "black above hairline; below hairline keep good pixels and fill bad pixels with simple skin while protecting eyes/brows/lips/mouth",
+        "logic": "black above hairline; below hairline keep only excellent skin and protected eyes/brows/lips/mouth, fill everything else; below neck start fill all non-protected texels",
         "skin_reference_texels": int(skin_ref.sum()),
         "target_skin_rgb": [float(v) for v in skin_mean.tolist()],
         "target_neck_rgb": [float(v) for v in neck_target.tolist()],
+        "neck_start_y_normalized": float(neck_start_y),
         "above_hairline_texels": int(above_hairline.sum()),
         "good_kept_texels": int(good_kept.sum()),
         "bad_below_hairline_texels": int(bad_below_hairline.sum()),
+        "face_fill_texels": int(face_fill.sum()),
+        "neck_fill_texels": int(neck_fill.sum()),
         "feature_guard_texels": int((feature_guard & below_hairline).sum()),
+        "mouth_lip_guard_texels": int((mouth_lip_guard & below_hairline).sum()),
         "changed_texels": int(changed.sum()),
         "hairline_curve_y_min_px": float(hairline_curve.min()),
         "hairline_curve_y_max_px": float(hairline_curve.max()),
         "mean_fill_weight": float(fill_weight[bad_below_hairline].mean()) if np.any(bad_below_hairline) else 0.0,
-        "too_dark_filled_texels": int((bad_below_hairline & too_dark).sum()),
-        "untrusted_filled_texels": int((bad_below_hairline & untrusted).sum()),
-        "color_outlier_filled_texels": int((bad_below_hairline & color_outlier).sum()),
+        "excellent_skin_texels": int(excellent_skin.sum()),
     }
     return maps, meta
 
