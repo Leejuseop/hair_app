@@ -1737,6 +1737,37 @@ Important Step 6 v06 result:
   contamination is reduced enough for the next material passes. It is still not
   final quality.
 
+#### Step 7 v07a Feature Source Review
+
+- `v07a_feature_source_review` is complete as a diagnostic source-selection
+  stage. It does not modify the accepted v06 texture.
+- It scores crop photos for eyebrow, eye, lip, and inner-mouth reconstruction
+  candidates using the current FaRL + Grounded SAM masks.
+- Private Drive output:
+  `<drive_root>/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review`.
+- Review colors:
+  - cyan = eyebrow candidate;
+  - blue = eye candidate;
+  - magenta = lip candidate;
+  - red = inner-mouth candidate;
+  - yellow/orange = Grounded SAM object/occlusion mask.
+- Top overall candidates:
+  - Juseop: index 15 `selfie_007.png` 89.6, index 13 `selfie_005.png`
+    80.3, index 14 `selfie_006.png` 80.0, index 18 `selfie_010.jpg`
+    79.2, index 10 `selfie_002.png` 77.5.
+  - Eunchae: index 6 `KakaoTalk_20260621_130455494_06.png` 86.1,
+    index 0 `KakaoTalk_20260621_130455494.jpg` 82.1, index 1
+    `KakaoTalk_20260621_130455494_01.jpg` 80.2, index 3
+    `KakaoTalk_20260621_130455494_03.png` 80.1, index 7
+    `KakaoTalk_20260621_130455494_07.png` 77.8.
+- Next experiment is `v07b_eyebrow_rebuild`:
+  - start from accepted v06;
+  - use v07a cyan eyebrow masks unchanged;
+  - use v04b/v06 eyebrow guard only as a maximum fence;
+  - do not add object/hair cleanup, component cleanup, scale normalization, or
+    left-right symmetry in this first controlled pass;
+  - compare `best_source` versus `blend` UV replacement for eyebrows only.
+
 Remaining Step 6 should repair completion-needed and contaminated regions by
 semantic/material region. The next accepted order is to lock eye/brow/mouth/lip
 protection masks, then apply global skin blending over confirmed skin regions,

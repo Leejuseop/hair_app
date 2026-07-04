@@ -287,44 +287,62 @@ Step 6 v01/v02/v03/v04/v04b/v05/v06 status:
   - orange = bad below-hairline pixels filled;
   - blue = protected features;
   - yellow = refined hairline.
+- Step 7 v07a `feature_source_review` is complete. It did not modify texture.
+  It scored crop photos for eyebrow, eye, lip, and inner-mouth source quality
+  using FaRL + Grounded SAM masks.
+- v07a output:
+  `G:\내 드라이브\hair_app\output\facebuilder_mask_aware_step7\20260704_185336\v07a_feature_source_review`.
+- v07a review colors:
+  - cyan = eyebrow candidate;
+  - blue = eye candidate;
+  - magenta = lip candidate;
+  - red = inner-mouth candidate;
+  - yellow/orange = Grounded SAM object/occlusion mask.
+- v07a top overall feature-source candidates:
+  - Juseop: index 15 `selfie_007.png` 89.6, index 13 `selfie_005.png`
+    80.3, index 14 `selfie_006.png` 80.0, index 18 `selfie_010.jpg`
+    79.2, index 10 `selfie_002.png` 77.5.
+  - Eunchae: index 6 `KakaoTalk_20260621_130455494_06.png` 86.1,
+    index 0 `KakaoTalk_20260621_130455494.jpg` 82.1, index 1
+    `KakaoTalk_20260621_130455494_01.jpg` 80.2, index 3
+    `KakaoTalk_20260621_130455494_03.png` 80.1, index 7
+    `KakaoTalk_20260621_130455494_07.png` 77.8.
+- User correction: the object mask is good enough for the current read. Orange
+  means object/occlusion. `occ 0.0%` means the object mask does not overlap the
+  feature being scored, not that object detection failed.
 
-## 6. Next Active Step: Step 6 Material Repair After v06
+## 6. Next Active Step: Step 7 v07b Eyebrow Rebuild
 
-Step 6 is material-specific post-processing from the Step 5 `blend` texture.
-It should be done one element at a time, with a review sheet after each element.
-Do not batch many fixes together.
+Step 7 now starts material-specific reconstruction from the accepted v06
+texture. The first material is eyebrow only. Do not batch eyes/lips/global skin
+with this pass.
 
-Planned order:
+v07b eyebrow rebuild contract:
 
-1. Lock/refine eye/brow/mouth/lip protection masks
-   - Before global skin blending, define the exact regions that must not be
-     averaged into skin.
-   - Protect eyes, eyelids, brows, mouth interior, lips, nostrils, and
-     hairline/scalp boundaries.
-   - v06 already has a narrow placeholder guard, but the next pass should make
-     this guard more semantic and visually correct.
+1. Start from accepted v06:
+   `G:\내 드라이브\hair_app\output\facebuilder_mask_aware_step6\20260703_022613`.
+2. Use v07a crop photos and cyan eyebrow masks as-is.
+3. Use the existing v04b/v06 eyebrow guard only as a maximum fence. Do not fill
+   the entire guard.
+4. Do not add object/hair/occlusion cleanup in this pass.
+5. Do not remove small components/dots; trust the v07a eyebrow segmentation for
+   this controlled test.
+6. Do not scale-normalize eyebrows to the mesh. Crop-normalized photos already
+   give the first-order face scale normalization.
+7. No left-right symmetry yet.
+8. Create two comparison versions:
+   - `best_source`: if multiple photos hit the same UV eyebrow texel, use the
+     highest eyebrow-score source.
+   - `blend`: if multiple photos hit the same UV eyebrow texel, use
+     weighted/median blending.
+9. Keep skin, eyes, lips, mouth, scalp, and hairline unchanged.
 
-2. Global skin blending
-   - Blend all confirmed skin regions together: forehead, cheeks, side face,
-     ear-adjacent skin, jaw, and neck.
-   - Keep neck slightly darker and avoid forcing ears/side face to exact cheek
-     color.
+Review sheet preference:
 
-3. Mouth and lips
-   - Repair mouth interior and lips as separate materials.
-   - Do not diffuse cheek skin into the mouth.
-
-4. Eyes and brows
-   - Repair eye, eyelid, and brow regions separately.
-   - Avoid blending eye whites or brow darkness into skin.
-
-5. Scalp and hairline
-   - Create plausible scalp material and hairline transition.
-   - Keep scalp/hairline separate from forehead skin.
-
-6. Final mild color pass
-   - Apply only after individual repairs are accepted.
-   - Avoid early global color correction because it hides which sub-step helped.
+- keep it simple: before v06 front/left45/right45, after best-source
+  front/left45/right45, after blend front/left45/right45, and one eyebrow area
+  map if needed;
+- avoid UV atlas panels unless debugging requires them.
 
 ## 7. Privacy/Git Rule
 

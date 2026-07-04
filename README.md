@@ -199,12 +199,21 @@ private_outputs/
    eyes, brows, a compact lip/mouth core, and nostril-like dark features stay
    protected. The latest accepted output is
    `<drive_root>/output/facebuilder_mask_aware_step6/20260703_022613`.
-7. Next, lock the eye/brow/mouth/lip protection masks, then run global skin
-   blending over all confirmed skin regions. After that, repair eye/brow,
-   mouth/lips, scalp/hairline, and final mild color smoothing.
-8. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
+7. Step 7 v07a is complete as a feature-source review, not a texture edit. It
+   scores crop photos for eyebrow, eye, lip, and inner-mouth source quality
+   using the FaRL + Grounded SAM masks. The private review output is
+   `<drive_root>/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review`.
+8. Next, start v07b eyebrow rebuild from the accepted v06 texture. Use the v07a
+   cyan eyebrow masks as-is, clip only to the existing v04b/v06 eyebrow guard as
+   a maximum fence, do not add object/component cleanup, do not scale-normalize
+   the brows, and do not apply left-right symmetry yet. Build two comparison
+   outputs: highest-score source selection and weighted/median blend.
+9. After eyebrow reconstruction is reviewed, continue one material at a time:
+   eyes, lips/mouth, global skin blending, scalp/hairline, and final mild color
+   smoothing.
+10. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
    candidate unless visual review proves otherwise.
-9. Preserve confidence/provenance maps so observed pixels, blended pixels, and
+11. Preserve confidence/provenance maps so observed pixels, blended pixels, and
    generated/fallback pixels remain distinguishable.
-10. After the bald head is credible, decide whether the FaceBuilder mesh can be
+12. After the bald head is credible, decide whether the FaceBuilder mesh can be
    used directly for hair fitting or needs retopology/transfer.

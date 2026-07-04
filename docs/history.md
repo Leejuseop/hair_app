@@ -3430,3 +3430,102 @@ Visual read:
 - Next recommended step: refine and lock the eye/brow/mouth/lip protection
   masks, then blend all confirmed skin regions. After that, do dedicated
   eye/brow and mouth/lip material repair.
+
+### 27.17 Step 7 v07a Feature Source Review
+
+Date: 2026-07-04
+
+Private output:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review
+```
+
+Code:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step7_feature_sources.py
+```
+
+Purpose:
+
+- v06 produced a usable temporary bald-head substrate, but eyes, eyebrows, lips,
+  and mouth are still placeholders.
+- Before writing feature pixels back into UV texture, the system needs to know
+  which crop photos are good sources for each facial feature.
+- v07a is therefore a source-review stage only. It does not create or accept a
+  new texture.
+
+Inputs:
+
+- accepted v06 output from
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step6/20260703_022613`;
+- Step 3 FaRL + Grounded SAM masks, especially
+  `v2_farl_grounded_sam`;
+- crop-normalized source photos from the FaceBuilder semantic pipeline;
+- texture-enabled crop photos only, so scan images are not used as feature
+  texture sources.
+
+Logic:
+
+- read each crop photo and its face parsing label map;
+- build separate candidate masks for:
+  - eyebrow;
+  - eye;
+  - lip;
+  - inner mouth;
+- overlay the Grounded SAM object/occlusion mask;
+- score each feature candidate by area plausibility, sharpness/blur, brightness
+  stability, and object overlap;
+- combine feature scores into an overall source-quality score;
+- write a CSV, JSON summary, per-person review sheet, and per-photo feature
+  overlay previews to private Drive.
+
+Review colors:
+
+```text
+cyan          = eyebrow candidate
+blue          = eye candidate
+magenta       = lip candidate
+red           = inner-mouth candidate
+yellow/orange = Grounded SAM object/occlusion mask
+```
+
+Important correction from visual review:
+
+- The object/occlusion mask is not considered weak in the current review. The
+  orange/yellow areas are object masks and are useful.
+- If a row shows `occ 0.0%`, that means the object mask does not overlap the
+  particular feature candidate being scored. It does not mean object detection
+  failed.
+
+Top v07a overall candidates:
+
+| Person | Rank | Index | Source | Overall score |
+| --- | ---: | ---: | --- | ---: |
+| Juseop | 1 | 15 | `selfie_007.png` | 89.6 |
+| Juseop | 2 | 13 | `selfie_005.png` | 80.3 |
+| Juseop | 3 | 14 | `selfie_006.png` | 80.0 |
+| Juseop | 4 | 18 | `selfie_010.jpg` | 79.2 |
+| Juseop | 5 | 10 | `selfie_002.png` | 77.5 |
+| Eunchae | 1 | 6 | `KakaoTalk_20260621_130455494_06.png` | 86.1 |
+| Eunchae | 2 | 0 | `KakaoTalk_20260621_130455494.jpg` | 82.1 |
+| Eunchae | 3 | 1 | `KakaoTalk_20260621_130455494_01.jpg` | 80.2 |
+| Eunchae | 4 | 3 | `KakaoTalk_20260621_130455494_03.png` | 80.1 |
+| Eunchae | 5 | 7 | `KakaoTalk_20260621_130455494_07.png` | 77.8 |
+
+Next agreed sub-step:
+
+- Build `v07b_eyebrow_rebuild` from accepted v06.
+- Use v07a cyan eyebrow masks unchanged.
+- Use v04b/v06 eyebrow guard only as a maximum fence. Do not fill the whole
+  guard.
+- Do not add object/hair/occlusion cleanup or small-component cleanup in this
+  controlled pass because the v07a eyebrow masks looked visually clean.
+- Do not scale-normalize eyebrows to the 3D model. The crop-normalized photos
+  already normalize face scale enough for the first test.
+- Do not use left-right symmetry yet.
+- Produce two versions:
+  - `best_source`: highest eyebrow-score source wins per UV texel;
+  - `blend`: similar source pixels are combined with weighted/median blending.
+- Keep all non-eyebrow material untouched.

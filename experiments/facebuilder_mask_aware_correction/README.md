@@ -587,3 +587,72 @@ v06 interpretation:
 - The next accepted Step 6 work should handle materials one at a time: lock
   eye/brow/mouth/lip protection masks, repair eyes/brows, repair lips/mouth,
   then run a global skin blend over confirmed skin regions.
+
+### Step 7: Feature Source Review and Reconstruction Prep
+
+`v07a_feature_source_review` is a diagnostic stage only. It does not modify the
+accepted v06 texture. It scores each texture-enabled crop photo as a possible
+source for separate facial materials before any UV replacement is attempted.
+
+Private output:
+
+```text
+<drive_root>/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review
+```
+
+Code:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step7_feature_sources.py
+```
+
+v07a feature colors:
+
+```text
+cyan        = eyebrow candidate from face parsing
+blue        = eye candidate from face parsing
+magenta     = lip candidate from face parsing
+red         = inner-mouth candidate from face parsing
+yellow/orange = Grounded SAM object/occlusion mask
+```
+
+Important interpretation notes:
+
+- The orange/yellow object mask is the object/occlusion mask, not a failure
+  state. If a row shows `occ 0.0%`, it means the object mask did not overlap the
+  specific feature candidate being scored.
+- v07a uses crop photos because the accepted FaceBuilder texture path is now
+  based on crop-normalized images. The crop step already normalizes face scale
+  enough for the first eyebrow experiment; v07b should not resize eyebrows to
+  fit the 3D guard.
+- The v04b/v06 eyebrow guard is only a maximum fence. v07b should fill only the
+  projected real eyebrow pixels from the v07a cyan masks, not the entire guard.
+
+Top v07a overall candidates:
+
+| Person | Rank | Index | Source | Overall | Read |
+| --- | ---: | ---: | --- | ---: | --- |
+| Juseop | 1 | 15 | `selfie_007.png` | 89.6 | Strong first feature source |
+| Juseop | 2 | 13 | `selfie_005.png` | 80.3 | Good backup source |
+| Juseop | 3 | 14 | `selfie_006.png` | 80.0 | Good backup source |
+| Juseop | 4 | 18 | `selfie_010.jpg` | 79.2 | Usable backup source |
+| Juseop | 5 | 10 | `selfie_002.png` | 77.5 | Usable backup source |
+| Eunchae | 1 | 6 | `KakaoTalk_20260621_130455494_06.png` | 86.1 | Strong first feature source |
+| Eunchae | 2 | 0 | `KakaoTalk_20260621_130455494.jpg` | 82.1 | Good backup source |
+| Eunchae | 3 | 1 | `KakaoTalk_20260621_130455494_01.jpg` | 80.2 | Good backup source |
+| Eunchae | 4 | 3 | `KakaoTalk_20260621_130455494_03.png` | 80.1 | Good backup source |
+| Eunchae | 5 | 7 | `KakaoTalk_20260621_130455494_07.png` | 77.8 | Usable backup source |
+
+Next v07b eyebrow rebuild contract:
+
+- start from accepted v06;
+- use v07a cyan eyebrow masks unchanged;
+- do not add object/hair/occlusion cleanup in this sub-step;
+- do not remove small components or dots, because the current eyebrow masks
+  visually look clean enough for this controlled test;
+- do not scale-normalize eyebrows against the 3D model guard;
+- project eyebrow pixels through FaceBuilder camera/UV data;
+- create two outputs:
+  - `best_source`: highest eyebrow-score source wins per texel;
+  - `blend`: similar source pixels are weighted/median blended;
+- leave skin, eyes, lips, mouth, and scalp untouched.
