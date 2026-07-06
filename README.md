@@ -1,219 +1,61 @@
 # Hair App
 
-Hair App is a research/product prototype for building a personal bald head and
-hair try-on experience from ordinary selfies plus an in-app face/head scan.
+Hair App은 일반 셀카와 앱 카메라 스캔을 바탕으로, 헤어스타일을 3D로 미리 확인할 수 있는 개인 헤드 아바타를 만드는 R&D/prototype 프로젝트입니다.
 
-The product target is not a perfect forensic 360-degree scan. The useful target
-is a believable personal head for hairstyle preview:
+목표는 완벽한 360도 3D 스캔이 아니라, 헤어 앱에서 중요한 정면부터 약 45도 측면까지 자연스럽게 보이는 "대머리 헤드 + 이후 합성할 헤어" 기반을 만드는 것입니다.
 
-- strong likeness from the front through about 45 degrees;
-- good enough head shape for hair placement, hairline judgment, and collision;
-- plausible fallback for hidden scalp/rear-head regions;
-- honest separation between observed photo evidence and inferred material;
-- mobile-friendly GLB delivery for interactive viewing.
+## 핵심 목표
 
-## Current Direction
+- 사용자는 정형화된 촬영을 강하게 요구받지 않고, 일반 셀카와 앱 스캔만 제공합니다.
+- 얼굴 정면, 약측면, 헤어라인, 두상 느낌이 헤어스타일 판단에 충분히 자연스럽게 보여야 합니다.
+- 보이지 않는 뒤통수나 두피 영역은 실제 복원보다 자연스러운 fallback을 우선합니다.
+- 사진에서 실제로 관측된 영역과 추정해서 메운 영역을 구분해 관리합니다.
+- 최종 결과는 모바일 앱에서 볼 수 있는 3D head/GLB asset으로 정리하는 것을 목표로 합니다.
 
-As of 2026-06-30, the main face/head engine candidate is:
+## 현재 파이프라인
 
-```text
-ordinary selfies + app scan frames
-  -> automated FaceBuilder/KeenTools solve inside headless Blender
-  -> private raw FaceBuilder mesh and texture
-  -> mask-aware texture correction from FaceBuilder cameras/UV
-  -> material-specific texture post-processing
-  -> mobile GLB + review sheets
-```
+현재 실험 방향은 FaceBuilder/Blender 기반입니다.
 
-The earlier Pixel3DMM/FLAME + custom Texture Baker path remains valuable as a
-research baseline and backup, but it is no longer the main quality path right
-now. Texture Baker v1/v2/v3 proved useful for understanding UV evidence,
-visibility, completion, and review tooling, but the visible identity quality is
-far below product standard.
+1. 셀카와 앱 스캔 사진을 수집합니다.
+2. 얼굴 기준 crop과 자동 정렬을 수행합니다.
+3. FaceBuilder로 기본 head mesh와 raw texture를 생성합니다.
+4. 얼굴 parsing, object mask, hairline 정보를 이용해 texture 오염을 찾습니다.
+5. 머리카락, 손, 물체, 옷, 배경이 얼굴 texture에 섞인 부분을 제거하거나 보정합니다.
+6. 눈썹, 눈, 입술 같은 세부 요소는 피부와 분리해서 별도 복원합니다.
+7. 이후 헤어 asset을 얹기 좋은 bald head asset으로 정리합니다.
 
-The current working hypothesis is that FaceBuilder gives a stronger automated
-geometry-and-camera starting point, while Hair App should own:
+## 현재 작업 상태
 
-- camera/projection-faithful FaceBuilder automation;
-- mask-aware texture trust, repair, and completion after bake;
-- hairline/scalp preparation;
-- hair fitting, collision, and GLB export;
-- privacy-safe storage and deletion.
+아직 제품 완성본은 아니고, 품질을 끌어올리는 실험 단계입니다.
 
-## Verified Locally
+지금 집중하는 부분은 다음입니다.
 
-The following automation checks have been completed on the local Windows
-machine:
+- FaceBuilder raw texture에서 머리카락, 물체, 옷 오염 제거
+- 헤어라인 기준으로 두피/이마/얼굴 영역 정리
+- 눈썹, 눈, 입술 재질을 자연스럽게 복원
+- 각 단계별 review sheet로 품질 비교
+- 나중에 헤어 합성을 위한 bald head GLB 준비
 
-- Blender 5.1.2 runs in background mode.
-- KeenTools 2026.2.0 loads in headless Blender.
-- The local `pykeentools` core imports successfully.
-- A FaceBuilder head can be constructed from script.
-- `detect_faces`, `detect_face_pose`, preset pin solving, and TextureBuilder
-  APIs are reachable from script.
-- An existing user-made FaceBuilder `.blend` scene can be inspected and partly
-  auto-aligned in background mode.
-- A new empty Blender scene can be created from a private photo folder, add
-  photos as FaceBuilder cameras, auto-align at least one photo, bake a texture,
-  and save a private `.blend`.
-- FaceBuilder texture automation now matches the Blender UI `Create Texture`
-  path for the tested Juseop 10-photo case. The old automated raw bake differed
-  from the manual texture by mean RGB error about `18.14`; after restoring the
-  UI-equivalent camera/projection/focal updates, the difference fell to about
-  `0.12`.
-- The old FaceBuilder v1/v2/v3 outputs were retired because they were generated
-  before the texture-bake parity fix and with an over-aggressive cleanup pass.
-- The later FaceBuilder v1/v2/v3/v4 color-mute batches were also retired: the
-  same-size preprocessor filled rejected regions with skin-like color, which
-  made the texture bake dirtier rather than cleaner.
-- The private FaceBuilder semantic ablation runs for Juseop and
-  Eunchae, reusing the previous Pixel3DMM V4 FaceBoxes crops and FaRL
-  segmentations:
-  - `semantic_v1`: raw validated photos + raw FaceBuilder texture;
-  - `semantic_v2`: V4 crops + raw FaceBuilder texture;
-  - `semantic_v3`: V4 crops + sentinel-colored semantic texture inputs.
-  It writes Drive outputs, OBJ/GLB, per-version review sheets, crop/segmentation
-  review sheets, and a cross-version comparison sheet.
-- The active mask-aware correction experiment has completed Step 3 parser/object
-  mask comparison, Step 4 clean-pixel UV projection, Step 5 raw-versus-clean
-  arbitration, and Step 6 v01/v02/v03/v04/v04b/v05/v06 postprocess passes. The
-  current accepted v06 revision restarts from v04b, blacks out everything above
-  the refined hairline as future hair/scalp territory, keeps only excellent
-  below-hairline face pixels, fills the remaining non-protected face/neck region
-  with simple temporary skin/neck material, and keeps a compact eye/brow/lip
-  feature guard. v05 is retained as a logged experiment, but it is not the
-  current visual baseline because the side/neck cleanup result looked too odd.
-  `v2_farl_grounded_sam` is the current mask candidate, and Step 6 is using
-  the Step 5 `blend` texture as its fixed baseline.
+## 이전 실험
 
-Private test outputs are written under `private_outputs/` and are ignored by
-Git. Current FaceBuilder version outputs are written under the private Drive
-layout:
+Pixel3DMM/FLAME 기반 3DMM 후보와 자체 Texture Baker도 실험했습니다. 이 경로는 visibility, UV, confidence, completion 같은 개념을 검증하는 데 도움이 되었지만, 현재 제품 품질 후보는 FaceBuilder 기반 파이프라인으로 옮겨가고 있습니다.
 
-```text
-<drive_root>/output/facebuilder_semantic_v1/<person>/
-<drive_root>/output/facebuilder_semantic_v2/<person>/
-<drive_root>/output/facebuilder_semantic_v3/<person>/
-<drive_root>/output/_preprocess_review/<person>/
-<drive_root>/output/_comparison/facebuilder_semantic_v1_v3/
-<drive_root>/output/facebuilder_mask_aware_step3/<stamp>/
-<drive_root>/output/facebuilder_mask_aware_step4/<stamp>/
-<drive_root>/output/facebuilder_mask_aware_step5/<stamp>/
-<drive_root>/output/facebuilder_mask_aware_step6/<stamp>/
-```
+자세한 실험 기록은 `docs/history.md`에 남겨두었습니다.
 
-## Implemented Repository Pieces
+## Privacy
 
-Product-side implementation already includes:
+이 저장소에는 private 얼굴 데이터와 생성 산출물을 넣지 않습니다.
 
-- React 18 + Vite mobile-first frontend;
-- browser camera capture;
-- MediaPipe Face Landmarker guidance;
-- guided scan steps: `front`, `left_45`, `right_45`, `left_profile`,
-  `right_profile`, `hairline`;
-- FastAPI `POST /api/scan`;
-- file-based scan storage;
-- backend-created `selected_3dmm/` reconstruction input bundles;
-- `base_profile.json` version `0.2`.
+Git에 넣지 않는 것:
 
-Research-side implementation includes:
+- 사용자 셀카와 앱 스캔 프레임
+- crop, landmark, mask, segmentation 결과
+- private mesh, OBJ, MTL, GLB
+- texture, render, review sheet
+- Google Drive 또는 로컬 private output
 
-- Pixel3DMM V4 research notebook and freeze utilities;
-- Texture Baker v1/v2/v3 experiments and review sheets;
-- FaceBuilder bridge scripts for export inspection, headless smoke testing,
-  scene probing, empty-scene automation, batch comparison, private review
-  outputs, and GLB export.
-- FaceBuilder semantic ablation scripts that reuse Pixel3DMM V4 crop/FaRL
-  preprocessing and test raw versus cropped versus sentinel-colored texture
-  inputs.
-- FaceBuilder mask-aware correction scripts for parser/object-mask comparison,
-  clean-pixel UV projection, raw-versus-clean arbitration, Step 6 postprocess,
-  and review sheets.
+Git에는 코드, 문서, private 데이터를 처리하는 스크립트만 저장합니다.
 
-## Not Implemented Yet
+## Status
 
-- production selfie upload and automatic photo scoring UI;
-- production FaceBuilder job orchestration;
-- semantic scalp/skin/occlusion masks for FaceBuilder post-processing;
-- clean eye/mouth/scalp materials after FaceBuilder export;
-- hair reconstruction or imported hairstyle processing;
-- scalp retargeting and collision correction;
-- production GLB builder/viewer;
-- production privacy, retention, deletion, auth, billing, and deployment.
-
-## Important Privacy Rule
-
-Never commit private biometric data or generated private assets:
-
-- selfies and scan frames;
-- landmarks, masks, crops, tracking frames;
-- private meshes, OBJ/MTL/PLY/GLB files;
-- textures, renders, review sheets, videos;
-- private Drive or local output folders.
-
-Allowed in Git:
-
-- source code;
-- documentation;
-- scripts that operate on private data;
-- JSON schema/manifest examples with fake or generic paths.
-
-Ignored private folders:
-
-```text
-private_exports/
-private_outputs/
-```
-
-## Key Documents
-
-- `newchat.md`: compact handoff for the next chat.
-- `AGENTS.md`: working rules for coding agents.
-- `docs/10_3d_hair_app_master_plan.md`: full product/system plan.
-- `docs/history.md`: chronological decisions, detailed experiment log, and
-  archived old-engine docs for Pixel3DMM/FLAME and Texture Baker.
-- `experiments/facebuilder_bridge/README.md`: current FaceBuilder automation
-  bridge and commands.
-
-## Next Immediate Work
-
-1. Continue Step 6 from the Step 5 `blend` texture, one post-process element at
-   a time, with a review sheet after each element.
-2. Keep v01 hard black skin-hole fill as a conservative safety pass. It fills
-   only tiny dot-like holes and protects eyes, mouth, brows, nostrils, scalp,
-   and clothing.
-3. Keep v02 forehead tone as a safe but weak pass. It now uses only the central
-   forehead component, but tone correction alone did not remove the visible
-   patch structure.
-4. Treat v03 forehead uniform tone as a diagnostic experiment, not final
-   quality: it replaces selected forehead skin with the average non-forehead
-   face tone, uses Juseop scan frames only as a hairline boundary hint, and
-   produces compact before/after/area review sheets.
-5. Treat v04b forehead/eyebrow/hairline refinement as the region baseline used
-   by v06: it chooses the brow source by component quality, adds a symmetric
-   flatter front-hairline lift, and defines the forehead as below the hairline
-   and above the eyebrow baseline except tight eye/brow guards.
-6. Treat v06 simple bald skin fill as the current postprocess baseline: above
-   hairline is black, excellent below-hairline face pixels are kept, the rest of
-   the non-protected face/neck is filled with simple skin/neck material, and
-   eyes, brows, a compact lip/mouth core, and nostril-like dark features stay
-   protected. The latest accepted output is
-   `<drive_root>/output/facebuilder_mask_aware_step6/20260703_022613`.
-7. Step 7 v07a is complete as a feature-source review, not a texture edit. It
-   scores crop photos for eyebrow, eye, lip, and inner-mouth source quality
-   using the FaRL + Grounded SAM masks. The private review output is
-   `<drive_root>/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review`.
-8. Next, start v07b eyebrow rebuild from the accepted v06 texture. Use the v07a
-   cyan eyebrow masks as-is, clip only to the existing v04b/v06 eyebrow guard as
-   a maximum fence, do not add object/component cleanup, do not scale-normalize
-   the brows, and do not apply left-right symmetry yet. Build two comparison
-   outputs: highest-score source selection and weighted/median blend.
-9. After eyebrow reconstruction is reviewed, continue one material at a time:
-   eyes, lips/mouth, global skin blending, scalp/hairline, and final mild color
-   smoothing.
-10. Keep `select` as a diagnostic comparison, but use `blend` as the main Step 6
-   candidate unless visual review proves otherwise.
-11. Preserve confidence/provenance maps so observed pixels, blended pixels, and
-   generated/fallback pixels remain distinguishable.
-12. After the bald head is credible, decide whether the FaceBuilder mesh can be
-   used directly for hair fitting or needs retopology/transfer.
+현재 상태는 R&D/prototype입니다. 단기 목표는 "일반 셀카 + 앱 스캔만으로 헤어 앱에 쓸 수 있는 개인 3D bald head 기반을 만들 수 있는가"를 검증하는 것입니다.
