@@ -597,7 +597,7 @@ source for separate facial materials before any UV replacement is attempted.
 Private output:
 
 ```text
-<drive_root>/output/facebuilder_mask_aware_step7/20260704_185336/v07a_feature_source_review
+<drive_root>/output/facebuilder_mask_aware_step7/20260707_192443/v07a_feature_source_review
 ```
 
 Code:
@@ -627,6 +627,22 @@ Important interpretation notes:
   fit the 3D guard.
 - The v04b/v06 eyebrow guard is only a maximum fence. v07b should fill only the
   projected real eyebrow pixels from the v07a cyan masks, not the entire guard.
+- The refreshed v07a eyebrow side split does not trust FaRL's `left_brow` and
+  `right_brow` names. It first merges both labels into one eyebrow mask, then
+  splits connected components into `image_left_brow` and `image_right_brow` by
+  component centroid relative to the crop-image face centerline. The centerline
+  comes from the nose label when available, otherwise the face bbox center.
+- The side names are image directions, not anatomical directions. This keeps the
+  review and extraction logic consistent with what is visible in the crop.
+- New side-split diagnostics are written per image:
+  `eyebrow_image_left.png`, `eyebrow_image_right.png`,
+  `eyebrow_image_left_cutout.png`, `eyebrow_image_right_cutout.png`, and
+  `eyebrow_image_side_overlay.png`. Each person also gets
+  `v07a_eyebrow_image_side_split_review_sheet.png`.
+- Juseop `selfie_007.png` was the sanity check for this refresh. The previous
+  debug split could cut one real brow into two side outputs. The refreshed split
+  keeps the main brow together as `image_left_brow` with 1394 pixels and leaves
+  only a 38-pixel stray component on `image_right_brow`.
 
 Top v07a overall candidates:
 
@@ -646,7 +662,9 @@ Top v07a overall candidates:
 Next v07b eyebrow rebuild contract:
 
 - start from accepted v06;
-- use v07a cyan eyebrow masks unchanged;
+- use the refreshed v07a eyebrow union mask and `image_left_brow` /
+  `image_right_brow` side metadata. Do not use raw FaRL side-label names for
+  side-specific extraction;
 - do not add object/hair/occlusion cleanup in this sub-step;
 - do not remove small components or dots, because the current eyebrow masks
   visually look clean enough for this controlled test;

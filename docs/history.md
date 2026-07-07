@@ -3529,3 +3529,62 @@ Next agreed sub-step:
   - `best_source`: highest eyebrow-score source wins per UV texel;
   - `blend`: similar source pixels are combined with weighted/median blending.
 - Keep all non-eyebrow material untouched.
+
+### 27.18 Step 7 v07a Eyebrow Image-Side Split Refresh
+
+Date: 2026-07-07
+
+Private output:
+
+```text
+<private_drive>/hair_app/output/facebuilder_mask_aware_step7/20260707_192443/v07a_feature_source_review
+```
+
+Code:
+
+```text
+experiments/facebuilder_mask_aware_correction/run_step7_feature_sources.py
+experiments/facebuilder_mask_aware_correction/run_step7_eyebrow_rebuild.py
+```
+
+Why this refresh exists:
+
+- Visual review showed that the eyebrow parser mask itself was usable, but
+  left/right extraction was ambiguous.
+- FaRL's `left_brow` and `right_brow` label names are anatomical/parser labels,
+  while the review/debug sheets need image-space left/right consistency.
+- Juseop `selfie_007.png` exposed the failure clearly: one real eyebrow could be
+  split across old raw-left/raw-right debug cutouts even though the visible mask
+  looked acceptable.
+
+Code changes:
+
+- Merge FaRL eyebrow labels into one union eyebrow mask first.
+- Split connected eyebrow components into `image_left_brow` and
+  `image_right_brow` by component centroid relative to the crop-image face
+  centerline.
+- Use nose label 10 as the preferred face centerline source. If the nose label
+  is unavailable, fall back to the face-related bbox center.
+- Save side-specific masks, side-specific cutouts, side overlay PNGs, CSV side
+  pixel counts, JSON metadata, and a new
+  `v07a_eyebrow_image_side_split_review_sheet.png` for each person.
+
+Latest run:
+
+- Output:
+  `<private_drive>/hair_app/output/facebuilder_mask_aware_step7/20260707_192443/v07a_feature_source_review`.
+- Juseop: 10 texture-enabled rows. Top source remains `selfie_007.png` with
+  overall score 89.6.
+- Eunchae: 8 texture-enabled rows. Top source remains
+  `KakaoTalk_20260621_130455494_06.png` with overall score 86.1.
+- Juseop `selfie_007.png` sanity check: the main brow component now stays
+  together as `image_left_brow` with 1394 pixels. Only a 38-pixel stray
+  component remains in `image_right_brow`, which can be handled later if needed.
+
+Read:
+
+- This refresh does not solve eyebrow color normalization.
+- This refresh does not yet apply dark-pixel filtering or final brow material
+  transfer.
+- The goal is only side-consistent eyebrow extraction before continuing with
+  v07b eyebrow rebuild.

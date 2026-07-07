@@ -184,6 +184,67 @@ def _bbox_iou(a: list[int] | None, b: list[int] | None) -> float:
     return float(inter / union) if union > 0 else 0.0
 
 
+def _mask_center_x(mask: np.ndarray) -> float:
+    ys, xs = np.nonzero(mask)
+    if xs.size == 0:
+        return float(mask.shape[1]) * 0.5
+    return float(xs.mean())
+
+
+def _face_center_x(label: np.ndarray) -> float:
+    nose = label == 10
+    if int(nose.sum()) >= 20:
+        return _mask_center_x(nose)
+    face_mask = np.isin(label, list(FACE_RELATED_LABELS))
+    box = _bbox(face_mask)
+    if box:
+        return float(box[0] + box[2]) * 0.5
+    return float(label.shape[1]) * 0.5
+
+
+def _split_eyebrow_by_image_side(mask: np.ndarray, label: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Split a union eyebrow mask into image-space left/right components.
+
+    FaRL's anatomical left/right labels are intentionally ignored here. We first
+    trust only the union eyebrow region, then classify connected components by
+    their centroid relative to the face centerline in the crop image.
+    """
+    center_x = _face_center_x(label)
+    labels, count = ndimage.label(mask)
+    image_left = np.zeros_like(mask, dtype=bool)
+    image_right = np.zeros_like(mask, dtype=bool)
+    components: list[dict[str, Any]] = []
+    for label_id in range(1, count + 1):
+        component = labels == label_id
+        area = int(component.sum())
+        if area == 0:
+            continue
+        ys, xs = np.nonzero(component)
+        centroid_x = float(xs.mean())
+        side = "image_left" if centroid_x < center_x else "image_right"
+        if side == "image_left":
+            image_left |= component
+        else:
+            image_right |= component
+        box = _bbox(component)
+        components.append({
+            "component": int(label_id),
+            "area": area,
+            "bbox": box,
+            "centroid_x": centroid_x,
+            "center_x": center_x,
+            "side": side,
+        })
+    return image_left, image_right, {
+        "centerline_source": "nose_label_10_or_face_bbox_fallback",
+        "center_x": center_x,
+        "image_left_pixels": int(image_left.sum()),
+        "image_right_pixels": int(image_right.sum()),
+        "components": components,
+        "definition": "image_left/right are crop-image directions; FaRL left/right labels are merged before this split.",
+    }
+
+
 def _component_filter(mask: np.ndarray, *, min_area: int, keep_components: int) -> tuple[np.ndarray, list[dict[str, Any]]]:
     labels, count = ndimage.label(mask)
     components: list[dict[str, Any]] = []
@@ -402,6 +463,98 @@ def _overlay_features(crop: Image.Image, feature_masks: dict[str, np.ndarray], o
     return Image.alpha_composite(base, overlay).convert("RGB")
 
 
+def _overlay_eyebrow_sides(crop: Image.Image, image_left: np.ndarray, image_right: np.ndarray) -> Image.Image:
+    base = crop.convert("RGBA")
+    arr = np.zeros((base.height, base.width, 4), dtype=np.uint8)
+    arr[image_left] = (0, 220, 255, 155)
+    arr[image_right] = (255, 170, 45, 155)
+    overlay = Image.fromarray(arr, mode="RGBA")
+    return Image.alpha_composite(base, overlay).convert("RGB")
+
+
+def _mask_cutout(crop: Image.Image, mask: np.ndarray, *, label: str, size: tuple[int, int] = (300, 210)) -> Image.Image:
+    panel = Image.new("RGB", size, (10, 10, 10))
+    draw = ImageDraw.Draw(panel)
+    small = _font(13)
+    box = _bbox(mask)
+    if not box:
+        draw.text((18, 84), "empty", fill=(155, 155, 155), font=_font(24))
+        return panel
+    margin = 14
+    x0 = max(0, box[0] - margin)
+    y0 = max(0, box[1] - margin)
+    x1 = min(crop.width, box[2] + margin)
+    y1 = min(crop.height, box[3] + margin)
+    crop_arr = np.asarray(crop)
+    local_mask = mask[y0:y1, x0:x1]
+    local_rgb = crop_arr[y0:y1, x0:x1].copy()
+    bg = np.zeros_like(local_rgb)
+    bg[..., :] = 24
+    cutout = np.where(local_mask[..., None], local_rgb, bg)
+    image = Image.fromarray(cutout.astype(np.uint8), mode="RGB")
+    image.thumbnail((size[0] - 16, size[1] - 24), Image.Resampling.NEAREST)
+    panel.paste(image, ((size[0] - image.width) // 2, 12))
+    draw.text((8, size[1] - 20), f"{int(mask.sum())} px", fill=(180, 180, 180), font=small)
+    return panel
+
+
+def _make_eyebrow_side_review_sheet(
+    person: str,
+    rows: list[dict[str, Any]],
+    side_review_images: dict[int, dict[str, Image.Image]],
+    output_path: Path,
+) -> None:
+    tile_w = 1240
+    tile_h = 260
+    header_h = 112
+    sheet = Image.new("RGB", (tile_w, header_h + max(1, len(rows)) * tile_h), (12, 12, 12))
+    draw = ImageDraw.Draw(sheet)
+    draw.text((16, 12), f"{person} v07a eyebrow image-side split review", fill=(245, 245, 245), font=_font(26))
+    draw.text(
+        (16, 48),
+        "cyan=image_left_brow, orange=image_right_brow. FaRL left/right labels are merged first, then split by face centerline.",
+        fill=(190, 190, 190),
+        font=_font(13),
+    )
+    draw.text(
+        (16, 70),
+        "This sheet checks side assignment only. It does not apply color normalization or dark-pixel filtering.",
+        fill=(170, 170, 170),
+        font=_font(13),
+    )
+    for i, row in enumerate(rows):
+        y = header_h + i * tile_h
+        draw.text((14, y + 16), f"{row['index']:03d}", fill=(255, 235, 120), font=_font(22))
+        draw.text((14, y + 48), str(row["source_name"])[:22], fill=(220, 220, 220), font=_font(13))
+        eyebrow = row["features"]["eyebrow"]
+        side = row.get("eyebrow_image_side_split") or {}
+        draw.text((14, y + 72), f"brow {eyebrow['score_100']:05.1f}", fill=(190, 190, 190), font=_font(12))
+        draw.text(
+            (14, y + 92),
+            f"L {side.get('image_left_pixels', 0)} / R {side.get('image_right_pixels', 0)} px",
+            fill=(190, 190, 190),
+            font=_font(12),
+        )
+        images = side_review_images[row["index"]]
+        x = 190
+        for key, label in (
+            ("source", "source crop"),
+            ("overlay", "side overlay"),
+            ("image_left", "image_left_brow"),
+            ("image_right", "image_right_brow"),
+        ):
+            panel = Image.new("RGB", (250, 230), (18, 18, 18))
+            draw_panel = ImageDraw.Draw(panel)
+            draw_panel.text((8, 8), label, fill=(230, 230, 230), font=_font(13))
+            image = images[key].copy()
+            image.thumbnail((234, 190), Image.Resampling.LANCZOS if key in {"source", "overlay"} else Image.Resampling.NEAREST)
+            panel.paste(image, ((250 - image.width) // 2, 34))
+            sheet.paste(panel, (x, y + 14))
+            x += 260
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(output_path)
+
+
 def _make_tile(row: dict[str, Any], overlay: Image.Image, tile_w: int = 420, tile_h: int = 440) -> Image.Image:
     tile = Image.new("RGB", (tile_w, tile_h), (18, 18, 18))
     draw = ImageDraw.Draw(tile)
@@ -485,6 +638,7 @@ def _score_person(
     step1_by_camera, step2_by_camera = _camera_maps(roots["step1"], roots["step2"], person)
     rows_out: list[dict[str, Any]] = []
     overlays: dict[int, Image.Image] = {}
+    eyebrow_side_review_images: dict[int, dict[str, Image.Image]] = {}
     per_image_dir = person_output / "per_image"
     per_image_dir.mkdir(parents=True, exist_ok=True)
 
@@ -515,11 +669,15 @@ def _score_person(
             )
             feature_masks[feature_name] = mask
             feature_scores[feature_name] = score
+        image_left_brow, image_right_brow, eyebrow_side_meta = _split_eyebrow_by_image_side(feature_masks["eyebrow"], label)
         total_weight = sum(float(FEATURES[name]["weight"]) for name in FEATURES)
         overall = sum(feature_scores[name]["score"] * float(FEATURES[name]["weight"]) for name in FEATURES) / total_weight
         overlay = _overlay_features(crop, feature_masks, object_mask)
+        eyebrow_side_overlay = _overlay_eyebrow_sides(crop, image_left_brow, image_right_brow)
         overlay_path = per_image_dir / f"{index:03d}_{row['image_id']}_feature_overlay.png"
+        eyebrow_side_overlay_path = per_image_dir / f"{index:03d}_{row['image_id']}_eyebrow_image_side_overlay.png"
         overlay.save(overlay_path)
+        eyebrow_side_overlay.save(eyebrow_side_overlay_path)
         masks_dir = per_image_dir / f"{index:03d}_{row['image_id']}_masks"
         masks_dir.mkdir(parents=True, exist_ok=True)
         mask_paths: dict[str, str] = {}
@@ -527,7 +685,31 @@ def _score_person(
             mask_path = masks_dir / f"{feature_name}.png"
             Image.fromarray((mask.astype(np.uint8) * 255), mode="L").save(mask_path)
             mask_paths[feature_name] = _safe_path(mask_path)
+        for side_name, side_mask in (
+            ("eyebrow_image_left", image_left_brow),
+            ("eyebrow_image_right", image_right_brow),
+        ):
+            side_path = masks_dir / f"{side_name}.png"
+            Image.fromarray((side_mask.astype(np.uint8) * 255), mode="L").save(side_path)
+            mask_paths[side_name] = _safe_path(side_path)
+        image_left_cutout = _mask_cutout(crop, image_left_brow, label="image_left_brow")
+        image_right_cutout = _mask_cutout(crop, image_right_brow, label="image_right_brow")
+        image_left_cutout_path = masks_dir / "eyebrow_image_left_cutout.png"
+        image_right_cutout_path = masks_dir / "eyebrow_image_right_cutout.png"
+        image_left_cutout.save(image_left_cutout_path)
+        image_right_cutout.save(image_right_cutout_path)
+        mask_paths["eyebrow_image_left_cutout"] = _safe_path(image_left_cutout_path)
+        mask_paths["eyebrow_image_right_cutout"] = _safe_path(image_right_cutout_path)
+        mask_paths["eyebrow_image_side_overlay"] = _safe_path(eyebrow_side_overlay_path)
         overlays[index] = overlay
+        source_thumb = crop.copy()
+        source_thumb.thumbnail((260, 210), Image.Resampling.LANCZOS)
+        eyebrow_side_review_images[index] = {
+            "source": source_thumb,
+            "overlay": eyebrow_side_overlay,
+            "image_left": image_left_cutout,
+            "image_right": image_right_cutout,
+        }
         row_out = {
             "index": index,
             "image_id": row.get("image_id"),
@@ -540,6 +722,7 @@ def _score_person(
             "overall_score_100": round(float(overall) * 100.0, 1),
             "overall_quality": _quality_label(float(overall)),
             "features": feature_scores,
+            "eyebrow_image_side_split": eyebrow_side_meta,
             "camera": {
                 **camera_meta,
                 "score": camera_score,
@@ -551,6 +734,8 @@ def _score_person(
     rows_out.sort(key=lambda item: item["index"])
     review_sheet = person_output / "v07a_feature_source_review_sheet.png"
     _make_review_sheet(person, rows_out, overlays, review_sheet, max_width=args.max_review_width)
+    eyebrow_side_review_sheet = person_output / "v07a_eyebrow_image_side_split_review_sheet.png"
+    _make_eyebrow_side_review_sheet(person, rows_out, eyebrow_side_review_images, eyebrow_side_review_sheet)
     csv_path = person_output / "v07a_feature_source_scores.csv"
     with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.writer(handle)
@@ -564,11 +749,15 @@ def _score_person(
             "lip",
             "inner_mouth",
             "camera",
+            "eyebrow_image_left_px",
+            "eyebrow_image_right_px",
             "object_ratio",
             "texture_enabled",
             "overlay_path",
+            "eyebrow_image_side_overlay_path",
         ])
         for item in rows_out:
+            side_split = item.get("eyebrow_image_side_split") or {}
             writer.writerow([
                 item["index"],
                 item["source_name"],
@@ -579,9 +768,12 @@ def _score_person(
                 item["features"]["lip"]["score_100"],
                 item["features"]["inner_mouth"]["score_100"],
                 item["camera"]["score_100"],
+                side_split.get("image_left_pixels", 0),
+                side_split.get("image_right_pixels", 0),
                 manifest.get("mean_object_ratio", 0.0),
                 item["texture_enabled"],
                 item["overlay_path"],
+                item["mask_paths"].get("eyebrow_image_side_overlay"),
             ])
     person_summary = {
         "person": person,
@@ -590,8 +782,10 @@ def _score_person(
         "rows_total": len(rows_out),
         "texture_only": not args.include_scans,
         "review_sheet": _safe_path(review_sheet),
+        "eyebrow_image_side_review_sheet": _safe_path(eyebrow_side_review_sheet),
         "score_csv": _safe_path(csv_path),
         "rows": rows_out,
+        "eyebrow_side_definition": "image_left/right are crop-image directions. FaRL left/right labels are merged into eyebrow first, then connected components are assigned by centroid relative to face centerline.",
         "top_by_overall": sorted(
             [
                 {
